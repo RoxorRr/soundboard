@@ -16,6 +16,11 @@ export const DEFAULT_PELHAM_PLAYERS: Player[] = [
   { id: 'p-13', number: 33, name: 'Logan Martin', goals: 0, assists: 0 },
   { id: 'p-14', number: 44, name: 'Dylan Harris', goals: 0, assists: 0 },
   { id: 'p-15', number: 77, name: 'Ryan Thompson', goals: 0, assists: 0 },
+  { id: 'p-16', number: 81, name: 'Brayden Clark', goals: 0, assists: 0 },
+  { id: 'p-17', number: 88, name: 'Tyler Cooper', goals: 0, assists: 0 },
+  { id: 'p-18', number: 91, name: 'Zachary Moore', goals: 0, assists: 0 },
+  { id: 'p-19', number: 93, name: 'Sam Evans', goals: 0, assists: 0 },
+  { id: 'p-20', number: 97, name: 'Austin Hall', goals: 0, assists: 0 },
 ];
 
 export const DEFAULT_VISITOR_PLAYERS: Player[] = [
@@ -34,4 +39,9 @@ export const DEFAULT_VISITOR_PLAYERS: Player[] = [
   { id: 'v-13', number: 29, name: 'Visitor Player 13', goals: 0, assists: 0 },
   { id: 'v-14', number: 33, name: 'Visitor Player 14', goals: 0, assists: 0 },
   { id: 'v-15', number: 88, name: 'Visitor Player 15', goals: 0, assists: 0 },
+  { id: 'v-16', number: 91, name: 'Visitor Player 16', goals: 0, assists: 0 },
+  { id: 'v-17', number: 92, name: 'Visitor Player 17', goals: 0, assists: 0 },
+  { id: 'v-18', number: 93, name: 'Visitor Player 18', goals: 0, assists: 0 },
+  { id: 'v-19', number: 97, name: 'Visitor Player 19', goals: 0, assists: 0 },
+  { id: 'v-20', number: 98, name: 'Visitor Player 20', goals: 0, assists: 0 },
 ];

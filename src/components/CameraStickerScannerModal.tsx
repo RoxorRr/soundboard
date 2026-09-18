@@ -424,7 +424,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
       onUpdateAllPlayers(updatedList);
     }
 
-    setSuccessMessage(`Successfully saved all 15 player names into all roster slots!`);
+    setSuccessMessage(`Successfully saved all ${slotDrafts.length} player names into all roster slots!`);
     setTimeout(() => {
       onClose();
     }, 1200);
@@ -477,11 +477,11 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
               <h2 className="text-sm sm:text-base font-bold text-white font-athletic uppercase tracking-wider flex items-center gap-2">
                 Sticker File & Roster Scanner
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                  ALL 15 SLOTS
+                  ALL {players.length} SLOTS
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Populate 15 player slots for <strong className="text-slate-200">{teamName}</strong> from sticker sheet, photo, or document
+                Populate all {players.length} player slots for <strong className="text-slate-200">{teamName}</strong> from sticker sheet, photo, or document
               </p>
             </div>
           </div>
@@ -508,7 +508,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Fill All 15 Slots</span>
+              <span>Fill All {players.length} Slots</span>
             </button>
             <button
               type="button"
@@ -633,7 +633,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
 
                   <div className="mt-3 flex items-center gap-2 text-[11px] text-amber-300/80 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Gemini AI automatically extracts all 15 player names & numbers</span>
+                    <span>Gemini AI automatically extracts all {players.length} player names & numbers</span>
                   </div>
                 </div>
               )}
@@ -799,7 +799,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                       <Layers className="w-4 h-4" />
-                      <span>15 Roster Slots Mapping:</span>
+                      <span>{players.length} Roster Slots Mapping:</span>
                     </p>
                     <button
                       type="button"
@@ -870,7 +870,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
                   {/* Primary Save All Button */}
                   <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
                     <p className="text-[11px] text-slate-400 hidden sm:block">
-                      Clicking save will update all 15 player names and jersey numbers immediately.
+                      Clicking save will update all {slotDrafts.length} player names and jersey numbers immediately.
                     </p>
                     <button
                       type="button"

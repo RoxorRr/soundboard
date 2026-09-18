@@ -77,7 +77,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
             <Users className={`w-5 h-5 ${isVisitor ? 'text-rose-400' : 'text-amber-400'}`} />
             <div>
               <h2 className="text-base font-bold text-white font-athletic uppercase tracking-wider">
-                Edit 15-Player Roster
+                Edit {editedList.length}-Player Roster
               </h2>
               <p className="text-[11px] text-slate-400">
                 {currentTeamName}
@@ -126,7 +126,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
                 <Sparkles className={`w-4 h-4 ${isVisitor ? 'text-rose-400' : 'text-amber-400'} shrink-0`} />
                 <div>
                   <p className={`text-xs font-bold ${isVisitor ? 'text-rose-300' : 'text-amber-300'} flex items-center gap-1.5`}>
-                    <span>Scan Sticker File into All 15 Slots</span>
+                    <span>Scan Sticker File into All {editedList.length} Slots</span>
                   </p>
                   <p className="text-[11px] text-slate-400">
                     Upload or snap a sticker sheet to automatically populate all player names and numbers.
@@ -149,7 +149,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
 
           <div className="flex items-center justify-between pt-1">
             <p className="text-xs text-slate-400">
-              Customize any of the 15 players or use the camera icon on individual slots:
+              Customize any of the {editedList.length} players or use the camera icon on individual slots:
             </p>
           </div>
 

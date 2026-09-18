@@ -1,27 +1,42 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ScoreboardHeader } from './components/ScoreboardHeader';
 import { PlayerTrackerRow } from './components/PlayerTrackerRow';
 import { EditRosterModal } from './components/EditRosterModal';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { CameraStickerScannerModal } from './components/CameraStickerScannerModal';
+import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, Sparkles } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw } from 'lucide-react';
 
-const HOME_STORAGE_KEY = 'pelham_pelicans_players_v1';
-const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v1';
+const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
+const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
+const LEGACY_HOME_STORAGE_KEY = 'pelham_pelicans_players_v1';
+const LEGACY_VISITOR_STORAGE_KEY = 'pelham_visitor_players_v1';
 const VISITOR_NAME_KEY = 'pelham_visitor_team_name';
 
 export default function App() {
-  // Home (Pelham Pelicans) 15 players state with local persistence
+  // Home (Pelham Pelicans) 20 players state with local persistence
   const [homePlayers, setHomePlayers] = useState<Player[]>(() => {
     try {
-      const saved = localStorage.getItem(HOME_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length === 15) {
+      const savedV2 = localStorage.getItem(HOME_STORAGE_KEY);
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_PELHAM_PLAYERS.length) {
           return parsed;
+        }
+      }
+      // Migrate from v1 storage to preserve custom names & scores while adding the 5 new rows
+      const savedV1 = localStorage.getItem(LEGACY_HOME_STORAGE_KEY);
+      if (savedV1) {
+        const parsedV1 = JSON.parse(savedV1);
+        if (Array.isArray(parsedV1) && parsedV1.length > 0) {
+          const existingIds = new Set(parsedV1.map((p: Player) => p.id));
+          const newRows = DEFAULT_PELHAM_PLAYERS.filter((p) => !existingIds.has(p.id));
+          const merged = [...parsedV1, ...newRows];
+          if (merged.length === DEFAULT_PELHAM_PLAYERS.length) {
+            return merged;
+          }
         }
       }
     } catch (e) {
@@ -30,14 +45,27 @@ export default function App() {
     return DEFAULT_PELHAM_PLAYERS;
   });
 
-  // Visitor 15 players state with local persistence
+  // Visitor 20 players state with local persistence
   const [visitorPlayers, setVisitorPlayers] = useState<Player[]>(() => {
     try {
-      const saved = localStorage.getItem(VISITOR_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length === 15) {
+      const savedV2 = localStorage.getItem(VISITOR_STORAGE_KEY);
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_VISITOR_PLAYERS.length) {
           return parsed;
+        }
+      }
+      // Migrate from v1 storage to preserve custom names & scores while adding the 5 new rows
+      const savedV1 = localStorage.getItem(LEGACY_VISITOR_STORAGE_KEY);
+      if (savedV1) {
+        const parsedV1 = JSON.parse(savedV1);
+        if (Array.isArray(parsedV1) && parsedV1.length > 0) {
+          const existingIds = new Set(parsedV1.map((p: Player) => p.id));
+          const newRows = DEFAULT_VISITOR_PLAYERS.filter((p) => !existingIds.has(p.id));
+          const merged = [...parsedV1, ...newRows];
+          if (merged.length === DEFAULT_VISITOR_PLAYERS.length) {
+            return merged;
+          }
         }
       }
     } catch (e) {
@@ -61,6 +89,8 @@ export default function App() {
 
   // Active Team Tab ('home' = Pelham Pelicans | 'visitor' = Visitor Team)
   const [activeTeamTab, setActiveTeamTab] = useState<'home' | 'visitor'>('home');
+  // Active Navigation Tab ('home' | 'visitor' | 'settings')
+  const [currentTab, setCurrentTab] = useState<'home' | 'visitor' | 'settings'>('home');
 
   // Visitor team inline rename state
   const [isEditingVisitorName, setIsEditingVisitorName] = useState(false);
@@ -438,53 +468,38 @@ export default function App() {
 
   return (
     <div className="h-screen max-h-screen w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none">
-      {/* Top Header Bar */}
-      <ScoreboardHeader
-        totalGoals={activeGoals}
-        totalAssists={activeAssists}
-        activeTeamName={activeTeamName}
-        isVisitor={isVisitor}
-        currentAnnouncement={currentAnnouncement}
-        isAnnouncing={isAnnouncing}
-        voiceStatus={voiceStatus}
-        voiceFeedback={voiceFeedback}
-        isMuted={isMuted}
-        onToggleMute={handleToggleMute}
-        onReplayAnnouncement={handleReplayAnnouncement}
-        onTestVoice={handleTestVoice}
-        onOpenRosterModal={() => setIsRosterModalOpen(true)}
-        onOpenResetModal={() => setIsResetModalOpen(true)}
-        onOpenScannerModal={() => handleOpenScanner()}
-      />
-
-      {/* Clean & Simple Team Switcher Tab Bar */}
+      {/* Clean & Compact Navigation Bar with Team Tabs and Settings */}
       <nav
-        aria-label="Team Navigation"
-        className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 shrink-0 select-none shadow-sm"
+        aria-label="Main Navigation"
+        className="bg-slate-900 border-b border-slate-800 px-2.5 sm:px-3 py-1.5 flex items-center justify-between gap-2 shrink-0 select-none shadow-sm"
       >
-        {/* Left: Two Clear Team Tabs */}
-        <div className="flex items-center gap-2">
+        {/* Left: Team Tabs & Settings Tab */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* TAB 1: Pelham Pelicans */}
           <button
             id="tab-home-pelham"
-            onClick={() => setActiveTeamTab('home')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-2 transition-all ${
-              activeTeamTab === 'home'
+            onClick={() => {
+              setActiveTeamTab('home');
+              setCurrentTab('home');
+            }}
+            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+              currentTab === 'home'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-300'
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
             }`}
           >
             <span
               className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
-                activeTeamTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
+                currentTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
               }`}
             >
               PP
             </span>
-            <span>Pelham Pelicans</span>
+            <span className="hidden xs:inline sm:inline">Pelham Pelicans</span>
+            <span className="xs:hidden sm:hidden inline">Pelham</span>
             <span
-              className={`ml-1 px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
-                activeTeamTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-950/60 text-slate-300'
+              className={`ml-0.5 sm:ml-1 px-1.5 sm:px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
+                currentTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-950/60 text-slate-300'
               }`}
             >
               {homeGoals}
@@ -494,141 +509,243 @@ export default function App() {
           {/* TAB 2: Visitor Team */}
           <button
             id="tab-visitor-team"
-            onClick={() => setActiveTeamTab('visitor')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-2 transition-all ${
-              activeTeamTab === 'visitor'
+            onClick={() => {
+              setActiveTeamTab('visitor');
+              setCurrentTab('visitor');
+            }}
+            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+              currentTab === 'visitor'
                 ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-500/20 ring-1 ring-rose-300'
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
             }`}
           >
             <span
               className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
-                activeTeamTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
+                currentTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
               }`}
             >
               VT
             </span>
-            <span className="truncate max-w-[130px] sm:max-w-[200px]">
+            <span className="truncate max-w-[90px] sm:max-w-[170px]">
               {visitorTeamName}
             </span>
             <span
-              className={`ml-1 px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
-                activeTeamTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-950/60 text-slate-300'
+              className={`ml-0.5 sm:ml-1 px-1.5 sm:px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
+                currentTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-950/60 text-slate-300'
               }`}
             >
               {visitorGoals}
             </span>
           </button>
+
+          {/* TAB 3: Settings Tab */}
+          <button
+            id="tab-settings"
+            onClick={() => setCurrentTab('settings')}
+            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+              currentTab === 'settings'
+                ? 'bg-slate-100 text-slate-950 shadow-md shadow-white/10 ring-1 ring-slate-200'
+                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
+            }`}
+          >
+            <Settings className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${currentTab === 'settings' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>Settings</span>
+          </button>
         </div>
 
-        {/* Right: Live Match Scoreboard Pill */}
-        <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-          <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Score:</span>
-          <span className="font-athletic font-bold text-amber-400">PELHAM {homeGoals}</span>
-          <span className="text-slate-600 font-bold">-</span>
-          <span className="font-athletic font-bold text-rose-400">{visitorGoals} {visitorTeamName.toUpperCase()}</span>
+        {/* Right: Quick Controls on Nav */}
+        <div className="flex items-center gap-2">
+          {/* Announcement Snippet Pill (shown when not in settings and announcement exists) */}
+          {currentAnnouncement && currentTab !== 'settings' && (
+            <div
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs max-w-[240px] xl:max-w-xs truncate transition-all ${
+                isAnnouncing
+                  ? 'bg-amber-950/50 border-amber-500/60 text-amber-300 shadow-sm shadow-amber-500/20'
+                  : 'bg-slate-950/90 border-slate-800 text-slate-300'
+              }`}
+            >
+              <Radio className={`w-3 h-3 shrink-0 ${isAnnouncing ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
+              <span className="truncate text-[11px] font-medium">&ldquo;{currentAnnouncement.text}&rdquo;</span>
+              <button
+                onClick={handleReplayAnnouncement}
+                disabled={isAnnouncing}
+                className="ml-1 p-0.5 rounded hover:bg-slate-800 hover:text-white text-slate-400 shrink-0 transition-colors"
+                title="Replay Announcement"
+              >
+                <RefreshCw className={`w-3 h-3 ${isAnnouncing ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          )}
+
+          {/* Quick Mute/Unmute toggle */}
+          <button
+            id="nav-mute-toggle-btn"
+            onClick={handleToggleMute}
+            className={`p-1.5 sm:px-2 sm:py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              isMuted
+                ? 'bg-red-500/20 text-red-300 border-red-500/40 hover:bg-red-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isMuted ? 'Audio Muted - Click to Unmute' : 'Audio Active - Click to Mute'}
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                <span className="hidden xl:inline text-[11px]">Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="hidden xl:inline text-[11px]">Sound On</span>
+              </>
+            )}
+          </button>
+
+          {/* Live Match Scoreboard Pill */}
+          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs shrink-0">
+            <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Score:</span>
+            <span className="font-athletic font-bold text-amber-400">PELHAM {homeGoals}</span>
+            <span className="text-slate-600 font-bold">-</span>
+            <span className="font-athletic font-bold text-rose-400">{visitorGoals} {visitorTeamName.toUpperCase()}</span>
+          </div>
         </div>
       </nav>
 
-      {/* Visitor Team Editable Banner (Shown when Visitor Tab is active) */}
-      {isVisitor && (
-        <div className="bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-slate-950/90 border-b border-rose-500/30 px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider font-athletic shrink-0">
-              Visitor Team:
-            </span>
-
-            {isEditingVisitorName ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSaveVisitorName();
-                }}
-                className="flex items-center gap-1.5 flex-1 max-w-sm"
-              >
-                <input
-                  type="text"
-                  value={tempVisitorName}
-                  onChange={(e) => setTempVisitorName(e.target.value)}
-                  placeholder="e.g. Grimsby Kings, Thorold Blackhawks"
-                  className="bg-slate-800 text-white font-bold text-xs sm:text-sm px-2.5 py-1 rounded-md border border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400 w-full"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="px-2.5 py-1 rounded-md bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTempVisitorName(visitorTeamName);
-                    setIsEditingVisitorName(false);
-                  }}
-                  className="px-2 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white text-xs shrink-0 transition-colors"
-                >
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm sm:text-base font-black text-white uppercase font-athletic tracking-wide truncate">
-                  {visitorTeamName}
+      {/* Conditionally Render Settings Tab OR Arena Tracker */}
+      {currentTab === 'settings' ? (
+        <SettingsView
+          homePlayers={homePlayers}
+          visitorPlayers={visitorPlayers}
+          visitorTeamName={visitorTeamName}
+          onUpdateVisitorName={setVisitorTeamName}
+          homeGoals={homeGoals}
+          homeAssists={homeAssists}
+          visitorGoals={visitorGoals}
+          visitorAssists={visitorAssists}
+          activeTeamTab={activeTeamTab}
+          onSelectTeamTab={(team) => {
+            setActiveTeamTab(team);
+            setCurrentTab(team);
+          }}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+          voiceStatus={voiceStatus}
+          voiceFeedback={voiceFeedback}
+          currentAnnouncement={currentAnnouncement}
+          isAnnouncing={isAnnouncing}
+          onReplayAnnouncement={handleReplayAnnouncement}
+          onTestVoice={handleTestVoice}
+          onOpenRosterModal={(team) => {
+            if (team) setActiveTeamTab(team);
+            setIsRosterModalOpen(true);
+          }}
+          onOpenScannerModal={(team) => {
+            if (team) setActiveTeamTab(team);
+            handleOpenScanner();
+          }}
+          onOpenResetModal={() => setIsResetModalOpen(true)}
+        />
+      ) : (
+        <>
+          {/* Visitor Team Editable Banner (Shown when Visitor Tab is active) */}
+          {isVisitor && (
+            <div className="bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-slate-950/90 border-b border-rose-500/30 px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider font-athletic shrink-0">
+                  Visitor Team:
                 </span>
-                <button
-                  onClick={() => {
-                    setTempVisitorName(visitorTeamName);
-                    setIsEditingVisitorName(true);
-                  }}
-                  className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 flex items-center gap-1 text-xs transition-colors"
-                  title="Edit visitor team name"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium hidden sm:inline">Rename</span>
-                </button>
+
+                {isEditingVisitorName ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSaveVisitorName();
+                    }}
+                    className="flex items-center gap-1.5 flex-1 max-w-sm"
+                  >
+                    <input
+                      type="text"
+                      value={tempVisitorName}
+                      onChange={(e) => setTempVisitorName(e.target.value)}
+                      placeholder="e.g. Grimsby Kings, Thorold Blackhawks"
+                      className="bg-slate-800 text-white font-bold text-xs sm:text-sm px-2.5 py-1 rounded-md border border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400 w-full"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      className="px-2.5 py-1 rounded-md bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempVisitorName(visitorTeamName);
+                        setIsEditingVisitorName(false);
+                      }}
+                      className="px-2 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white text-xs shrink-0 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm sm:text-base font-black text-white uppercase font-athletic tracking-wide truncate">
+                      {visitorTeamName}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setTempVisitorName(visitorTeamName);
+                        setIsEditingVisitorName(true);
+                      }}
+                      className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 flex items-center gap-1 text-xs transition-colors"
+                      title="Edit visitor team name"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span className="text-[11px] font-medium hidden sm:inline">Rename</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 shrink-0">
-            <Sparkles className="w-3 h-3 text-rose-400" />
-            <span>Audio Announcement:</span>
-            <span className="text-rose-300 font-medium">
-              &ldquo;{visitorTeamName} goal! Scored by...&rdquo;
-            </span>
-          </div>
-        </div>
-      )}
+              <div className="text-[11px] text-slate-400 flex items-center gap-1.5 shrink-0">
+                <Sparkles className="w-3 h-3 text-rose-400" />
+                <span>Audio Announcement:</span>
+                <span className="text-rose-300 font-medium">
+                  &ldquo;{visitorTeamName} goal! Scored by...&rdquo;
+                </span>
+              </div>
+            </div>
+          )}
 
-      {/* Mobile Sub-Tab Switcher (Goals vs Assists on mobile) */}
-      <div className="lg:hidden flex border-b border-slate-800 bg-slate-900/95 shrink-0 px-2 py-1.5 gap-2">
-        <button
-          onClick={() => setMobileTab('goals')}
-          className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-            mobileTab === 'goals'
-              ? isVisitor
-                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                : 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          <Flame className="w-4 h-4" />
-          <span>GOALS ({activeGoals})</span>
-        </button>
-        <button
-          onClick={() => setMobileTab('assists')}
-          className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-            mobileTab === 'assists'
-              ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>ASSISTS ({activeAssists})</span>
-        </button>
-      </div>
+          {/* Mobile Sub-Tab Switcher (Goals vs Assists on mobile) */}
+          <div className="lg:hidden flex border-b border-slate-800 bg-slate-900/95 shrink-0 px-2 py-1.5 gap-2">
+            <button
+              onClick={() => setMobileTab('goals')}
+              className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                mobileTab === 'goals'
+                  ? isVisitor
+                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                    : 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Flame className="w-4 h-4" />
+              <span>GOALS ({activeGoals})</span>
+            </button>
+            <button
+              onClick={() => setMobileTab('assists')}
+              className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                mobileTab === 'assists'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Award className="w-4 h-4" />
+              <span>ASSISTS ({activeAssists})</span>
+            </button>
+          </div>
 
       {/* Main Fit-to-Screen Arena Split Board */}
       <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 overflow-hidden">
@@ -663,7 +780,7 @@ export default function App() {
                 >
                   Goals Tracker
                   <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                    ({activeTeamName} • 15 players)
+                    ({activeTeamName} • {activePlayers.length} players)
                   </span>
                 </h2>
                 <p className="text-[10px] text-slate-400">
@@ -693,7 +810,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* 15 Player Rows for Goals - Engineered to fit on screen */}
+          {/* Player Rows for Goals - Engineered to fit on screen */}
           <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 custom-scrollbar">
             {activePlayers.map((player, idx) => (
               <PlayerTrackerRow
@@ -728,7 +845,7 @@ export default function App() {
                 <h2 className="text-sm sm:text-base font-black tracking-wider text-sky-400 uppercase font-athletic flex items-center gap-1.5">
                   Assists Tracker
                   <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                    ({activeTeamName} • 15 players)
+                    ({activeTeamName} • {activePlayers.length} players)
                   </span>
                 </h2>
                 <p className="text-[10px] text-slate-400">
@@ -750,7 +867,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* 15 Player Rows for Assists - Engineered to fit on screen */}
+          {/* Player Rows for Assists - Engineered to fit on screen */}
           <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 custom-scrollbar">
             {activePlayers.map((player, idx) => (
               <PlayerTrackerRow
@@ -768,6 +885,8 @@ export default function App() {
           </div>
         </section>
       </main>
+        </>
+      )}
 
       {/* Roster Modal */}
       <EditRosterModal
