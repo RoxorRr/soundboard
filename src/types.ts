@@ -38,3 +38,14 @@ export interface StickerScanResult {
   confidence?: 'high' | 'medium' | 'low';
   notes?: string;
 }
+
+export interface ElevenLabsVoiceSettings {
+  voiceId: string;
+  speed: number;
+  pitchCents: number;
+  stability: number;
+  similarity_boost: number;
+  style: number;
+  use_speaker_boost: boolean;
+}
+

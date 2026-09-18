@@ -29,7 +29,7 @@ export default async function handler(req: any, res: any) {
     }
     body = body || {};
 
-    const { text, voiceId: reqVoiceId, format: reqFormat } = body;
+    const { text, voiceId: reqVoiceId, format: reqFormat, voiceSettings: customSettings } = body;
     if (!text || typeof text !== "string") {
       res.status(400).json({ error: "Missing or invalid 'text' in request body", fallback: true });
       return;
@@ -46,6 +46,13 @@ export default async function handler(req: any, res: any) {
       });
       return;
     }
+
+    // Parse fine-tuned voice parameters
+    const speed = typeof customSettings?.speed === "number" ? Math.max(0.7, Math.min(1.25, customSettings.speed)) : 1.0;
+    const stability = typeof customSettings?.stability === "number" ? Math.max(0.0, Math.min(1.0, customSettings.stability)) : 0.45;
+    const similarityBoost = typeof customSettings?.similarity_boost === "number" ? Math.max(0.0, Math.min(1.0, customSettings.similarity_boost)) : 0.85;
+    const style = typeof customSettings?.style === "number" ? Math.max(0.0, Math.min(1.0, customSettings.style)) : 0.60;
+    const useSpeakerBoost = typeof customSettings?.use_speaker_boost === "boolean" ? customSettings.use_speaker_boost : true;
 
     // Build voice candidates: user requested -> env configured -> custom NHL Pelham -> universal premade voices
     const userVoiceId = reqVoiceId && reqVoiceId.toLowerCase() !== "nhl" ? reqVoiceId.trim() : null;
@@ -70,24 +77,41 @@ export default async function handler(req: any, res: any) {
 
     for (const candidate of uniqueCandidates) {
       try {
-        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
+        const payload: Record<string, any> = {
+          text,
+          model_id: "eleven_turbo_v2_5",
+          voice_settings: {
+            stability,
+            similarity_boost: similarityBoost,
+            style,
+            use_speaker_boost: useSpeakerBoost,
+            speed
+          }
+        };
+
+        let response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
           method: "POST",
           headers: {
             "xi-api-key": apiKey,
             "Content-Type": "application/json",
             "Accept": "audio/mpeg"
           },
-          body: JSON.stringify({
-            text,
-            model_id: "eleven_turbo_v2_5",
-            voice_settings: {
-              stability: 0.45,
-              similarity_boost: 0.85,
-              style: 0.60,
-              use_speaker_boost: true
-            }
-          })
+          body: JSON.stringify(payload)
         });
+
+        // If ElevenLabs model/voice rejects the 'speed' property (400 validation error), retry without speed
+        if (response.status === 400 && payload.voice_settings.speed !== undefined) {
+          delete payload.voice_settings.speed;
+          response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
+            method: "POST",
+            headers: {
+              "xi-api-key": apiKey,
+              "Content-Type": "application/json",
+              "Accept": "audio/mpeg"
+            },
+            body: JSON.stringify(payload)
+          });
+        }
 
         if (response.ok) {
           successfulAudioBuffer = await response.arrayBuffer();

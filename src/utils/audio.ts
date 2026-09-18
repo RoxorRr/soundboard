@@ -1,10 +1,21 @@
 // Professional Web Audio Arena sound engine and ElevenLabs TTS player
+import { ElevenLabsVoiceSettings } from '../types';
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'webspeech';
   voiceId?: string;
   error?: string;
 }
+
+export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  voiceId: '6j98Cb2txyqvHRXeRQYZ', // Pelham Custom NHL Voice
+  speed: 1.05,
+  pitchCents: 0,
+  stability: 0.45,
+  similarity_boost: 0.85,
+  style: 0.60,
+  use_speaker_boost: true
+};
 
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
@@ -16,10 +27,19 @@ class SoundEngine {
   private isUnlocked: boolean = false;
   private htmlAudio: HTMLAudioElement | null = null;
   private htmlAudioUnlocked: boolean = false;
+  private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
 
   constructor() {
-    // Auto-unlock on first user interaction anywhere in the window
+    // Restore persistent voice settings from localStorage if available
     if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('pelham_voice_settings');
+        if (saved) {
+          this.voiceSettings = { ...DEFAULT_VOICE_SETTINGS, ...JSON.parse(saved) };
+        }
+      } catch (_) {}
+
+      // Auto-unlock on first user interaction anywhere in the window
       const unlockEvents = ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown'];
       const onUserInteraction = () => {
         this.unlock();
@@ -27,6 +47,20 @@ class SoundEngine {
       };
       unlockEvents.forEach((ev) => window.addEventListener(ev, onUserInteraction, { passive: true }));
     }
+  }
+
+  public getVoiceSettings(): ElevenLabsVoiceSettings {
+    return { ...this.voiceSettings };
+  }
+
+  public setVoiceSettings(newSettings: Partial<ElevenLabsVoiceSettings>): ElevenLabsVoiceSettings {
+    this.voiceSettings = { ...this.voiceSettings, ...newSettings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_voice_settings', JSON.stringify(this.voiceSettings));
+      } catch (_) {}
+    }
+    return { ...this.voiceSettings };
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -154,8 +188,23 @@ class SoundEngine {
     // Disabled per user preference
   }
 
-  // Play audio from base64 string using HTML5 Audio (fastest, most reliable for mp3 in Safari/iOS)
-  private async playBase64Audio(base64: string): Promise<boolean> {
+  // Play audio from base64 string using HTML5 Audio or Web Audio for pitch tuning
+  private async playBase64Audio(base64: string, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
+    // If pitch shifting is requested, Web Audio API provides hardware-accelerated detune
+    if (typeof pitchCents === 'number' && pitchCents !== 0) {
+      try {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return await this.playWebAudio(bytes.buffer, pitchCents);
+      } catch (err) {
+        console.warn('Web Audio pitch shift failed, falling back to standard audio:', err);
+      }
+    }
+
     const dataUrl = `data:audio/mpeg;base64,${base64}`;
 
     // METHOD A: Pre-unlocked HTMLAudioElement
@@ -201,7 +250,7 @@ class SoundEngine {
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      return await this.playWebAudio(bytes.buffer);
+      return await this.playWebAudio(bytes.buffer, pitchCents);
     } catch (webAudioErr) {
       console.warn('Web Audio playback also failed:', webAudioErr);
       return false;
@@ -209,7 +258,11 @@ class SoundEngine {
   }
 
   // Play audio from binary ArrayBuffer
-  private async playArrayBuffer(arrayBuffer: ArrayBuffer): Promise<boolean> {
+  private async playArrayBuffer(arrayBuffer: ArrayBuffer, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
+    if (typeof pitchCents === 'number' && pitchCents !== 0) {
+      return await this.playWebAudio(arrayBuffer, pitchCents);
+    }
+
     // METHOD A: Blob Object URL with HTMLAudioElement
     try {
       const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
@@ -253,11 +306,11 @@ class SoundEngine {
     }
 
     // METHOD B: Web Audio API
-    return await this.playWebAudio(arrayBuffer);
+    return await this.playWebAudio(arrayBuffer, pitchCents);
   }
 
-  // Web Audio buffer source playback
-  private async playWebAudio(arrayBuffer: ArrayBuffer): Promise<boolean> {
+  // Web Audio buffer source playback with pitch detune support
+  private async playWebAudio(arrayBuffer: ArrayBuffer, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
     try {
       const ctx = this.getAudioContext();
       if (ctx.state === 'suspended') {
@@ -268,6 +321,14 @@ class SoundEngine {
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
+
+      // Apply pitch detune if set (cents: 100 cents = 1 semitone)
+      if (source.detune && typeof pitchCents === 'number' && pitchCents !== 0) {
+        try {
+          source.detune.setValueAtTime(pitchCents, ctx.currentTime);
+        } catch (_) {}
+      }
+
       source.connect(this.masterGain || ctx.destination);
       this.currentSource = source;
 
@@ -293,11 +354,25 @@ class SoundEngine {
     }
   }
 
-  // Announce text using ElevenLabs voice with multi-strategy fallback
-  public async announce(text: string, voiceId = 'nhl'): Promise<AnnounceResult> {
+  // Announce text using ElevenLabs voice with custom speed, pitch, stability, and voice parameters
+  public async announce(
+    text: string,
+    overrideVoiceId?: string,
+    overrideSettings?: Partial<ElevenLabsVoiceSettings>
+  ): Promise<AnnounceResult> {
     if (this.isMuted) {
       return { source: 'webspeech' };
     }
+
+    const settings: ElevenLabsVoiceSettings = {
+      ...this.voiceSettings,
+      ...(overrideSettings || {})
+    };
+
+    const effectiveVoiceId =
+      overrideVoiceId && overrideVoiceId !== 'nhl'
+        ? overrideVoiceId
+        : settings.voiceId || 'nhl';
 
     this.unlock();
     this.stopAll();
@@ -310,7 +385,18 @@ class SoundEngine {
           'Content-Type': 'application/json',
           'Accept': 'application/json, audio/mpeg, */*'
         },
-        body: JSON.stringify({ text, voiceId, format: 'base64' })
+        body: JSON.stringify({
+          text,
+          voiceId: effectiveVoiceId,
+          voiceSettings: {
+            speed: settings.speed,
+            stability: settings.stability,
+            similarity_boost: settings.similarity_boost,
+            style: settings.style,
+            use_speaker_boost: settings.use_speaker_boost
+          },
+          format: 'base64'
+        })
       });
 
       const contentType = response.headers.get('content-type') || '';
@@ -320,7 +406,7 @@ class SoundEngine {
         const data = await response.json();
 
         if (data.success && data.audioBase64) {
-          const played = await this.playBase64Audio(data.audioBase64);
+          const played = await this.playBase64Audio(data.audioBase64, settings.pitchCents);
           if (played) {
             return { source: 'elevenlabs', voiceId: data.voiceId };
           }
@@ -329,7 +415,7 @@ class SoundEngine {
         // Server returned fallback or error info
         const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Voice synthesis failed');
         console.warn('TTS server fallback active:', errorMsg, data);
-        this.speakWebSpeech(text);
+        this.speakWebSpeech(text, settings);
         return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
       }
 
@@ -338,7 +424,7 @@ class SoundEngine {
         const arrayBuffer = await response.arrayBuffer();
         const headerVoice = response.headers.get('x-elevenlabs-voice') || undefined;
 
-        const played = await this.playArrayBuffer(arrayBuffer);
+        const played = await this.playArrayBuffer(arrayBuffer, settings.pitchCents);
         if (played) {
           return { source: 'elevenlabs', voiceId: headerVoice };
         }
@@ -346,17 +432,17 @@ class SoundEngine {
 
       // If unexpected response
       console.warn('Unexpected TTS response format:', contentType);
-      this.speakWebSpeech(text);
+      this.speakWebSpeech(text, settings);
       return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('ElevenLabs API request failed, falling back to Web Speech API:', err);
-      this.speakWebSpeech(text);
+      this.speakWebSpeech(text, settings);
       return { source: 'webspeech', error: err?.message || 'Network error during voice playback' };
     }
   }
 
-  // Web Speech API with anti-GC protection and resume
-  private speakWebSpeech(text: string) {
+  // Web Speech API with rate and pitch controls matching ElevenLabs settings
+  private speakWebSpeech(text: string, settings = this.voiceSettings) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
 
     try {
@@ -366,8 +452,11 @@ class SoundEngine {
       }
 
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.1;
+      utterance.rate = Math.max(0.7, Math.min(1.4, settings.speed));
+
+      // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
+      const pitchOffset = settings.pitchCents / 1000;
+      utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
 
       // Fix for Chromium garbage-collection bug where synthesis stops early
       (window as any).__lastUtterance = utterance;
