@@ -1,0 +1,6 @@
+{
+  "name": "Pelham Pelicans Hockey Tracker",
+  "description": "Screen-fit hockey tracker for Pelham Pelicans and visitor teams with custom team voice announcements, 15-player rosters, and AI sticker scanner.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

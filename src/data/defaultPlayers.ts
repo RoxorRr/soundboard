@@ -1,0 +1,37 @@
+import { Player } from '../types';
+
+export const DEFAULT_PELHAM_PLAYERS: Player[] = [
+  { id: 'p-1', number: 12, name: 'Adrian Repka', goals: 0, assists: 0 },
+  { id: 'p-2', number: 17, name: 'Maklin Kunka', goals: 0, assists: 0 },
+  { id: 'p-3', number: 4, name: 'Liam Carter', goals: 0, assists: 0 },
+  { id: 'p-4', number: 7, name: 'Owen Miller', goals: 0, assists: 0 },
+  { id: 'p-5', number: 8, name: 'Connor Hughes', goals: 0, assists: 0 },
+  { id: 'p-6', number: 9, name: 'Noah Smith', goals: 0, assists: 0 },
+  { id: 'p-7', number: 10, name: 'Ethan Davies', goals: 0, assists: 0 },
+  { id: 'p-8', number: 11, name: 'Lucas Brown', goals: 0, assists: 0 },
+  { id: 'p-9', number: 14, name: 'Cole Anderson', goals: 0, assists: 0 },
+  { id: 'p-10', number: 19, name: 'Mason Taylor', goals: 0, assists: 0 },
+  { id: 'p-11', number: 22, name: 'Jackson White', goals: 0, assists: 0 },
+  { id: 'p-12', number: 27, name: 'Caleb Wilson', goals: 0, assists: 0 },
+  { id: 'p-13', number: 33, name: 'Logan Martin', goals: 0, assists: 0 },
+  { id: 'p-14', number: 44, name: 'Dylan Harris', goals: 0, assists: 0 },
+  { id: 'p-15', number: 77, name: 'Ryan Thompson', goals: 0, assists: 0 },
+];
+
+export const DEFAULT_VISITOR_PLAYERS: Player[] = [
+  { id: 'v-1', number: 2, name: 'Visitor Player 1', goals: 0, assists: 0 },
+  { id: 'v-2', number: 5, name: 'Visitor Player 2', goals: 0, assists: 0 },
+  { id: 'v-3', number: 7, name: 'Visitor Player 3', goals: 0, assists: 0 },
+  { id: 'v-4', number: 8, name: 'Visitor Player 4', goals: 0, assists: 0 },
+  { id: 'v-5', number: 9, name: 'Visitor Player 5', goals: 0, assists: 0 },
+  { id: 'v-6', number: 10, name: 'Visitor Player 6', goals: 0, assists: 0 },
+  { id: 'v-7', number: 11, name: 'Visitor Player 7', goals: 0, assists: 0 },
+  { id: 'v-8', number: 14, name: 'Visitor Player 8', goals: 0, assists: 0 },
+  { id: 'v-9', number: 16, name: 'Visitor Player 9', goals: 0, assists: 0 },
+  { id: 'v-10', number: 19, name: 'Visitor Player 10', goals: 0, assists: 0 },
+  { id: 'v-11', number: 21, name: 'Visitor Player 11', goals: 0, assists: 0 },
+  { id: 'v-12', number: 24, name: 'Visitor Player 12', goals: 0, assists: 0 },
+  { id: 'v-13', number: 29, name: 'Visitor Player 13', goals: 0, assists: 0 },
+  { id: 'v-14', number: 33, name: 'Visitor Player 14', goals: 0, assists: 0 },
+  { id: 'v-15', number: 88, name: 'Visitor Player 15', goals: 0, assists: 0 },
+];
