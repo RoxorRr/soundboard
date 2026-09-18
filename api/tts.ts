@@ -29,7 +29,7 @@ export default async function handler(req: any, res: any) {
     }
     body = body || {};
 
-    const { text, voiceId: reqVoiceId } = body;
+    const { text, voiceId: reqVoiceId, format: reqFormat } = body;
     if (!text || typeof text !== "string") {
       res.status(400).json({ error: "Missing or invalid 'text' in request body", fallback: true });
       return;
@@ -38,78 +38,132 @@ export default async function handler(req: any, res: any) {
     const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
     const envVoiceId = process.env.ELEVENLABS_VOICE_ID?.trim();
 
-    let voiceId = reqVoiceId?.trim();
-    if (!voiceId || voiceId.toLowerCase() === "nhl") {
-      voiceId = envVoiceId || "6j98Cb2txyqvHRXeRQYZ";
-    }
-
     if (!apiKey) {
       res.status(200).json({
         fallback: true,
-        message: "ELEVENLABS_API_KEY not set in environment. Falling back to local synthesizer.",
-        voiceId
+        error: "ELEVENLABS_API_KEY is not configured in environment variables",
+        voiceId: envVoiceId || "nhl"
       });
       return;
     }
 
-    let response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
-      method: "POST",
-      headers: {
-        "xi-api-key": apiKey,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg"
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_turbo_v2_5",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.85,
-          style: 0.60,
-          use_speaker_boost: true
-        }
-      })
-    });
+    // Build voice candidates: user requested -> env configured -> custom NHL Pelham -> universal premade voices
+    const userVoiceId = reqVoiceId && reqVoiceId.toLowerCase() !== "nhl" ? reqVoiceId.trim() : null;
+    const candidates: string[] = [];
+    if (userVoiceId) candidates.push(userVoiceId);
+    if (envVoiceId) candidates.push(envVoiceId);
+    // Custom Pelham NHL voice
+    candidates.push("6j98Cb2txyqvHRXeRQYZ");
+    // Universal premade ElevenLabs voices available on all free/paid accounts
+    candidates.push("pNInz6obpgDQGcFmaJgB"); // Adam (Deep male narrator / sports voice)
+    candidates.push("VR6AewLTigWG4xSOukaG"); // Arnold (Crisp male announcer)
+    candidates.push("ErXwobaYiN019PkySvjV"); // Antoni (Energetic youth announcer)
+    candidates.push("JBFqnCBsd6RMkjVDRZzb"); // George (Classic narrator)
 
-    if (!response.ok && response.status === 404 && envVoiceId && voiceId !== envVoiceId) {
-      console.warn(`Voice ${voiceId} failed with 404, falling back to ENV voice ${envVoiceId}`);
-      voiceId = envVoiceId;
-      response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "Content-Type": "application/json",
-          "Accept": "audio/mpeg"
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_turbo_v2_5",
-          voice_settings: {
-            stability: 0.45,
-            similarity_boost: 0.85,
-            style: 0.60,
-            use_speaker_boost: true
-          }
-        })
-      });
+    // Deduplicate
+    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+
+    let successfulAudioBuffer: ArrayBuffer | null = null;
+    let winningVoiceId = uniqueCandidates[0];
+    let lastStatus = 0;
+    let lastErrorDetails = "";
+
+    for (const candidate of uniqueCandidates) {
+      try {
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": apiKey,
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg"
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_turbo_v2_5",
+            voice_settings: {
+              stability: 0.45,
+              similarity_boost: 0.85,
+              style: 0.60,
+              use_speaker_boost: true
+            }
+          })
+        });
+
+        if (response.ok) {
+          successfulAudioBuffer = await response.arrayBuffer();
+          winningVoiceId = candidate;
+          break;
+        }
+
+        lastStatus = response.status;
+        lastErrorDetails = await response.text();
+
+        // If 404 (voice not found on this account), try next candidate
+        if (response.status === 404) {
+          console.warn(`ElevenLabs voice '${candidate}' not found (404), trying next voice candidate...`);
+          continue;
+        }
+
+        // If 401 (invalid key), 429 (quota exceeded), or 402, abort voice loop as it affects the entire account
+        if (response.status === 401 || response.status === 429 || response.status === 402) {
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`Error trying ElevenLabs voice '${candidate}':`, err?.message);
+        lastErrorDetails = err?.message || String(err);
+      }
     }
 
-    if (!response.ok) {
-      const errorDetails = await response.text();
-      console.warn(`ElevenLabs API returned status ${response.status}:`, errorDetails);
+    if (!successfulAudioBuffer) {
+      let userFriendlyError = "ElevenLabs speech synthesis failed";
+      if (lastStatus === 401) {
+        userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in Vercel.";
+      } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota")) {
+        userFriendlyError = "ElevenLabs character quota exceeded on your account. Falling back to local voice.";
+      } else if (lastStatus === 404) {
+        userFriendlyError = "ElevenLabs voice could not be loaded (404). Falling back to local voice.";
+      } else if (lastErrorDetails) {
+        try {
+          const parsed = JSON.parse(lastErrorDetails);
+          userFriendlyError = parsed.detail?.message || parsed.message || userFriendlyError;
+        } catch {
+          userFriendlyError = lastErrorDetails.slice(0, 160) || userFriendlyError;
+        }
+      }
+
       res.status(200).json({
         fallback: true,
-        error: `ElevenLabs request failed (${response.status})`,
-        details: errorDetails,
-        voiceId
+        error: userFriendlyError,
+        details: lastErrorDetails,
+        voiceId: winningVoiceId,
+        status: lastStatus
       });
       return;
     }
 
-    const audioBuffer = await response.arrayBuffer();
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-cache");
-    res.send(Buffer.from(audioBuffer));
+    const buffer = Buffer.from(successfulAudioBuffer);
+    const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
+
+    if (wantsBase64) {
+      res.status(200).json({
+        success: true,
+        audioBase64: buffer.toString("base64"),
+        mimeType: "audio/mpeg",
+        voiceId: winningVoiceId,
+        size: buffer.length
+      });
+      return;
+    }
+
+    // Binary streaming response with explicit content headers
+    res.writeHead(200, {
+      "Content-Type": "audio/mpeg",
+      "Content-Length": buffer.length.toString(),
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Access-Control-Allow-Origin": "*",
+      "X-ElevenLabs-Voice": winningVoiceId
+    });
+    res.end(buffer);
   } catch (err: any) {
     console.error("TTS endpoint error:", err);
     res.status(200).json({
@@ -118,3 +172,4 @@ export default async function handler(req: any, res: any) {
     });
   }
 }
+

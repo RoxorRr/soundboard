@@ -72,6 +72,19 @@ export default function App() {
   const [activeAnnouncePlayerId, setActiveAnnouncePlayerId] = useState<string | null>(null);
   const [currentAnnouncement, setCurrentAnnouncement] = useState<Announcement | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
+  const [voiceFeedback, setVoiceFeedback] = useState<{
+    message: string;
+    type: 'success' | 'warning' | 'info';
+  } | null>(null);
+
+  // Auto-dismiss voice feedback after 6 seconds
+  useEffect(() => {
+    if (!voiceFeedback) return;
+    const timer = setTimeout(() => {
+      setVoiceFeedback(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [voiceFeedback]);
 
   // Modals state
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
@@ -177,8 +190,18 @@ export default function App() {
       if (res.source) {
         setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
       }
-    } catch (err) {
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice notice: ${res.error}`,
+          type: 'warning'
+        });
+      }
+    } catch (err: any) {
       console.error('Goal announcement error:', err);
+      setVoiceFeedback({
+        message: err?.message || 'Goal announcement failed',
+        type: 'warning'
+      });
     } finally {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
@@ -234,8 +257,18 @@ export default function App() {
       if (res.source) {
         setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
       }
-    } catch (err) {
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice notice: ${res.error}`,
+          type: 'warning'
+        });
+      }
+    } catch (err: any) {
       console.error('Assist announcement error:', err);
+      setVoiceFeedback({
+        message: err?.message || 'Assist announcement failed',
+        type: 'warning'
+      });
     } finally {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
@@ -262,7 +295,18 @@ export default function App() {
     setIsAnnouncing(true);
     setActiveAnnouncePlayerId(currentAnnouncement.playerId);
     try {
-      await soundEngine.announce(currentAnnouncement.text, 'nhl');
+      const res = await soundEngine.announce(currentAnnouncement.text, 'nhl');
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice notice: ${res.error}`,
+          type: 'warning'
+        });
+      }
+    } catch (err: any) {
+      setVoiceFeedback({
+        message: err?.message || 'Replay failed',
+        type: 'warning'
+      });
     } finally {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
@@ -292,7 +336,31 @@ export default function App() {
     setActiveAnnouncePlayerId(testPlayer.id);
 
     try {
-      await soundEngine.announce(prompt, 'nhl');
+      const res = await soundEngine.announce(prompt, 'nhl');
+      if (res.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+      }
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice Notice: ${res.error}`,
+          type: 'warning'
+        });
+      } else if (res.source === 'elevenlabs') {
+        setVoiceFeedback({
+          message: `ElevenLabs voice playing (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
+      } else {
+        setVoiceFeedback({
+          message: 'Local browser voice playing',
+          type: 'info'
+        });
+      }
+    } catch (err: any) {
+      setVoiceFeedback({
+        message: err?.message || 'Voice test failed',
+        type: 'warning'
+      });
     } finally {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
@@ -379,6 +447,7 @@ export default function App() {
         currentAnnouncement={currentAnnouncement}
         isAnnouncing={isAnnouncing}
         voiceStatus={voiceStatus}
+        voiceFeedback={voiceFeedback}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
         onReplayAnnouncement={handleReplayAnnouncement}

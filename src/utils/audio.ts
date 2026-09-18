@@ -1,5 +1,11 @@
 // Professional Web Audio Arena sound engine and ElevenLabs TTS player
 
+export interface AnnounceResult {
+  source: 'elevenlabs' | 'webspeech';
+  voiceId?: string;
+  error?: string;
+}
+
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -8,11 +14,13 @@ class SoundEngine {
   private isMuted: boolean = false;
   private playSfx: boolean = true;
   private isUnlocked: boolean = false;
+  private htmlAudio: HTMLAudioElement | null = null;
+  private htmlAudioUnlocked: boolean = false;
 
   constructor() {
     // Auto-unlock on first user interaction anywhere in the window
     if (typeof window !== 'undefined') {
-      const unlockEvents = ['click', 'touchstart', 'keydown'];
+      const unlockEvents = ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown'];
       const onUserInteraction = () => {
         this.unlock();
         unlockEvents.forEach((ev) => window.removeEventListener(ev, onUserInteraction));
@@ -21,16 +29,49 @@ class SoundEngine {
     }
   }
 
-  // Explicitly unlock AudioContext during a user gesture
+  // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
   public unlock(): void {
+    if (typeof window === 'undefined') return;
+
     try {
+      // 1. Unlock Web Audio Context
       const ctx = this.getAudioContext();
       if (ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(() => {});
       }
+
+      // Play a micro silent buffer to clear mobile Safari/Chrome restrictions
+      try {
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+      } catch (_) {}
+
+      // 2. Pre-warm and unlock HTMLAudioElement for Vercel/mobile browsers
+      if (!this.htmlAudio && typeof Audio !== 'undefined') {
+        this.htmlAudio = new Audio();
+      }
+
+      if (this.htmlAudio && !this.htmlAudioUnlocked) {
+        // 1-frame silent WAV data URL
+        this.htmlAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        this.htmlAudio.volume = this.isMuted ? 0 : 1;
+        const playPromise = this.htmlAudio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              this.htmlAudio?.pause();
+              this.htmlAudioUnlocked = true;
+            })
+            .catch(() => {});
+        }
+      }
+
       this.isUnlocked = true;
 
-      // Resume SpeechSynthesis in case Chrome paused it
+      // 3. Resume SpeechSynthesis in case browser paused it
       if ('speechSynthesis' in window && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
@@ -50,7 +91,7 @@ class SoundEngine {
       this.masterGain.connect(this.audioCtx.destination);
     }
     if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+      this.audioCtx.resume().catch(() => {});
     }
     return this.audioCtx;
   }
@@ -59,6 +100,12 @@ class SoundEngine {
     this.isMuted = muted;
     if (this.masterGain && this.audioCtx) {
       this.masterGain.gain.setValueAtTime(muted ? 0 : 1, this.audioCtx.currentTime);
+    }
+    if (this.htmlAudio) {
+      this.htmlAudio.volume = muted ? 0 : 1;
+    }
+    if (this.currentAudioElement) {
+      this.currentAudioElement.volume = muted ? 0 : 1;
     }
     if (muted) {
       this.stopAll();
@@ -90,22 +137,164 @@ class SoundEngine {
       this.currentAudioElement.currentTime = 0;
       this.currentAudioElement = null;
     }
-    if ('speechSynthesis' in window) {
+    if (this.htmlAudio) {
+      this.htmlAudio.pause();
+      this.htmlAudio.currentTime = 0;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
   }
 
-  // Sound effects disabled per user request (no piano / synth sounds)
   public playGoalHorn(): void {
-    // Piano / synth sound removed
+    // Disabled per user preference
   }
 
   public playAssistChime(): void {
-    // Piano / chime sound removed
+    // Disabled per user preference
   }
 
-  // Announce text using ElevenLabs voice with Web Audio playback and fallback
-  public async announce(text: string, voiceId = 'nhl'): Promise<{ source: 'elevenlabs' | 'webspeech'; error?: string }> {
+  // Play audio from base64 string using HTML5 Audio (fastest, most reliable for mp3 in Safari/iOS)
+  private async playBase64Audio(base64: string): Promise<boolean> {
+    const dataUrl = `data:audio/mpeg;base64,${base64}`;
+
+    // METHOD A: Pre-unlocked HTMLAudioElement
+    try {
+      const audio = this.htmlAudio || new Audio();
+      this.htmlAudio = audio;
+      this.currentAudioElement = audio;
+      audio.src = dataUrl;
+      audio.volume = this.isMuted ? 0 : 1;
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          resolve(); // Protect against hanging promises
+        }, 15000);
+
+        audio.onended = () => {
+          clearTimeout(timeout);
+          this.currentAudioElement = null;
+          resolve();
+        };
+        audio.onerror = (e) => {
+          clearTimeout(timeout);
+          this.currentAudioElement = null;
+          reject(e);
+        };
+        audio.play().catch((err) => {
+          clearTimeout(timeout);
+          this.currentAudioElement = null;
+          reject(err);
+        });
+      });
+
+      return true;
+    } catch (htmlErr) {
+      console.warn('HTML5 Audio playback failed, falling back to Web Audio decode:', htmlErr);
+    }
+
+    // METHOD B: Web Audio fallback
+    try {
+      const binaryString = atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return await this.playWebAudio(bytes.buffer);
+    } catch (webAudioErr) {
+      console.warn('Web Audio playback also failed:', webAudioErr);
+      return false;
+    }
+  }
+
+  // Play audio from binary ArrayBuffer
+  private async playArrayBuffer(arrayBuffer: ArrayBuffer): Promise<boolean> {
+    // METHOD A: Blob Object URL with HTMLAudioElement
+    try {
+      const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = this.htmlAudio || new Audio();
+      this.htmlAudio = audio;
+      this.currentAudioElement = audio;
+      audio.src = audioUrl;
+      audio.volume = this.isMuted ? 0 : 1;
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudioElement = null;
+          resolve();
+        }, 15000);
+
+        audio.onended = () => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudioElement = null;
+          resolve();
+        };
+        audio.onerror = (e) => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudioElement = null;
+          reject(e);
+        };
+        audio.play().catch((err) => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudioElement = null;
+          reject(err);
+        });
+      });
+
+      return true;
+    } catch (blobErr) {
+      console.warn('Blob audio play failed, trying Web Audio decode:', blobErr);
+    }
+
+    // METHOD B: Web Audio API
+    return await this.playWebAudio(arrayBuffer);
+  }
+
+  // Web Audio buffer source playback
+  private async playWebAudio(arrayBuffer: ArrayBuffer): Promise<boolean> {
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
+      }
+
+      // decodeAudioData needs a slice copy in certain browsers
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.masterGain || ctx.destination);
+      this.currentSource = source;
+
+      await new Promise<void>((resolve) => {
+        const maxMs = (audioBuffer.duration * 1000) + 1500;
+        const timeout = setTimeout(() => {
+          this.currentSource = null;
+          resolve();
+        }, maxMs);
+
+        source.onended = () => {
+          clearTimeout(timeout);
+          this.currentSource = null;
+          resolve();
+        };
+        source.start(0);
+      });
+
+      return true;
+    } catch (err) {
+      console.warn('Web Audio decode failed:', err);
+      return false;
+    }
+  }
+
+  // Announce text using ElevenLabs voice with multi-strategy fallback
+  public async announce(text: string, voiceId = 'nhl'): Promise<AnnounceResult> {
     if (this.isMuted) {
       return { source: 'webspeech' };
     }
@@ -114,80 +303,61 @@ class SoundEngine {
     this.stopAll();
 
     try {
+      // Request base64 format for maximum reliability across Vercel serverless edge
       const response = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceId })
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, audio/mpeg, */*'
+        },
+        body: JSON.stringify({ text, voiceId, format: 'base64' })
       });
 
       const contentType = response.headers.get('content-type') || '';
 
-      if (contentType.includes('audio/mpeg')) {
-        const arrayBuffer = await response.arrayBuffer();
-        
-        // METHOD 1: Web Audio decodeAudioData (Preferred: Immune to iframe autoplay blocking!)
-        try {
-          const ctx = this.getAudioContext();
-          if (ctx.state === 'suspended') {
-            await ctx.resume();
+      // CASE 1: JSON response (base64 audio or error payload)
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+
+        if (data.success && data.audioBase64) {
+          const played = await this.playBase64Audio(data.audioBase64);
+          if (played) {
+            return { source: 'elevenlabs', voiceId: data.voiceId };
           }
+        }
 
-          // decodeAudioData needs a copy of arrayBuffer in some older browsers
-          const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-          const source = ctx.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(this.masterGain || ctx.destination);
-          this.currentSource = source;
+        // Server returned fallback or error info
+        const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Voice synthesis failed');
+        console.warn('TTS server fallback active:', errorMsg, data);
+        this.speakWebSpeech(text);
+        return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
+      }
 
-          await new Promise<void>((resolve) => {
-            source.onended = () => {
-              this.currentSource = null;
-              resolve();
-            };
-            source.start(0);
-          });
+      // CASE 2: Binary audio/mpeg stream
+      if (contentType.includes('audio/mpeg') || contentType.includes('audio/')) {
+        const arrayBuffer = await response.arrayBuffer();
+        const headerVoice = response.headers.get('x-elevenlabs-voice') || undefined;
 
-          return { source: 'elevenlabs' };
-        } catch (webAudioErr) {
-          console.warn('Web Audio decode failed, attempting HTMLAudioElement fallback:', webAudioErr);
-          
-          // METHOD 2: HTMLAudioElement fallback
-          const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-          const audioUrl = URL.createObjectURL(blob);
-          const audio = new Audio(audioUrl);
-          this.currentAudioElement = audio;
-
-          await new Promise<void>((resolve, reject) => {
-            audio.onended = () => {
-              URL.revokeObjectURL(audioUrl);
-              resolve();
-            };
-            audio.onerror = (e) => {
-              URL.revokeObjectURL(audioUrl);
-              reject(e);
-            };
-            audio.play().catch(reject);
-          });
-
-          return { source: 'elevenlabs' };
+        const played = await this.playArrayBuffer(arrayBuffer);
+        if (played) {
+          return { source: 'elevenlabs', voiceId: headerVoice };
         }
       }
 
-      // If server returned JSON fallback
-      const data = await response.json();
-      console.info('TTS fallback active:', data?.message || data?.error);
+      // If unexpected response
+      console.warn('Unexpected TTS response format:', contentType);
       this.speakWebSpeech(text);
-      return { source: 'webspeech', error: data?.error };
+      return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('ElevenLabs API request failed, falling back to Web Speech API:', err);
       this.speakWebSpeech(text);
-      return { source: 'webspeech', error: err?.message };
+      return { source: 'webspeech', error: err?.message || 'Network error during voice playback' };
     }
   }
 
   // Web Speech API with anti-GC protection and resume
   private speakWebSpeech(text: string) {
-    if (!('speechSynthesis' in window) || this.isMuted) return;
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
 
     try {
       window.speechSynthesis.cancel();
@@ -241,3 +411,4 @@ export function generateGoalPrompt(playerNumber: number, playerName: string, tea
 export function generateAssistPrompt(playerNumber: number, playerName: string): string {
   return `Assisted by number ${playerNumber}, ${playerName}!`;
 }
+

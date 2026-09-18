@@ -10,6 +10,7 @@ interface ScoreboardHeaderProps {
   currentAnnouncement: Announcement | null;
   isAnnouncing: boolean;
   voiceStatus: VoiceStatus | null;
+  voiceFeedback?: { message: string; type: 'success' | 'warning' | 'info' } | null;
   isMuted: boolean;
   onToggleMute: () => void;
   onReplayAnnouncement: () => void;
@@ -27,6 +28,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = ({
   currentAnnouncement,
   isAnnouncing,
   voiceStatus,
+  voiceFeedback,
   isMuted,
   onToggleMute,
   onReplayAnnouncement,
@@ -130,7 +132,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = ({
       </div>
 
       {/* Center Announcer Status Ticker */}
-      <div className="flex-1 max-w-2xl w-full px-2">
+      <div className="flex-1 max-w-2xl w-full px-2 flex flex-col gap-1">
         <div
           className={`flex items-center justify-between px-3 py-1.5 rounded-lg border transition-all duration-300 ${
             isAnnouncing
@@ -178,6 +180,21 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = ({
             </button>
           )}
         </div>
+
+        {voiceFeedback && (
+          <div
+            className={`text-[11px] px-2.5 py-0.5 rounded border flex items-center justify-between transition-all ${
+              voiceFeedback.type === 'success'
+                ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                : voiceFeedback.type === 'warning'
+                ? 'bg-amber-950/70 text-amber-300 border-amber-500/40'
+                : 'bg-blue-950/70 text-blue-300 border-blue-500/40'
+            }`}
+          >
+            <span className="truncate">{voiceFeedback.message}</span>
+            <span className="text-[10px] opacity-70 ml-2 shrink-0">audio engine</span>
+          </div>
+        )}
       </div>
 
       {/* Controls & Quick Stats */}
