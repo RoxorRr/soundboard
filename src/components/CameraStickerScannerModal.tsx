@@ -299,9 +299,29 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
         }),
       });
 
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to extract text from sticker file');
+      let data: any = null;
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        if (response.status === 404) {
+          throw new Error(
+            'API endpoint /api/scan-sticker returned 404. If you deployed to Vercel, please ensure your project includes the /api serverless functions directory and redeploy.'
+          );
+        } else if (response.status === 413) {
+          throw new Error(
+            'Image file is too large for the server. Please try a smaller photo or enter player numbers and names manually.'
+          );
+        } else {
+          const cleanSnippet = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+          throw new Error(cleanSnippet || `Server returned error (${response.status})`);
+        }
+      }
+
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Failed to extract text from sticker file');
       }
 
       const result: StickerScanResult = data.data;

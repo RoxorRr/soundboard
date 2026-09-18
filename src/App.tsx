@@ -112,8 +112,15 @@ export default function App() {
   // Check voice status on mount
   useEffect(() => {
     fetch('/api/status')
-      .then((res) => res.json())
-      .then((data: VoiceStatus) => setVoiceStatus(data))
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) return null;
+        return res.json();
+      })
+      .then((data: VoiceStatus | null) => {
+        if (data) setVoiceStatus(data);
+      })
       .catch((err) => console.warn('Could not fetch server voice status:', err));
   }, []);
 
