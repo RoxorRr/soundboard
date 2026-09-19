@@ -188,6 +188,47 @@ class SoundEngine {
     // Disabled per user preference
   }
 
+  public playWhistle(): void {
+    if (this.isMuted || !this.playSfx) return;
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const now = ctx.currentTime;
+      // High-pitched authentic referee whistle sound
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(2850, now);
+      osc1.frequency.linearRampToValueAtTime(3200, now + 0.04);
+      osc1.frequency.linearRampToValueAtTime(2950, now + 0.3);
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(2650, now);
+      osc2.frequency.linearRampToValueAtTime(2950, now + 0.04);
+      osc2.frequency.linearRampToValueAtTime(2750, now + 0.3);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.25, now + 0.03);
+      gain.gain.setValueAtTime(0.25, now + 0.25);
+      gain.gain.linearRampToValueAtTime(0.001, now + 0.35);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.36);
+      osc2.stop(now + 0.36);
+    } catch {
+      // AudioContext may not be ready or allowed
+    }
+  }
+
   // Play audio from base64 string using HTML5 Audio or Web Audio for pitch tuning
   private async playBase64Audio(base64: string, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
     // If pitch shifting is requested, Web Audio API provides hardware-accelerated detune
@@ -504,15 +545,70 @@ export function generateAssistPrompt(playerNumber: number, playerName: string): 
 export function generateGoalWithAssistPrompt(
   scorerNumber: number,
   scorerName: string,
-  assistNumber?: number | null,
-  assistName?: string | null,
+  primaryAssistNumber?: number | null,
+  primaryAssistName?: string | null,
+  secondaryAssistNumber?: number | null,
+  secondaryAssistName?: string | null,
   teamName: string = 'Pelham Pelicans'
 ): string {
   const safeTeam = teamName?.trim() || 'Pelham Pelicans';
   const scorerPart = `Scored by number ${scorerNumber}, ${scorerName}!`;
-  if (assistNumber !== undefined && assistNumber !== null && assistName && assistName.trim().length > 0) {
-    return `${safeTeam} goal! ${scorerPart} Assisted by number ${assistNumber}, ${assistName}!`;
+
+  const hasPrimary =
+    primaryAssistNumber !== undefined &&
+    primaryAssistNumber !== null &&
+    primaryAssistName &&
+    primaryAssistName.trim().length > 0;
+
+  const hasSecondary =
+    secondaryAssistNumber !== undefined &&
+    secondaryAssistNumber !== null &&
+    secondaryAssistName &&
+    secondaryAssistName.trim().length > 0;
+
+  if (hasPrimary && hasSecondary) {
+    return `${safeTeam} goal! ${scorerPart} Assisted by number ${primaryAssistNumber}, ${primaryAssistName}, and number ${secondaryAssistNumber}, ${secondaryAssistName}!`;
+  }
+  if (hasPrimary) {
+    return `${safeTeam} goal! ${scorerPart} Assisted by number ${primaryAssistNumber}, ${primaryAssistName}!`;
+  }
+  if (hasSecondary) {
+    return `${safeTeam} goal! ${scorerPart} Assisted by number ${secondaryAssistNumber}, ${secondaryAssistName}!`;
   }
   return `${safeTeam} goal! ${scorerPart} Unassisted!`;
 }
+
+export function generatePenaltyPrompt(
+  playerNumber: number,
+  teamName: string,
+  durationText: string = 'two minutes',
+  infraction: string = 'hooking',
+  playerName?: string,
+  includePlayerName: boolean = false
+): string {
+  const safeTeam = teamName?.trim() || 'Pelham Pelicans';
+  const cleanDuration = durationText?.trim();
+  const cleanInfraction = infraction?.trim().toLowerCase() || 'hooking';
+
+  // Determine if a duration should be spoken
+  const hasTime = Boolean(
+    cleanDuration &&
+      cleanDuration.toLowerCase() !== 'none' &&
+      cleanDuration.toLowerCase() !== 'no time' &&
+      cleanDuration.toLowerCase() !== 'without time' &&
+      cleanDuration.toLowerCase() !== 'off' &&
+      cleanDuration !== ''
+  );
+
+  const timePart = hasTime ? ` ${cleanDuration}` : '';
+
+  if (includePlayerName && playerName && playerName.trim().length > 0) {
+    return `Number ${playerNumber}, ${playerName.trim()}, ${safeTeam}${timePart} for ${cleanInfraction}.`;
+  }
+
+  // With time: 'Number 12, Pelham Pelicans two minutes for [foul].'
+  // Without time: 'Number 12, Pelham Pelicans for [foul].'
+  return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.`;
+}
+
 

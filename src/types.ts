@@ -8,13 +8,16 @@ export interface Player {
 
 export interface Announcement {
   id: string;
-  type: 'goal' | 'assist';
+  type: 'goal' | 'assist' | 'penalty';
   playerId: string;
   playerNumber: number;
   playerName: string;
   text: string;
   timestamp: number;
   source: 'elevenlabs' | 'webspeech';
+  team?: string;
+  penaltyInfraction?: string;
+  penaltyDuration?: string;
 }
 
 export interface VoiceStatus {

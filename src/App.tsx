@@ -4,11 +4,12 @@ import { EditRosterModal } from './components/EditRosterModal';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { CameraStickerScannerModal } from './components/CameraStickerScannerModal';
 import { QuickGoalModal } from './components/QuickGoalModal';
+import { PenaltyModal } from './components/PenaltyModal';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -212,6 +213,7 @@ export default function App() {
   const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [scannerTargetPlayerId, setScannerTargetPlayerId] = useState<string | null>(null);
   const [isQuickGoalModalOpen, setIsQuickGoalModalOpen] = useState(false);
+  const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
 
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
@@ -625,9 +627,14 @@ export default function App() {
     setIsEditingVisitorName(false);
   }, [tempVisitorName]);
 
-  // Score goal with assist from numeric keypad entry
+  // Score goal with primary and optional secondary assists from numeric keypad entry
   const handleScoreGoalWithAssist = useCallback(
-    async (team: 'home' | 'visitor', scorer: Player, assistPlayer?: Player | null) => {
+    async (
+      team: 'home' | 'visitor',
+      scorer: Player,
+      primaryAssist?: Player | null,
+      secondaryAssist?: Player | null
+    ) => {
       soundEngine.unlock();
 
       const isCurrentVisitor = team === 'visitor';
@@ -635,45 +642,63 @@ export default function App() {
         ? (visitorTeamName.trim() || 'Visiting Team')
         : 'Pelham Pelicans';
 
-      // 1. Update goals for scorer and assists for assist player
+      // 1. Update goals for scorer and assists for primary and secondary assist players
       if (isCurrentVisitor) {
         setVisitorPlayers((prev) => {
-          const exists = prev.some((p) => p.number === scorer.number);
-          let updated = exists
-            ? prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p))
-            : [...prev, { ...scorer, id: scorer.id || `visitor_${scorer.number}`, goals: 1, assists: 0 }];
-
-          if (assistPlayer && assistPlayer.number) {
-            const assistExists = updated.some((p) => p.number === assistPlayer.number);
-            updated = assistExists
-              ? updated.map((p) => (p.number === assistPlayer.number ? { ...p, assists: p.assists + 1 } : p))
-              : [...updated, { ...assistPlayer, id: assistPlayer.id || `visitor_${assistPlayer.number}`, goals: 0, assists: 1 }];
+          let updated = prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p));
+          if (!prev.some((p) => p.number === scorer.number)) {
+            updated.push({ ...scorer, id: scorer.id || `visitor_${scorer.number}`, goals: 1, assists: 0 });
           }
+
+          if (primaryAssist && primaryAssist.number) {
+            const assistExists = updated.some((p) => p.number === primaryAssist.number);
+            updated = assistExists
+              ? updated.map((p) => (p.number === primaryAssist.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...primaryAssist, id: primaryAssist.id || `visitor_${primaryAssist.number}`, goals: 0, assists: 1 }];
+          }
+
+          if (secondaryAssist && secondaryAssist.number) {
+            const assist2Exists = updated.some((p) => p.number === secondaryAssist.number);
+            updated = assist2Exists
+              ? updated.map((p) => (p.number === secondaryAssist.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...secondaryAssist, id: secondaryAssist.id || `visitor_${secondaryAssist.number}`, goals: 0, assists: 1 }];
+          }
+
           return sortPlayersByNumber(updated);
         });
       } else {
         setHomePlayers((prev) => {
-          const exists = prev.some((p) => p.number === scorer.number);
-          let updated = exists
-            ? prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p))
-            : [...prev, { ...scorer, id: scorer.id || `home_${scorer.number}`, goals: 1, assists: 0 }];
-
-          if (assistPlayer && assistPlayer.number) {
-            const assistExists = updated.some((p) => p.number === assistPlayer.number);
-            updated = assistExists
-              ? updated.map((p) => (p.number === assistPlayer.number ? { ...p, assists: p.assists + 1 } : p))
-              : [...updated, { ...assistPlayer, id: assistPlayer.id || `home_${assistPlayer.number}`, goals: 0, assists: 1 }];
+          let updated = prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p));
+          if (!prev.some((p) => p.number === scorer.number)) {
+            updated.push({ ...scorer, id: scorer.id || `home_${scorer.number}`, goals: 1, assists: 0 });
           }
+
+          if (primaryAssist && primaryAssist.number) {
+            const assistExists = updated.some((p) => p.number === primaryAssist.number);
+            updated = assistExists
+              ? updated.map((p) => (p.number === primaryAssist.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...primaryAssist, id: primaryAssist.id || `home_${primaryAssist.number}`, goals: 0, assists: 1 }];
+          }
+
+          if (secondaryAssist && secondaryAssist.number) {
+            const assist2Exists = updated.some((p) => p.number === secondaryAssist.number);
+            updated = assist2Exists
+              ? updated.map((p) => (p.number === secondaryAssist.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...secondaryAssist, id: secondaryAssist.id || `home_${secondaryAssist.number}`, goals: 0, assists: 1 }];
+          }
+
           return sortPlayersByNumber(updated);
         });
       }
 
-      // 2. Generate combined voice prompt
+      // 2. Generate combined voice prompt with scorer, primary assist, and secondary assist
       const prompt = generateGoalWithAssistPrompt(
         scorer.number,
         scorer.name,
-        assistPlayer ? assistPlayer.number : null,
-        assistPlayer ? assistPlayer.name : null,
+        primaryAssist ? primaryAssist.number : null,
+        primaryAssist ? primaryAssist.name : null,
+        secondaryAssist ? secondaryAssist.number : null,
+        secondaryAssist ? secondaryAssist.name : null,
         currentTeam
       );
 
@@ -686,6 +711,7 @@ export default function App() {
         text: prompt,
         timestamp: Date.now(),
         source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+        team: currentTeam,
       };
 
       setCurrentAnnouncement(announcement);
@@ -707,6 +733,65 @@ export default function App() {
         console.error('Goal announcement error:', err);
         setVoiceFeedback({
           message: err?.message || 'Goal announcement failed',
+          type: 'warning',
+        });
+      } finally {
+        setIsAnnouncing(false);
+        setActiveAnnouncePlayerId(null);
+      }
+    },
+    [visitorTeamName, voiceStatus?.configured]
+  );
+
+  // Handle Penalty Announcement vocal template
+  const handleAnnouncePenalty = useCallback(
+    async (
+      team: 'home' | 'visitor',
+      player: Player,
+      durationText: string,
+      infraction: string,
+      promptText: string
+    ) => {
+      soundEngine.unlock();
+
+      const isCurrentVisitor = team === 'visitor';
+      const currentTeam = isCurrentVisitor
+        ? (visitorTeamName.trim() || 'Visiting Team')
+        : 'Pelham Pelicans';
+
+      const announcement: Announcement = {
+        id: `penalty-${Date.now()}-${player.number}`,
+        type: 'penalty',
+        playerId: player.id,
+        playerNumber: player.number,
+        playerName: player.name,
+        text: promptText,
+        timestamp: Date.now(),
+        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+        team: currentTeam,
+        penaltyInfraction: infraction,
+        penaltyDuration: durationText && durationText.trim() !== '' ? durationText : 'Without time',
+      };
+
+      setCurrentAnnouncement(announcement);
+      setIsAnnouncing(true);
+      setActiveAnnouncePlayerId(player.id);
+
+      try {
+        const res = await soundEngine.announce(promptText, 'nhl');
+        if (res.source) {
+          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+        }
+        if (res.error) {
+          setVoiceFeedback({
+            message: `Voice notice: ${res.error}`,
+            type: 'warning',
+          });
+        }
+      } catch (err: any) {
+        console.error('Penalty announcement error:', err);
+        setVoiceFeedback({
+          message: err?.message || 'Penalty announcement failed',
           type: 'warning',
         });
       } finally {
@@ -844,6 +929,21 @@ export default function App() {
               <Hash className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Keypad Goal</span>
               <span className="sm:hidden">Keypad</span>
+            </button>
+          )}
+
+          {/* Quick Penalty Announcement Trigger */}
+          {currentTab !== 'settings' && (
+            <button
+              id="nav-penalty-btn"
+              type="button"
+              onClick={() => setIsPenaltyModalOpen(true)}
+              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+              title="Announce a penalty: 'Number [X], [Team] two minutes for [foul]'"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Penalty</span>
+              <span className="sm:hidden">Pen</span>
             </button>
           )}
 
@@ -1088,7 +1188,19 @@ export default function App() {
                 title="Input jersey numbers of scorer and assist maker with numeric keypad"
               >
                 <Hash className="w-3.5 h-3.5 font-black" />
-                <span className="font-athletic uppercase tracking-wider">Keypad Goal Entry</span>
+                <span className="font-athletic uppercase tracking-wider">Keypad Goal</span>
+              </button>
+
+              {/* Penalty Announcement */}
+              <button
+                type="button"
+                id="roster-penalty-btn"
+                onClick={() => setIsPenaltyModalOpen(true)}
+                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-white border border-rose-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
+                title="Announce penalty with template: Number [X], [Team] two minutes for [foul]"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                <span className="font-athletic uppercase tracking-wider">Penalty</span>
               </button>
 
               <button
@@ -1345,6 +1457,18 @@ export default function App() {
         onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
         visitorTeamName={visitorTeamName}
         onScoreGoalWithAssist={handleScoreGoalWithAssist}
+      />
+
+      {/* Penalty Announcement Modal with Template & Foul Type Selector */}
+      <PenaltyModal
+        isOpen={isPenaltyModalOpen}
+        onClose={() => setIsPenaltyModalOpen(false)}
+        homePlayers={homePlayers}
+        visitorPlayers={visitorPlayers}
+        activeTeamTab={activeTeamTab}
+        onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
+        visitorTeamName={visitorTeamName}
+        onAnnouncePenalty={handleAnnouncePenalty}
       />
 
       {/* Confirmation Modal when removing a player who already has goals or assists */}

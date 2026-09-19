@@ -922,7 +922,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 {currentAnnouncement ? (
                   <div>
                     <span className="font-bold uppercase tracking-wider text-amber-400 mr-2">
-                      {currentAnnouncement.type === 'goal' ? '🚨 GOAL CALL:' : '🏒 ASSIST CALL:'}
+                      {currentAnnouncement.type === 'goal'
+                        ? '🚨 GOAL CALL:'
+                        : currentAnnouncement.type === 'penalty'
+                        ? '⚖️ PENALTY CALL:'
+                        : '🏒 ASSIST CALL:'}
                     </span>
                     &ldquo;{currentAnnouncement.text}&rdquo;
                   </div>
