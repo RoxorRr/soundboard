@@ -19,6 +19,8 @@ import {
   Music,
   Zap,
   Mic,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings } from '../types';
 import { soundEngine, DEFAULT_VOICE_SETTINGS } from '../utils/audio';
@@ -36,6 +38,8 @@ interface SettingsViewProps {
   onSelectTeamTab: (team: 'home' | 'visitor') => void;
   isMuted: boolean;
   onToggleMute: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   voiceStatus: VoiceStatus | null;
   voiceFeedback: { message: string; type: 'success' | 'warning' | 'info' } | null;
   currentAnnouncement: Announcement | null;
@@ -60,6 +64,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSelectTeamTab,
   isMuted,
   onToggleMute,
+  isFullscreen = false,
+  onToggleFullscreen,
   voiceStatus,
   voiceFeedback,
   currentAnnouncement,
@@ -970,11 +976,60 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
+        {/* SECTION 4: Display & Full-Screen Arena Mode */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-athletic flex items-center gap-2">
+            <Maximize className="w-3.5 h-3.5 text-amber-400" />
+            <span>Display & Full-Screen Arena Mode</span>
+          </h2>
+
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Full-Screen Display</h3>
+                {isFullscreen && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                    Full Screen Active
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5 max-w-md">
+                Maximize the application into an immersive arena display for stadium monitors, tablets, and rinkside laptops. Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] border border-slate-700 text-slate-300">Esc</kbd> anytime to exit.
+              </p>
+            </div>
+
+            {onToggleFullscreen && (
+              <button
+                type="button"
+                id="settings-fullscreen-btn"
+                onClick={onToggleFullscreen}
+                className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all shrink-0 ${
+                  isFullscreen
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
+                }`}
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize className="w-4 h-4" />
+                    <span>Exit Full Screen</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize className="w-4 h-4" />
+                    <span>Enter Full Screen</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* System Info Note */}
         <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-800/80 text-[11px] text-slate-500 flex items-center gap-2">
           <Info className="w-4 h-4 text-slate-400 shrink-0" />
           <span>
-            Rosters and custom team names automatically save to local browser storage. All 20 player slots are available on the tracker screen.
+            Rosters and custom team names automatically save to local browser storage. All roster slots are dynamically updated and sorted by number.
           </span>
         </div>
       </div>

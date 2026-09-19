@@ -14,8 +14,19 @@ import {
   List,
   Save,
   RotateCcw,
+  Trash2,
+  UserMinus,
+  UserPlus,
+  ArrowUpDown,
 } from 'lucide-react';
 import { Player, StickerScanResult, ScannedPlayerItem } from '../types';
+
+export interface SlotDraft {
+  id: string;
+  number: number;
+  name: string;
+  isAssignedFromScan: boolean;
+}
 
 interface CameraStickerScannerModalProps {
   isOpen: boolean;
@@ -36,7 +47,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
   onUpdatePlayer,
   onUpdateAllPlayers,
 }) => {
-  // Mode: 'all' (populate all 15 slots from sticker file) vs 'single' (update 1 slot)
+  // Mode: 'all' (populate all slots from sticker file) vs 'single' (update 1 slot)
   const [scanMode, setScanMode] = useState<'all' | 'single'>(
     selectedPlayerId ? 'single' : 'all'
   );
@@ -65,9 +76,9 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
   const [singleNumber, setSingleNumber] = useState<number>(0);
   const [singleName, setSingleName] = useState<string>('');
 
-  // 15 Slots draft state
-  const [slotDrafts, setSlotDrafts] = useState<Array<{ number: number; name: string }>>(() =>
-    players.map((p) => ({ number: p.number, name: p.name }))
+  // Roster slots draft state with assigned tracking
+  const [slotDrafts, setSlotDrafts] = useState<SlotDraft[]>(() =>
+    players.map((p) => ({ id: p.id, number: p.number, name: p.name, isAssignedFromScan: false }))
   );
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -80,7 +91,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
   // Initialize or reset slot drafts when players change or modal opens
   useEffect(() => {
     if (isOpen) {
-      setSlotDrafts(players.map((p) => ({ number: p.number, name: p.name })));
+      setSlotDrafts(players.map((p) => ({ id: p.id, number: p.number, name: p.name, isAssignedFromScan: false })));
       if (selectedPlayerId) {
         setTargetPlayerId(selectedPlayerId);
         setScanMode('single');
@@ -327,18 +338,35 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
       const result: StickerScanResult = data.data;
       setScanResult(result);
 
-      // 1. If multiple players detected, populate all 15 slots
+      // 1. If multiple players detected, populate roster slots
       if (Array.isArray(result.players) && result.players.length > 0) {
+        const scannedList = result.players;
+        const scannedCount = scannedList.length;
+
         setSlotDrafts((prev) => {
-          const next = [...prev];
-          result.players!.forEach((scanned, index) => {
-            if (index < next.length) {
-              next[index] = {
-                number: scanned.number > 0 ? scanned.number : next[index].number,
-                name: scanned.name.trim() ? scanned.name.trim() : next[index].name,
-              };
-            }
+          const next: SlotDraft[] = [];
+
+          // Assign scanned players into slots
+          scannedList.forEach((scanned, index) => {
+            const existing = prev[index];
+            next.push({
+              id: existing?.id || `scanned-${Date.now()}-${index}`,
+              number: scanned.number > 0 ? scanned.number : (existing?.number ?? 0),
+              name: scanned.name.trim() ? scanned.name.trim() : (existing?.name ?? `Player ${index + 1}`),
+              isAssignedFromScan: true,
+            });
           });
+
+          // Any remaining slots beyond the scanned players are marked as unassigned
+          for (let i = scannedCount; i < prev.length; i++) {
+            next.push({
+              id: prev[i].id,
+              number: prev[i].number,
+              name: prev[i].name,
+              isAssignedFromScan: false,
+            });
+          }
+
           return next;
         });
 
@@ -378,7 +406,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
     }
   };
 
-  // Change individual slot in 15 slots list
+  // Change individual slot in slots list
   const handleSlotDraftChange = (index: number, field: 'number' | 'name', value: string) => {
     setSlotDrafts((prev) => {
       const next = [...prev];
@@ -392,39 +420,78 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
     });
   };
 
+  // Remove all slots that were not assigned after the scan
+  const handleRemoveUnassignedSlots = () => {
+    const unassignedCount = slotDrafts.filter((s) => !s.isAssignedFromScan).length;
+    setSlotDrafts((prev) => prev.filter((slot) => slot.isAssignedFromScan));
+    setSuccessMessage(`Removed ${unassignedCount} unassigned player${unassignedCount === 1 ? '' : 's'}.`);
+    setTimeout(() => setSuccessMessage(null), 3500);
+  };
+
+  // Remove an individual slot by index
+  const handleRemoveSlot = (index: number) => {
+    setSlotDrafts((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  // Add a new empty player slot
+  const handleAddSlot = () => {
+    setSlotDrafts((prev) => {
+      const highestNum = prev.length > 0 ? Math.max(...prev.map((p) => p.number)) : 0;
+      const nextNum = highestNum < 99 ? highestNum + 1 : 1;
+      return [
+        ...prev,
+        {
+          id: `custom-slot-${Date.now()}`,
+          number: nextNum,
+          name: `Player ${prev.length + 1}`,
+          isAssignedFromScan: true,
+        },
+      ];
+    });
+  };
+
+  // Sort current drafts ascending by jersey number
+  const handleSortDraftsByNumber = () => {
+    setSlotDrafts((prev) => [...prev].sort((a, b) => a.number - b.number));
+  };
+
   // Clear a slot
   const handleClearSlot = (index: number) => {
     setSlotDrafts((prev) => {
       const next = [...prev];
-      next[index] = { number: 0, name: `Player ${index + 1}` };
+      next[index] = { ...next[index], number: 0, name: `Player ${index + 1}`, isAssignedFromScan: false };
       return next;
     });
   };
 
   // Reset to original roster
   const handleResetSlots = () => {
-    setSlotDrafts(players.map((p) => ({ number: p.number, name: p.name })));
+    setSlotDrafts(players.map((p) => ({ id: p.id, number: p.number, name: p.name, isAssignedFromScan: false })));
   };
 
-  // Apply changes to all 15 slots
+  // Apply changes to roster
   const handleSaveAllSlots = () => {
-    if (!onUpdateAllPlayers) {
-      // Fallback: update players sequentially
-      slotDrafts.forEach((draft, idx) => {
-        if (players[idx]) {
-          onUpdatePlayer(players[idx].id, draft.number, draft.name);
-        }
-      });
-    } else {
-      const updatedList: Player[] = players.map((p, idx) => ({
-        ...p,
-        number: slotDrafts[idx]?.number ?? p.number,
-        name: slotDrafts[idx]?.name?.trim() || p.name,
-      }));
+    const sorted = [...slotDrafts].sort((a, b) => a.number - b.number);
+    const updatedList: Player[] = sorted.map((draft, idx) => {
+      const existing = players.find((p) => p.id === draft.id);
+      return {
+        id: draft.id || existing?.id || `p-scanned-${Date.now()}-${idx}`,
+        number: draft.number,
+        name: draft.name.trim() || `Player ${idx + 1}`,
+        goals: existing?.goals ?? 0,
+        assists: existing?.assists ?? 0,
+      };
+    });
+
+    if (onUpdateAllPlayers) {
       onUpdateAllPlayers(updatedList);
+    } else {
+      updatedList.forEach((p) => {
+        onUpdatePlayer(p.id, p.number, p.name);
+      });
     }
 
-    setSuccessMessage(`Successfully saved all ${slotDrafts.length} player names into all roster slots!`);
+    setSuccessMessage(`Successfully saved ${updatedList.length} players to ${teamName} roster!`);
     setTimeout(() => {
       onClose();
     }, 1200);
@@ -793,96 +860,184 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
                 </button>
               </div>
 
-              {/* ALL 15 SLOTS REVIEW TABLE */}
-              {scanMode === 'all' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                      <Layers className="w-4 h-4" />
-                      <span>{players.length} Roster Slots Mapping:</span>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleResetSlots}
-                      className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Reset to current</span>
-                    </button>
-                  </div>
+              {/* ALL SLOTS REVIEW TABLE */}
+              {scanMode === 'all' && (() => {
+                const unassignedCount = slotDrafts.filter((s) => !s.isAssignedFromScan).length;
+                const assignedCount = slotDrafts.filter((s) => s.isAssignedFromScan).length;
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
-                    {slotDrafts.map((draft, idx) => {
-                      const origPlayer = players[idx];
-                      const isChanged =
-                        origPlayer && (origPlayer.number !== draft.number || origPlayer.name !== draft.name);
-
-                      return (
-                        <div
-                          key={`slot-${idx}`}
-                          className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
-                            isChanged
-                              ? 'bg-amber-950/30 border-amber-500/50 shadow-sm shadow-amber-500/5'
-                              : 'bg-slate-950/60 border-slate-800/80'
-                          }`}
-                        >
-                          <div className="w-12 shrink-0">
-                            <span className="text-[9px] uppercase font-bold text-slate-400 block">
-                              Slot {idx + 1}
-                            </span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="99"
-                              value={draft.number}
-                              onChange={(e) => handleSlotDraftChange(idx, 'number', e.target.value)}
-                              className="w-full bg-slate-800 text-slate-100 font-athletic font-black text-sm px-1.5 py-1 rounded border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                            />
+                return (
+                  <div className="space-y-3">
+                    {/* Unassigned Players Quick-Remove Banner */}
+                    {unassignedCount > 0 && assignedCount > 0 && (
+                      <div className="p-3 bg-gradient-to-r from-amber-500/15 via-slate-900/90 to-amber-500/10 border border-amber-500/30 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                            <UserMinus className="w-4 h-4" />
                           </div>
-
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[9px] uppercase font-bold text-slate-400 block">
-                              Player Name
-                            </span>
-                            <input
-                              type="text"
-                              value={draft.name}
-                              onChange={(e) => handleSlotDraftChange(idx, 'name', e.target.value)}
-                              placeholder="Player Name"
-                              className="w-full bg-slate-800 text-slate-100 font-bold text-xs px-2 py-1 rounded border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                              required
-                            />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-amber-200">
+                                {unassignedCount} Player{unassignedCount === 1 ? '' : 's'} Not Assigned in Scan
+                              </h4>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                                {assignedCount} Scanned / {unassignedCount} Unassigned
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              The sticker file included {assignedCount} player{assignedCount === 1 ? '' : 's'}. You can remove the remaining unassigned slots with one click.
+                            </p>
                           </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleClearSlot(idx)}
-                            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors shrink-0"
-                            title="Clear slot"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
 
-                  {/* Primary Save All Button */}
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
-                    <p className="text-[11px] text-slate-400 hidden sm:block">
-                      Clicking save will update all {slotDrafts.length} player names and jersey numbers immediately.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleSaveAllSlots}
-                      className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
-                    >
-                      <Check className="w-4 h-4 stroke-[2.5]" />
-                      <span>Save All {slotDrafts.length} Players into All Slots</span>
-                    </button>
+                        <button
+                          type="button"
+                          id="scanner-remove-unassigned-btn"
+                          onClick={handleRemoveUnassignedSlots}
+                          className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-white border border-red-500/40 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shrink-0 active:scale-95"
+                          title="Remove all slots that were not identified in the scan"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove {unassignedCount} Unassigned Player{unassignedCount === 1 ? '' : 's'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4" />
+                          <span>{slotDrafts.length} Roster Slots:</span>
+                        </p>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                          {assignedCount} Assigned • {unassignedCount} Unassigned
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSortDraftsByNumber}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 flex items-center gap-1 transition-colors"
+                          title="Sort slots ascending by jersey number"
+                        >
+                          <ArrowUpDown className="w-3 h-3" />
+                          <span>Sort #</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAddSlot}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 flex items-center gap-1 transition-colors"
+                          title="Add an additional player slot"
+                        >
+                          <UserPlus className="w-3 h-3 text-emerald-400" />
+                          <span>Add Slot</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetSlots}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors px-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+                      {slotDrafts.map((draft, idx) => {
+                        const origPlayer = players.find((p) => p.id === draft.id);
+                        const isChanged =
+                          origPlayer && (origPlayer.number !== draft.number || origPlayer.name !== draft.name);
+
+                        return (
+                          <div
+                            key={`slot-${draft.id || idx}`}
+                            className={`p-2 rounded-xl border flex items-center gap-2 transition-all ${
+                              draft.isAssignedFromScan
+                                ? 'bg-emerald-950/20 border-emerald-500/40 shadow-sm'
+                                : 'bg-slate-950/70 border-slate-800 ring-1 ring-amber-500/20'
+                            }`}
+                          >
+                            <div className="w-12 shrink-0">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 block">
+                                #{idx + 1}
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={draft.number}
+                                onChange={(e) => handleSlotDraftChange(idx, 'number', e.target.value)}
+                                className="w-full bg-slate-800 text-slate-100 font-athletic font-black text-sm px-1.5 py-1 rounded border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                              />
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className="text-[9px] uppercase font-bold text-slate-400 block">
+                                  Player Name
+                                </span>
+                                {draft.isAssignedFromScan ? (
+                                  <span className="text-[9px] font-bold text-emerald-400 flex items-center gap-0.5">
+                                    <Check className="w-2.5 h-2.5" /> Scanned
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-semibold text-amber-400/80">
+                                    Unassigned
+                                  </span>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={draft.name}
+                                onChange={(e) => handleSlotDraftChange(idx, 'name', e.target.value)}
+                                placeholder="Player Name"
+                                className="w-full bg-slate-800 text-slate-100 font-bold text-xs px-2 py-1 rounded border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                required
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSlot(idx)}
+                                className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                                title="Remove player from roster"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleClearSlot(idx)}
+                                className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                                title="Clear slot"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Primary Save All Button */}
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
+                      <p className="text-[11px] text-slate-400 hidden sm:block">
+                        Clicking save will update and sort all {slotDrafts.length} players in the {teamName} roster.
+                      </p>
+                      <button
+                        type="button"
+                        id="scanner-save-all-btn"
+                        onClick={handleSaveAllSlots}
+                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
+                      >
+                        <Check className="w-4 h-4 stroke-[2.5]" />
+                        <span>Save {slotDrafts.length} Players into {teamName} Roster</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* SINGLE SLOT REVIEW PANEL */}
               {scanMode === 'single' && (

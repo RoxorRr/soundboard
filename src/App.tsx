@@ -7,7 +7,7 @@ import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -21,13 +21,57 @@ const sortPlayersByNumber = (list: Player[]): Player[] => {
 };
 
 export default function App() {
-  // Home (Pelham Pelicans) 20 players state with local persistence (sorted 1-99)
+  // Fullscreen mode state and handler
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const handleToggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if ((elem as any).webkitRequestFullscreen) {
+          await (elem as any).webkitRequestFullscreen();
+        } else if ((elem as any).msRequestFullscreen) {
+          await (elem as any).msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
+      }
+    } catch (err: any) {
+      console.warn('Fullscreen toggle failed:', err);
+      setVoiceFeedback({
+        message: 'Fullscreen may be restricted in embedded frames. Open the app in a new browser tab for complete fullscreen.',
+        type: 'info',
+      });
+    }
+  }, []);
+
+  // Home (Pelham Pelicans) players state with local persistence (sorted 1-99, supports any roster count)
   const [homePlayers, setHomePlayers] = useState<Player[]>(() => {
     try {
       const savedV2 = localStorage.getItem(HOME_STORAGE_KEY);
       if (savedV2) {
         const parsed = JSON.parse(savedV2);
-        if (Array.isArray(parsed) && parsed.length === DEFAULT_PELHAM_PLAYERS.length) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return sortPlayersByNumber(parsed);
         }
       }
@@ -39,7 +83,7 @@ export default function App() {
           const existingIds = new Set(parsedV1.map((p: Player) => p.id));
           const newRows = DEFAULT_PELHAM_PLAYERS.filter((p) => !existingIds.has(p.id));
           const merged = [...parsedV1, ...newRows];
-          if (merged.length === DEFAULT_PELHAM_PLAYERS.length) {
+          if (merged.length > 0) {
             return sortPlayersByNumber(merged);
           }
         }
@@ -50,13 +94,13 @@ export default function App() {
     return sortPlayersByNumber(DEFAULT_PELHAM_PLAYERS);
   });
 
-  // Visitor 20 players state with local persistence (sorted 1-99)
+  // Visitor players state with local persistence (sorted 1-99, supports any roster count)
   const [visitorPlayers, setVisitorPlayers] = useState<Player[]>(() => {
     try {
       const savedV2 = localStorage.getItem(VISITOR_STORAGE_KEY);
       if (savedV2) {
         const parsed = JSON.parse(savedV2);
-        if (Array.isArray(parsed) && parsed.length === DEFAULT_VISITOR_PLAYERS.length) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return sortPlayersByNumber(parsed);
         }
       }
@@ -68,7 +112,7 @@ export default function App() {
           const existingIds = new Set(parsedV1.map((p: Player) => p.id));
           const newRows = DEFAULT_VISITOR_PLAYERS.filter((p) => !existingIds.has(p.id));
           const merged = [...parsedV1, ...newRows];
-          if (merged.length === DEFAULT_VISITOR_PLAYERS.length) {
+          if (merged.length > 0) {
             return sortPlayersByNumber(merged);
           }
         }
@@ -621,6 +665,31 @@ export default function App() {
             )}
           </button>
 
+          {/* Fullscreen Toggle Button */}
+          <button
+            id="nav-fullscreen-toggle-btn"
+            type="button"
+            onClick={handleToggleFullscreen}
+            className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              isFullscreen
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isFullscreen ? 'Exit Full Screen mode (Esc)' : 'Switch to Full Screen mode'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="hidden xl:inline text-[11px]">Exit Full</span>
+              </>
+            ) : (
+              <>
+                <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
+                <span className="hidden xl:inline text-[11px]">Full Screen</span>
+              </>
+            )}
+          </button>
+
           {/* Live Match Scoreboard Pill */}
           <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs shrink-0">
             <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Score:</span>
@@ -649,6 +718,8 @@ export default function App() {
           }}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
           voiceStatus={voiceStatus}
           voiceFeedback={voiceFeedback}
           currentAnnouncement={currentAnnouncement}
