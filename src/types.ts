@@ -8,7 +8,7 @@ export interface Player {
 
 export interface Announcement {
   id: string;
-  type: 'goal' | 'assist' | 'penalty';
+  type: 'goal' | 'assist' | 'penalty' | 'welcome';
   playerId: string;
   playerNumber: number;
   playerName: string;

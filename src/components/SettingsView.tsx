@@ -23,7 +23,7 @@ import {
   Minimize,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings } from '../types';
-import { soundEngine, DEFAULT_VOICE_SETTINGS } from '../utils/audio';
+import { soundEngine, DEFAULT_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
 
 interface SettingsViewProps {
   homePlayers: Player[];
@@ -94,7 +94,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   );
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
-  const [testSampleType, setTestSampleType] = useState<'pelhamGoal' | 'visitorGoal' | 'assist'>('pelhamGoal');
+  const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
 
   const PRESET_VOICES = [
     { id: '6j98Cb2txyqvHRXeRQYZ', name: 'Pelham Custom NHL', desc: 'Arena Play-by-Play' },
@@ -196,8 +196,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     soundEngine.unlock();
     setIsTestingVoiceCustom(true);
 
-    let testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
-    if (testSampleType === 'visitorGoal') {
+    let testText = generateWelcomePrompt(visitorTeamName);
+    if (testSampleType === 'pelhamGoal') {
+      testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
+    } else if (testSampleType === 'visitorGoal') {
       testText = `${visitorTeamName} goal! Scored by number 88, Patrick Kane!`;
     } else if (testSampleType === 'assist') {
       testText = 'Assisted by number 29, Leon Draisaitl!';
@@ -834,6 +836,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
+                    onClick={() => setTestSampleType('welcome')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors flex items-center gap-1 ${
+                      testSampleType === 'welcome'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-300'
+                    }`}
+                  >
+                    <span>🎙️ Welcome ({visitorTeamName})</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setTestSampleType('pelhamGoal')}
                     className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
                       testSampleType === 'pelhamGoal'
@@ -926,6 +939,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         ? '🚨 GOAL CALL:'
                         : currentAnnouncement.type === 'penalty'
                         ? '⚖️ PENALTY CALL:'
+                        : currentAnnouncement.type === 'welcome'
+                        ? '🎙️ WELCOME ANNOUNCEMENT:'
                         : '🏒 ASSIST CALL:'}
                     </span>
                     &ldquo;{currentAnnouncement.text}&rdquo;

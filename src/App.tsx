@@ -8,7 +8,7 @@ import { PenaltyModal } from './components/PenaltyModal';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
-import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt } from './utils/audio';
+import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt } from './utils/audio';
 import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
@@ -455,27 +455,27 @@ export default function App() {
     }
   }, [currentAnnouncement, isAnnouncing]);
 
-  // Quick Test Voice with active team name & first player
+  // Sound Test with welcome announcement hosting opponent team
   const handleTestVoice = useCallback(async () => {
     soundEngine.unlock();
-    const currentList = activeTeamTab === 'visitor' ? visitorPlayers : homePlayers;
-    const testPlayer = currentList[0] || { number: 12, name: 'Player 1', id: 'test' };
-    const prompt = generateGoalPrompt(testPlayer.number, testPlayer.name, activeTeamName);
+    const opponentTeam = visitorTeamName.trim() || 'Visiting Team';
+    const prompt = generateWelcomePrompt(opponentTeam);
 
     const announcement: Announcement = {
-      id: `test-${Date.now()}`,
-      type: 'goal',
-      playerId: testPlayer.id,
-      playerNumber: testPlayer.number,
-      playerName: testPlayer.name,
+      id: `welcome-${Date.now()}`,
+      type: 'welcome',
+      playerId: 'system',
+      playerNumber: 0,
+      playerName: 'Pelham Arena PA',
       text: prompt,
       timestamp: Date.now(),
       source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+      team: 'Pelham Pelicans',
     };
 
     setCurrentAnnouncement(announcement);
     setIsAnnouncing(true);
-    setActiveAnnouncePlayerId(testPlayer.id);
+    setActiveAnnouncePlayerId(null);
 
     try {
       const res = await soundEngine.announce(prompt, 'nhl');
@@ -494,7 +494,7 @@ export default function App() {
         });
       } else {
         setVoiceFeedback({
-          message: 'Local browser voice playing',
+          message: `Local voice playing welcome announcement for ${opponentTeam}`,
           type: 'info'
         });
       }
@@ -507,7 +507,7 @@ export default function App() {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
     }
-  }, [activeTeamTab, visitorPlayers, homePlayers, activeTeamName, voiceStatus?.configured]);
+  }, [visitorTeamName, voiceStatus?.configured]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => {
@@ -946,6 +946,20 @@ export default function App() {
               <span className="sm:hidden">Pen</span>
             </button>
           )}
+
+          {/* Sound Test Welcome Announcement Button */}
+          <button
+            id="nav-sound-test-btn"
+            type="button"
+            onClick={handleTestVoice}
+            disabled={isAnnouncing}
+            className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-amber-500/20 active:scale-95 text-amber-300 hover:text-white border border-amber-500/30 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+            title={`Sound Test: Welcome announcement hosting ${visitorTeamName}`}
+          >
+            <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isAnnouncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Sound Test</span>
+            <span className="sm:hidden">Test</span>
+          </button>
 
           {/* Quick Mute/Unmute toggle */}
           <button

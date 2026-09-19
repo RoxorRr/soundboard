@@ -611,4 +611,10 @@ export function generatePenaltyPrompt(
   return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.`;
 }
 
+export function generateWelcomePrompt(opponentTeam: string = 'Visitor Team'): string {
+  const safeOpponent = opponentTeam?.trim() || 'Visitor Team';
+  return `Welcome, everyone, and thank you for joining us for today’s hockey game. Pelham Pelicans are excited to host ${safeOpponent} and look forward to a competitive, respectful, and fun matchup. Enjoy the game and best of luck to both teams.`;
+}
+
+
 
