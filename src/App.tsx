@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { PlayerTrackerRow } from './components/PlayerTrackerRow';
 import { EditRosterModal } from './components/EditRosterModal';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
@@ -21,39 +21,79 @@ const sortPlayersByNumber = (list: Player[]): Player[] => {
 };
 
 export default function App() {
+  const appContainerRef = useRef<HTMLDivElement>(null);
+
   // Fullscreen mode state and handler
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFs = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isFs);
     };
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    // Keep window scroll strictly pinned to 0,0 so scrolling inside containers never scrolls the outer window
+    // which in browsers like Chrome, Edge, and Safari triggers an exit from fullscreen mode
+    const preventWindowScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener('scroll', preventWindowScroll, { passive: true });
+
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      window.removeEventListener('scroll', preventWindowScroll);
     };
   }, []);
 
   const handleToggleFullscreen = useCallback(async () => {
     try {
-      if (!document.fullscreenElement) {
-        const elem = document.documentElement;
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if ((elem as any).webkitRequestFullscreen) {
-          await (elem as any).webkitRequestFullscreen();
-        } else if ((elem as any).msRequestFullscreen) {
-          await (elem as any).msRequestFullscreen();
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+
+      if (!isCurrentlyFullscreen) {
+        // Target appContainerRef first so the document stays completely fixed and isolated
+        const elem = appContainerRef.current || document.documentElement;
+        const requestFn =
+          elem.requestFullscreen ||
+          (elem as any).webkitRequestFullscreen ||
+          (elem as any).mozRequestFullScreen ||
+          (elem as any).msRequestFullscreen;
+
+        if (requestFn) {
+          try {
+            await requestFn.call(elem, { navigationUI: 'hide' });
+          } catch {
+            await requestFn.call(elem);
+          }
         }
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        } else if ((document as any).msExitFullscreen) {
-          await (document as any).msExitFullscreen();
+        const exitFn =
+          document.exitFullscreen ||
+          (document as any).webkitExitFullscreen ||
+          (document as any).mozCancelFullScreen ||
+          (document as any).msExitFullscreen;
+
+        if (exitFn) {
+          await exitFn.call(document);
         }
       }
     } catch (err: any) {
@@ -531,7 +571,11 @@ export default function App() {
   }, [tempVisitorName]);
 
   return (
-    <div className="h-screen max-h-screen w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none">
+    <div
+      ref={appContainerRef}
+      id="app-root"
+      className="h-full h-[100dvh] max-h-[100dvh] w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none overscroll-none pb-[env(safe-area-inset-bottom,0px)]"
+    >
       {/* Clean & Compact Navigation Bar with Team Tabs and Settings */}
       <nav
         aria-label="Main Navigation"
@@ -902,7 +946,7 @@ export default function App() {
           </div>
 
           {/* Player Rows for Goals - Engineered to fit on screen */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
             {activePlayers.map((player, idx) => (
               <PlayerTrackerRow
                 key={player.id}
@@ -916,6 +960,13 @@ export default function App() {
                 onScanSticker={(p) => handleOpenScanner(p.id)}
               />
             ))}
+
+            {/* Roster Bottom Clearance Card to guarantee the last player is fully visible above browser chrome */}
+            <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+              <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+            </div>
           </div>
         </section>
 
@@ -959,7 +1010,7 @@ export default function App() {
           </div>
 
           {/* Player Rows for Assists - Engineered to fit on screen */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
             {activePlayers.map((player, idx) => (
               <PlayerTrackerRow
                 key={player.id}
@@ -973,6 +1024,13 @@ export default function App() {
                 onScanSticker={(p) => handleOpenScanner(p.id)}
               />
             ))}
+
+            {/* Roster Bottom Clearance Card to guarantee the last player is fully visible above browser chrome */}
+            <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+              <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+            </div>
           </div>
         </section>
       </main>

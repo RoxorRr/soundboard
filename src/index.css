@@ -1,6 +1,18 @@
 @import "tailwindcss";
 
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
@@ -12,6 +24,12 @@
 }
 
 /* Slim custom scrollbar for screen-fit design */
+.custom-scrollbar {
+  overscroll-behavior: contain !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 5px;
 }
@@ -28,4 +46,16 @@
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(71, 85, 105, 1);
+}
+
+/* Ensure fullscreen elements prevent scroll chaining */
+:fullscreen,
+::backdrop {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+:-webkit-full-screen {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
 }

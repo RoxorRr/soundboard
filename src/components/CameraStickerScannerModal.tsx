@@ -643,7 +643,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
         </div>
 
         {/* Modal Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar overscroll-contain">
           {/* Success Banner */}
           {successMessage && (
             <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
@@ -943,7 +943,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar overscroll-contain">
                       {slotDrafts.map((draft, idx) => {
                         const origPlayer = players.find((p) => p.id === draft.id);
                         const isChanged =

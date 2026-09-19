@@ -99,7 +99,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
         </div>
 
         {/* Scrollable Player List */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar overscroll-contain">
           {/* If Visitor Team: Editable Team Name field */}
           {isVisitor && (
             <div className="bg-slate-950/80 p-3 rounded-xl border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">

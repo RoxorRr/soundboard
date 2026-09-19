@@ -227,7 +227,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       .toUpperCase() || 'VT';
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-4 sm:p-6 custom-scrollbar select-none">
+    <div className="flex-1 overflow-y-auto bg-slate-950 p-4 sm:p-6 pb-28 sm:pb-32 custom-scrollbar overscroll-contain select-none">
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header Title */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
