@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, Flame, Award, Volume2, Delete, ArrowRight, Check, Hash, Users, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { X, Flame, Award, Volume2, Delete, ArrowRight, Check, Hash, Users, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Player } from '../types';
 
 interface QuickGoalModalProps {
@@ -33,6 +33,12 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   const [assistInput, setAssistInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [keepOpenAfterScore, setKeepOpenAfterScore] = useState<boolean>(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [shakeField, setShakeField] = useState<'scorer' | 'assist' | null>(null);
+
+  const scorerInputRef = useRef<HTMLInputElement>(null);
+  const assistInputRef = useRef<HTMLInputElement>(null);
+  const errorTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync selected team when activeTeamTab changes or modal opens
   useEffect(() => {
@@ -41,6 +47,12 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       setActiveField('scorer');
       setScorerInput('');
       setAssistInput('');
+      setValidationError(null);
+      setShakeField(null);
+      // Auto focus scorer input after open
+      setTimeout(() => {
+        scorerInputRef.current?.focus();
+      }, 50);
     }
   }, [isOpen, activeTeamTab]);
 
@@ -49,6 +61,29 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   }, [selectedTeam, visitorPlayers, homePlayers]);
 
   const teamName = selectedTeam === 'visitor' ? (visitorTeamName.trim() || 'Visitor Team') : 'Pelham Pelicans';
+
+  // Trigger error and shake animation when an invalid number is entered
+  const triggerValidationError = useCallback((message: string, field: 'scorer' | 'assist') => {
+    setValidationError(message);
+    setShakeField(field);
+
+    if (errorTimerRef.current) {
+      clearTimeout(errorTimerRef.current);
+    }
+    errorTimerRef.current = setTimeout(() => {
+      setValidationError(null);
+      setShakeField(null);
+    }, 2800);
+  }, []);
+
+  // Cleanup error timer
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+      }
+    };
+  }, []);
 
   // Matched players based on input numbers
   const matchedScorer = useMemo(() => {
@@ -63,36 +98,143 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
     return teamPlayers.find((p) => p.number === num) || null;
   }, [assistInput, teamPlayers]);
 
+  // Validation function: Check if a candidate string can be a valid prefix or exact number on the team
+  const isNumberValidForField = useCallback(
+    (candidate: string, field: 'scorer' | 'assist'): { valid: boolean; reason?: string } => {
+      if (!candidate) return { valid: true };
+
+      const num = parseInt(candidate, 10);
+      if (isNaN(num)) {
+        return { valid: false, reason: 'Only numbers are allowed' };
+      }
+
+      // If checking assist field, verify it's not the goal scorer
+      if (field === 'assist' && matchedScorer && candidate === String(matchedScorer.number)) {
+        return {
+          valid: false,
+          reason: `Player #${candidate} is the goal scorer and cannot assist their own goal`,
+        };
+      }
+
+      // Check if there is ANY player on the team whose jersey number starts with this candidate string
+      const eligiblePlayers = teamPlayers.filter((p) => {
+        if (field === 'assist' && matchedScorer && p.number === matchedScorer.number) {
+          return false;
+        }
+        return String(p.number).startsWith(candidate);
+      });
+
+      if (eligiblePlayers.length === 0) {
+        return {
+          valid: false,
+          reason: `No player on ${teamName} has jersey #${candidate}`,
+        };
+      }
+
+      return { valid: true };
+    },
+    [teamPlayers, matchedScorer, teamName]
+  );
+
   // Live Announcement Preview Text
   const previewAnnouncementText = useMemo(() => {
     if (!scorerInput) {
       return `Waiting for goal scorer jersey number...`;
     }
-    const scorerName = matchedScorer?.name || `Player #${scorerInput}`;
-    const scorerPart = `${teamName} goal! Scored by number ${scorerInput}, ${scorerName}!`;
+    if (!matchedScorer) {
+      return `Scorer jersey #${scorerInput} not matched to a player on the roster.`;
+    }
+
+    const scorerPart = `${teamName} goal! Scored by number ${matchedScorer.number}, ${matchedScorer.name}!`;
 
     if (assistInput) {
-      const assistName = matchedAssist?.name || `Player #${assistInput}`;
-      return `${scorerPart} Assisted by number ${assistInput}, ${assistName}!`;
+      if (!matchedAssist) {
+        return `${scorerPart} (Assist jersey #${assistInput} not matched...)`;
+      }
+      return `${scorerPart} Assisted by number ${matchedAssist.number}, ${matchedAssist.name}!`;
     }
 
     return `${scorerPart} Unassisted!`;
   }, [scorerInput, assistInput, matchedScorer, matchedAssist, teamName]);
 
-  // Keypad button click handler
-  const handleKeypadPress = useCallback((digit: string) => {
-    if (activeField === 'scorer') {
-      if (scorerInput.length < 2) {
-        setScorerInput((prev) => prev + digit);
+  // Handle direct text field input change
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: 'scorer' | 'assist'
+  ) => {
+    const rawVal = e.target.value;
+    const digits = rawVal.replace(/\D/g, '').slice(0, 2);
+
+    if (digits === '') {
+      if (field === 'scorer') {
+        setScorerInput('');
+      } else {
+        setAssistInput('');
+      }
+      setValidationError(null);
+      return;
+    }
+
+    const validation = isNumberValidForField(digits, field);
+    if (!validation.valid) {
+      triggerValidationError(validation.reason || `Player #${digits} does not exist`, field);
+      return;
+    }
+
+    setValidationError(null);
+    if (field === 'scorer') {
+      setScorerInput(digits);
+      // Auto-advance to assist if exact match found and no two-digit prefix possible
+      const hasFurtherPrefix = teamPlayers.some(
+        (p) => String(p.number).length > digits.length && String(p.number).startsWith(digits)
+      );
+      if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === digits)) {
+        setTimeout(() => {
+          setActiveField('assist');
+          assistInputRef.current?.focus();
+        }, 300);
       }
     } else {
-      if (assistInput.length < 2) {
-        setAssistInput((prev) => prev + digit);
-      }
+      setAssistInput(digits);
     }
-  }, [activeField, scorerInput, assistInput]);
+  };
+
+  // Keypad button click handler
+  const handleKeypadPress = useCallback(
+    (digit: string) => {
+      const current = activeField === 'scorer' ? scorerInput : assistInput;
+      if (current.length >= 2) return;
+
+      const candidate = current + digit;
+      const validation = isNumberValidForField(candidate, activeField);
+
+      if (!validation.valid) {
+        triggerValidationError(validation.reason || `Player #${candidate} does not exist`, activeField);
+        return;
+      }
+
+      setValidationError(null);
+      if (activeField === 'scorer') {
+        setScorerInput(candidate);
+        // Auto-advance to assist if exact match found and no multi-digit numbers start with this
+        const hasFurtherPrefix = teamPlayers.some(
+          (p) => String(p.number).length > candidate.length && String(p.number).startsWith(candidate)
+        );
+        if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === candidate)) {
+          setTimeout(() => {
+            setActiveField('assist');
+            assistInputRef.current?.focus();
+          }, 300);
+        }
+      } else {
+        setAssistInput(candidate);
+      }
+    },
+    [activeField, scorerInput, assistInput, isNumberValidForField, triggerValidationError, teamPlayers]
+  );
 
   const handleBackspace = useCallback(() => {
+    setValidationError(null);
     if (activeField === 'scorer') {
       setScorerInput((prev) => prev.slice(0, -1));
     } else {
@@ -101,24 +243,56 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   }, [activeField]);
 
   const handleClearCurrent = useCallback(() => {
+    setValidationError(null);
     if (activeField === 'scorer') {
       setScorerInput('');
+      scorerInputRef.current?.focus();
     } else {
       setAssistInput('');
+      assistInputRef.current?.focus();
     }
   }, [activeField]);
 
   const handleClearAll = useCallback(() => {
+    setValidationError(null);
     setScorerInput('');
     setAssistInput('');
     setActiveField('scorer');
+    scorerInputRef.current?.focus();
   }, []);
+
+  // Determine if a keypad digit can be pressed
+  const isKeypadDigitAllowed = useCallback(
+    (digit: string) => {
+      const current = activeField === 'scorer' ? scorerInput : assistInput;
+      if (current.length >= 2) return false;
+      const candidate = current + digit;
+      return isNumberValidForField(candidate, activeField).valid;
+    },
+    [activeField, scorerInput, assistInput, isNumberValidForField]
+  );
 
   // Keyboard navigation support
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is actively in the input element (input's onChange handles it)
+      if (document.activeElement === scorerInputRef.current || document.activeElement === assistInputRef.current) {
+        if (e.key === 'Escape') {
+          onClose();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (activeField === 'scorer' && matchedScorer && !assistInput) {
+            setActiveField('assist');
+            assistInputRef.current?.focus();
+          } else if (matchedScorer) {
+            handleSubmit();
+          }
+        }
+        return;
+      }
+
       if (e.key === 'Escape') {
         onClose();
         return;
@@ -130,11 +304,15 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
         handleBackspace();
       } else if (e.key === 'Tab') {
         e.preventDefault();
-        setActiveField((prev) => (prev === 'scorer' ? 'assist' : 'scorer'));
+        const next = activeField === 'scorer' ? 'assist' : 'scorer';
+        setActiveField(next);
+        if (next === 'scorer') scorerInputRef.current?.focus();
+        else assistInputRef.current?.focus();
       } else if (e.key === 'Enter') {
-        if (activeField === 'scorer' && scorerInput && !assistInput) {
+        if (activeField === 'scorer' && matchedScorer && !assistInput) {
           setActiveField('assist');
-        } else if (scorerInput) {
+          assistInputRef.current?.focus();
+        } else if (matchedScorer) {
           handleSubmit();
         }
       }
@@ -142,45 +320,31 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleKeypadPress, handleBackspace, activeField, scorerInput, assistInput, onClose]);
+  }, [isOpen, handleKeypadPress, handleBackspace, activeField, matchedScorer, assistInput, onClose]);
 
-  // Handle Submission & Announcement
+  // Handle Submission & Announcement (Only allowed if player exists)
   const handleSubmit = async () => {
-    if (!scorerInput || isSubmitting) return;
+    if (!matchedScorer || isSubmitting) return;
 
-    const scorerNum = parseInt(scorerInput, 10);
-    if (isNaN(scorerNum)) return;
+    if (assistInput && !matchedAssist) {
+      triggerValidationError(`Assist player #${assistInput} does not exist on the roster`, 'assist');
+      return;
+    }
 
-    // Use existing matched player or create placeholder representation
-    const scorerPlayer: Player = matchedScorer || {
-      id: `custom_scorer_${scorerNum}`,
-      number: scorerNum,
-      name: `Player #${scorerNum}`,
-      goals: 0,
-      assists: 0,
-    };
-
-    let assistPlayer: Player | null = null;
-    if (assistInput) {
-      const assistNum = parseInt(assistInput, 10);
-      if (!isNaN(assistNum)) {
-        assistPlayer = matchedAssist || {
-          id: `custom_assist_${assistNum}`,
-          number: assistNum,
-          name: `Player #${assistNum}`,
-          goals: 0,
-          assists: 0,
-        };
-      }
+    if (matchedAssist && matchedAssist.number === matchedScorer.number) {
+      triggerValidationError('Goal scorer cannot assist their own goal', 'assist');
+      return;
     }
 
     setIsSubmitting(true);
     try {
-      await onScoreGoalWithAssist(selectedTeam, scorerPlayer, assistPlayer);
+      await onScoreGoalWithAssist(selectedTeam, matchedScorer, matchedAssist);
       if (keepOpenAfterScore) {
         setScorerInput('');
         setAssistInput('');
         setActiveField('scorer');
+        setValidationError(null);
+        scorerInputRef.current?.focus();
       } else {
         onClose();
       }
@@ -188,6 +352,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  // Check if form is ready to submit
+  const canSubmit = Boolean(
+    matchedScorer &&
+    (!assistInput || (matchedAssist && matchedAssist.number !== matchedScorer.number)) &&
+    !isSubmitting
+  );
 
   if (!isOpen) return null;
 
@@ -205,7 +376,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                 <span>Quick Goal & Assist Entry</span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Input jersey numbers to score and announce via voice
+                Only active roster jersey numbers can be entered
               </p>
             </div>
           </div>
@@ -228,6 +399,9 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
               type="button"
               onClick={() => {
                 setSelectedTeam('home');
+                setScorerInput('');
+                setAssistInput('');
+                setValidationError(null);
                 if (onSwitchTeamTab) onSwitchTeamTab('home');
               }}
               className={`px-3 py-1.5 rounded-lg text-xs font-athletic font-bold uppercase transition-all ${
@@ -236,12 +410,15 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   : 'bg-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              Pelham Pelicans
+              Pelham Pelicans ({homePlayers.length})
             </button>
             <button
               type="button"
               onClick={() => {
                 setSelectedTeam('visitor');
+                setScorerInput('');
+                setAssistInput('');
+                setValidationError(null);
                 if (onSwitchTeamTab) onSwitchTeamTab('visitor');
               }}
               className={`px-3 py-1.5 rounded-lg text-xs font-athletic font-bold uppercase transition-all ${
@@ -250,19 +427,32 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   : 'bg-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              {visitorTeamName}
+              {visitorTeamName} ({visitorPlayers.length})
             </button>
           </div>
         </div>
 
         <div className="p-4 overflow-y-auto space-y-4">
-          {/* Dual Input Fields for Scorer and Assist */}
+          {/* Validation Alert Banner */}
+          {validationError && (
+            <div className="px-3 py-2 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-bold flex items-center gap-2 animate-bounce">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span className="flex-1">{validationError}</span>
+            </div>
+          )}
+
+          {/* Dual Text Input Fields for Scorer and Assist */}
           <div className="grid grid-cols-2 gap-3">
             {/* Field 1: Goal Scorer */}
             <div
-              onClick={() => setActiveField('scorer')}
+              onClick={() => {
+                setActiveField('scorer');
+                scorerInputRef.current?.focus();
+              }}
               className={`p-3 rounded-xl border transition-all cursor-pointer relative ${
-                activeField === 'scorer'
+                shakeField === 'scorer'
+                  ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/40'
+                  : activeField === 'scorer'
                   ? 'bg-amber-500/10 border-amber-400 ring-2 ring-amber-400/40 shadow-lg shadow-amber-500/10'
                   : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
               }`}
@@ -272,32 +462,58 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   <Flame className="w-3.5 h-3.5" />
                   <span>Goal Scorer</span>
                 </span>
-                {activeField === 'scorer' && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 animate-pulse">
-                    Typing #
+                {activeField === 'scorer' ? (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-slate-950">
+                    Active
                   </span>
-                )}
+                ) : matchedScorer ? (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
+                    <Check className="w-2.5 h-2.5" /> Ready
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-12 h-11 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xl font-athletic font-black text-amber-300">
-                  {scorerInput ? `#${scorerInput}` : <span className="text-slate-600 font-normal">--</span>}
+                <div className="relative w-14 h-12">
+                  <input
+                    ref={scorerInputRef}
+                    id="quick-goal-scorer-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={2}
+                    value={scorerInput}
+                    onChange={(e) => handleInputChange(e, 'scorer')}
+                    onFocus={() => setActiveField('scorer')}
+                    placeholder="--"
+                    className="w-full h-full text-center rounded-lg bg-slate-900 border border-slate-700 text-2xl font-athletic font-black text-amber-300 placeholder:text-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                  />
+                  {scorerInput && (
+                    <span className="absolute left-1.5 top-1.5 text-[9px] font-mono text-amber-500/70">#</span>
+                  )}
                 </div>
+
                 <div className="min-w-0 flex-1">
                   {matchedScorer ? (
                     <div>
-                      <p className="text-xs font-bold text-white truncate">{matchedScorer.name}</p>
+                      <p className="text-xs font-bold text-white truncate flex items-center gap-1">
+                        <span>{matchedScorer.name}</span>
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      </p>
                       <p className="text-[10px] text-amber-400/90 font-mono">
                         {matchedScorer.goals} G • {matchedScorer.assists} A
                       </p>
                     </div>
                   ) : scorerInput ? (
                     <div>
-                      <p className="text-xs font-medium text-slate-400 truncate">#{scorerInput} (Unlisted)</p>
-                      <p className="text-[10px] text-slate-500">Will announce #{scorerInput}</p>
+                      <p className="text-xs font-medium text-amber-400 truncate">Typing #{scorerInput}...</p>
+                      <p className="text-[10px] text-slate-400">Matches available roster</p>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-500 italic">Tap to enter #</p>
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Enter jersey #</p>
+                      <p className="text-[10px] text-slate-500">Only roster players</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -305,9 +521,14 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
             {/* Field 2: Assist Maker */}
             <div
-              onClick={() => setActiveField('assist')}
+              onClick={() => {
+                setActiveField('assist');
+                assistInputRef.current?.focus();
+              }}
               className={`p-3 rounded-xl border transition-all cursor-pointer relative ${
-                activeField === 'assist'
+                shakeField === 'assist'
+                  ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/40'
+                  : activeField === 'assist'
                   ? 'bg-sky-500/10 border-sky-400 ring-2 ring-sky-400/40 shadow-lg shadow-sky-500/10'
                   : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
               }`}
@@ -317,32 +538,58 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   <Award className="w-3.5 h-3.5" />
                   <span>Assist Maker</span>
                 </span>
-                {activeField === 'assist' && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-400 text-slate-950 animate-pulse">
-                    Typing #
+                {activeField === 'assist' ? (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-400 text-slate-950">
+                    Active
                   </span>
-                )}
+                ) : matchedAssist ? (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
+                    <Check className="w-2.5 h-2.5" /> Ready
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-12 h-11 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xl font-athletic font-black text-sky-300">
-                  {assistInput ? `#${assistInput}` : <span className="text-slate-600 font-normal">--</span>}
+                <div className="relative w-14 h-12">
+                  <input
+                    ref={assistInputRef}
+                    id="quick-goal-assist-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={2}
+                    value={assistInput}
+                    onChange={(e) => handleInputChange(e, 'assist')}
+                    onFocus={() => setActiveField('assist')}
+                    placeholder="--"
+                    className="w-full h-full text-center rounded-lg bg-slate-900 border border-slate-700 text-2xl font-athletic font-black text-sky-300 placeholder:text-slate-600 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
+                  />
+                  {assistInput && (
+                    <span className="absolute left-1.5 top-1.5 text-[9px] font-mono text-sky-500/70">#</span>
+                  )}
                 </div>
+
                 <div className="min-w-0 flex-1">
                   {matchedAssist ? (
                     <div>
-                      <p className="text-xs font-bold text-white truncate">{matchedAssist.name}</p>
+                      <p className="text-xs font-bold text-white truncate flex items-center gap-1">
+                        <span>{matchedAssist.name}</span>
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      </p>
                       <p className="text-[10px] text-sky-400/90 font-mono">
                         {matchedAssist.assists} A • {matchedAssist.goals} G
                       </p>
                     </div>
                   ) : assistInput ? (
                     <div>
-                      <p className="text-xs font-medium text-slate-400 truncate">#{assistInput} (Unlisted)</p>
-                      <p className="text-[10px] text-slate-500">Will announce #{assistInput}</p>
+                      <p className="text-xs font-medium text-sky-400 truncate">Typing #{assistInput}...</p>
+                      <p className="text-[10px] text-slate-400">Matches available roster</p>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-500 italic">Optional (Unassisted)</p>
+                    <div>
+                      <p className="text-xs text-slate-400 font-medium">Optional</p>
+                      <p className="text-[10px] text-slate-500">Unassisted if blank</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -354,59 +601,86 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
                 <Users className="w-3 h-3" />
-                <span>Quick Player Select for {activeField === 'scorer' ? 'Goal Scorer' : 'Assist'}:</span>
+                <span>Roster Players for {activeField === 'scorer' ? 'Goal Scorer' : 'Assist'}:</span>
               </span>
               {assistInput && activeField === 'assist' && (
                 <button
                   type="button"
-                  onClick={() => setAssistInput('')}
-                  className="text-[10px] text-sky-400 hover:text-sky-300 font-bold"
+                  onClick={() => {
+                    setAssistInput('');
+                    setValidationError(null);
+                  }}
+                  className="text-[10px] text-sky-400 hover:text-sky-300 font-bold underline"
                 >
-                  Set as Unassisted
+                  Clear (Unassisted)
                 </button>
               )}
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">
-              {teamPlayers.map((player) => (
-                <button
-                  key={player.id}
-                  type="button"
-                  onClick={() => {
-                    if (activeField === 'scorer') {
-                      setScorerInput(String(player.number));
-                      setActiveField('assist');
-                    } else {
-                      setAssistInput(String(player.number));
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all active:scale-95 border ${
-                    (activeField === 'scorer' && scorerInput === String(player.number)) ||
-                    (activeField === 'assist' && assistInput === String(player.number))
-                      ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                  }`}
-                >
-                  <span className="font-athletic font-black">#{player.number}</span>
-                  <span className="truncate max-w-[85px] text-[11px] font-normal">{player.name}</span>
-                </button>
-              ))}
+              {teamPlayers.map((player) => {
+                const isSelected =
+                  (activeField === 'scorer' && scorerInput === String(player.number)) ||
+                  (activeField === 'assist' && assistInput === String(player.number));
+                const isScorer = Boolean(matchedScorer && player.number === matchedScorer.number);
+                const isAssistDisabled = activeField === 'assist' && isScorer;
+
+                return (
+                  <button
+                    key={player.id}
+                    type="button"
+                    disabled={isAssistDisabled}
+                    onClick={() => {
+                      if (activeField === 'scorer') {
+                        setScorerInput(String(player.number));
+                        setValidationError(null);
+                        setActiveField('assist');
+                        assistInputRef.current?.focus();
+                      } else {
+                        setAssistInput(String(player.number));
+                        setValidationError(null);
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all active:scale-95 border ${
+                      isAssistDisabled
+                        ? 'opacity-40 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500'
+                        : isSelected
+                        ? activeField === 'scorer'
+                          ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm'
+                          : 'bg-sky-400 text-slate-950 border-sky-300 shadow-sm'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    <span className="font-athletic font-black">#{player.number}</span>
+                    <span className="truncate max-w-[85px] text-[11px] font-normal">{player.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Touch-Friendly Numeric Keypad */}
+          {/* Touch-Friendly Numeric Keypad with Guarded Keys */}
           <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-2">
             <div className="grid grid-cols-3 gap-2">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
-                <button
-                  key={digit}
-                  type="button"
-                  onClick={() => handleKeypadPress(digit)}
-                  className="h-12 sm:h-14 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-slate-100 text-xl font-athletic font-black border border-slate-700/80 flex items-center justify-center transition-all shadow-sm active:scale-95"
-                >
-                  {digit}
-                </button>
-              ))}
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => {
+                const isAllowed = isKeypadDigitAllowed(digit);
+                return (
+                  <button
+                    key={digit}
+                    type="button"
+                    disabled={!isAllowed}
+                    onClick={() => handleKeypadPress(digit)}
+                    className={`h-12 sm:h-14 rounded-xl text-xl font-athletic font-black border flex items-center justify-center transition-all shadow-sm ${
+                      isAllowed
+                        ? 'bg-slate-800/90 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-slate-100 border-slate-700/80 active:scale-95'
+                        : 'bg-slate-900/40 text-slate-600 border-slate-800/40 cursor-not-allowed opacity-30'
+                    }`}
+                    title={isAllowed ? `Enter ${digit}` : `No player number starts with this`}
+                  >
+                    {digit}
+                  </button>
+                );
+              })}
 
               {/* Clear Current Field */}
               <button
@@ -419,13 +693,24 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
               </button>
 
               {/* Zero */}
-              <button
-                type="button"
-                onClick={() => handleKeypadPress('0')}
-                className="h-12 sm:h-14 rounded-xl bg-slate-800/90 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-slate-100 text-xl font-athletic font-black border border-slate-700/80 flex items-center justify-center transition-all shadow-sm active:scale-95"
-              >
-                0
-              </button>
+              {(() => {
+                const isAllowed = isKeypadDigitAllowed('0');
+                return (
+                  <button
+                    type="button"
+                    disabled={!isAllowed}
+                    onClick={() => handleKeypadPress('0')}
+                    className={`h-12 sm:h-14 rounded-xl text-xl font-athletic font-black border flex items-center justify-center transition-all shadow-sm ${
+                      isAllowed
+                        ? 'bg-slate-800/90 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-slate-100 border-slate-700/80 active:scale-95'
+                        : 'bg-slate-900/40 text-slate-600 border-slate-800/40 cursor-not-allowed opacity-30'
+                    }`}
+                    title={isAllowed ? 'Enter 0' : 'No player number starts with 0'}
+                  >
+                    0
+                  </button>
+                );
+              })()}
 
               {/* Backspace */}
               <button
@@ -442,7 +727,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
             <div className="flex items-center justify-between gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setActiveField((prev) => (prev === 'scorer' ? 'assist' : 'scorer'))}
+                onClick={() => {
+                  const next = activeField === 'scorer' ? 'assist' : 'scorer';
+                  setActiveField(next);
+                  setValidationError(null);
+                  if (next === 'scorer') scorerInputRef.current?.focus();
+                  else assistInputRef.current?.focus();
+                }}
                 className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
               >
                 <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
@@ -496,10 +787,10 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
             </button>
             <button
               type="button"
-              disabled={!scorerInput || isSubmitting}
+              disabled={!canSubmit}
               onClick={handleSubmit}
               className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
-                !scorerInput || isSubmitting
+                !canSubmit
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                   : selectedTeam === 'visitor'
                   ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white shadow-rose-500/25 active:scale-95'
