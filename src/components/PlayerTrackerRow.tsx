@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Minus, Camera } from 'lucide-react';
+import { Plus, Minus, Camera, UserMinus } from 'lucide-react';
 import { Player } from '../types';
 
 interface PlayerTrackerRowProps {
@@ -8,9 +8,11 @@ interface PlayerTrackerRowProps {
   mode: 'goals' | 'assists';
   isActiveAnnouncing: boolean;
   teamName?: string;
+  isLineupEditMode?: boolean;
   onIncrement: (player: Player) => void;
   onDecrement: (player: Player) => void;
   onScanSticker?: (player: Player) => void;
+  onRemovePlayer?: (player: Player) => void;
 }
 
 export const PlayerTrackerRow: React.FC<PlayerTrackerRowProps> = ({
@@ -19,9 +21,11 @@ export const PlayerTrackerRow: React.FC<PlayerTrackerRowProps> = ({
   mode,
   isActiveAnnouncing,
   teamName = 'Pelham Pelicans',
+  isLineupEditMode = false,
   onIncrement,
   onDecrement,
   onScanSticker,
+  onRemovePlayer,
 }) => {
   const isGoal = mode === 'goals';
   const count = isGoal ? player.goals : player.assists;
@@ -56,7 +60,7 @@ export const PlayerTrackerRow: React.FC<PlayerTrackerRowProps> = ({
           {player.number}
         </span>
 
-        {/* Player Name */}
+        {/* Player Name and Quick Actions */}
         <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <div className="min-w-0 truncate">
             <p className="text-xs sm:text-sm font-bold text-slate-100 truncate tracking-tight">
@@ -67,18 +71,55 @@ export const PlayerTrackerRow: React.FC<PlayerTrackerRowProps> = ({
             </p>
           </div>
 
-          {/* Quick scan sticker icon button for this player */}
-          {onScanSticker && (
+          {/* If Lineup Attendance Edit Mode is active: Show prominent red Remove button */}
+          {isLineupEditMode && onRemovePlayer && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onScanSticker(player);
+                onRemovePlayer(player);
               }}
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-300 transition-opacity"
-              title={`Scan sticker to update #${player.number} ${player.name}`}
+              className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 shrink-0 ml-1"
+              title={`Remove #${player.number} ${player.name} from lineup (not present)`}
             >
-              <Camera className="w-3.5 h-3.5" />
+              <UserMinus className="w-3 h-3 text-rose-400" />
+              <span>Remove</span>
             </button>
+          )}
+
+          {/* Quick actions on hover when not in lineup edit mode */}
+          {!isLineupEditMode && (
+            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              {/* Quick remove absent button */}
+              {onRemovePlayer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemovePlayer(player);
+                  }}
+                  className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
+                  title={`Remove #${player.number} ${player.name} (not present)`}
+                >
+                  <UserMinus className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {/* Quick scan sticker icon button for this player */}
+              {onScanSticker && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onScanSticker(player);
+                  }}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-amber-300 transition-colors"
+                  title={`Scan sticker to update #${player.number} ${player.name}`}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

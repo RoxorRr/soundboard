@@ -313,7 +313,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 >
                   <Users className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Edit Roster ({homePlayers.length})</span>
+                  <span>Manage Lineup & Roster ({homePlayers.length})</span>
                 </button>
                 <button
                   type="button"
@@ -419,7 +419,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 >
                   <Users className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Edit Roster ({visitorPlayers.length})</span>
+                  <span>Manage Lineup & Roster ({visitorPlayers.length})</span>
                 </button>
                 <button
                   type="button"

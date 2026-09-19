@@ -7,7 +7,7 @@ import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -210,6 +210,16 @@ export default function App() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [scannerTargetPlayerId, setScannerTargetPlayerId] = useState<string | null>(null);
+
+  // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
+  const [isLineupEditMode, setIsLineupEditMode] = useState(false);
+  // Confirmation state if a player being removed already has scored goals or assists
+  const [playerPendingRemoval, setPlayerPendingRemoval] = useState<Player | null>(null);
+  // Undo state when a player is removed from the active lineup
+  const [lastRemovedPlayer, setLastRemovedPlayer] = useState<{
+    player: Player;
+    team: 'home' | 'visitor';
+  } | null>(null);
 
   // Mobile sub-tab state ('goals' | 'assists')
   const [mobileTab, setMobileTab] = useState<'goals' | 'assists'>('goals');
@@ -531,6 +541,49 @@ export default function App() {
       setHomePlayers(sorted);
     }
   }, [activeTeamTab]);
+
+  // Execute removing player from active lineup
+  const executeRemovePlayer = useCallback((player: Player) => {
+    const team = activeTeamTab;
+    if (team === 'visitor') {
+      setVisitorPlayers((prev) => prev.filter((p) => p.id !== player.id));
+    } else {
+      setHomePlayers((prev) => prev.filter((p) => p.id !== player.id));
+    }
+
+    setLastRemovedPlayer({ player, team });
+    setPlayerPendingRemoval(null);
+    setVoiceFeedback({
+      message: `Removed #${player.number} ${player.name || 'player'} from today's lineup.`,
+      type: 'info',
+    });
+  }, [activeTeamTab]);
+
+  // Request player removal (prompts confirmation if player has goals/assists recorded)
+  const handleRequestRemovePlayer = useCallback((player: Player) => {
+    const totalPoints = (player.goals || 0) + (player.assists || 0);
+    if (totalPoints > 0) {
+      setPlayerPendingRemoval(player);
+    } else {
+      executeRemovePlayer(player);
+    }
+  }, [executeRemovePlayer]);
+
+  // Undo last player removal
+  const handleUndoRemovePlayer = useCallback(() => {
+    if (!lastRemovedPlayer) return;
+    const { player, team } = lastRemovedPlayer;
+    if (team === 'visitor') {
+      setVisitorPlayers((prev) => sortPlayersByNumber([...prev, player]));
+    } else {
+      setHomePlayers((prev) => sortPlayersByNumber([...prev, player]));
+    }
+    setLastRemovedPlayer(null);
+    setVoiceFeedback({
+      message: `Restored #${player.number} ${player.name} to the lineup.`,
+      type: 'success',
+    });
+  }, [lastRemovedPlayer]);
 
   const handleOpenScanner = useCallback((playerId?: string) => {
     setScannerTargetPlayerId(playerId || null);
@@ -882,6 +935,79 @@ export default function App() {
             </button>
           </div>
 
+          {/* Lineup Attendance & Roster Management Bar */}
+          <div className="bg-slate-900/90 border-b border-slate-800 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0 select-none">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div
+                className={`px-2.5 py-1 rounded-md text-xs font-athletic font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                  isVisitor
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{activeTeamName}:</span>
+                <span className="font-mono font-black text-white">{activePlayers.length} Active Players</span>
+              </div>
+
+              {/* Quick Remove Absent Players Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsLineupEditMode((prev) => !prev)}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                  isLineupEditMode
+                    ? 'bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/30 ring-1 ring-rose-400'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+                }`}
+                title={isLineupEditMode ? 'Finish removing absent players' : 'Click to quickly tap and remove players who are absent today'}
+              >
+                <UserMinus className={`w-3.5 h-3.5 ${isLineupEditMode ? 'text-white' : 'text-rose-400'}`} />
+                <span>{isLineupEditMode ? 'Finish Removing Absent' : 'Remove Absent Players'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsRosterModalOpen(true)}
+                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors"
+                title="Edit jersey numbers, player names, or add/remove players"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Manage Lineup & Roster</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenScanner()}
+                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors hidden sm:flex"
+                title="Scan sticker sheet with camera"
+              >
+                <Camera className="w-3.5 h-3.5 text-sky-400" />
+                <span>Scan Sticker</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Banner when Lineup Attendance Mode is active */}
+          {isLineupEditMode && (
+            <div className="bg-rose-950/80 border-b border-rose-500/50 px-3 py-2 flex items-center justify-between gap-2 text-xs text-rose-200 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <UserMinus className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  <strong>Lineup Attendance Mode:</strong> Tap the red <strong>Remove</strong> button on any player who is not present today. Changes are saved automatically.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLineupEditMode(false)}
+                className="px-3 py-1 rounded bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shrink-0 transition-colors shadow-sm"
+              >
+                Done (Lineup Ready)
+              </button>
+            </div>
+          )}
+
       {/* Main Fit-to-Screen Arena Split Board */}
       <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 overflow-hidden">
         {/* LEFT SIDE: GOALS TRACKER */}
@@ -955,9 +1081,11 @@ export default function App() {
                 mode="goals"
                 teamName={activeTeamName}
                 isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                isLineupEditMode={isLineupEditMode}
                 onIncrement={handleGoalIncrement}
                 onDecrement={handleGoalDecrement}
                 onScanSticker={(p) => handleOpenScanner(p.id)}
+                onRemovePlayer={handleRequestRemovePlayer}
               />
             ))}
 
@@ -1019,9 +1147,11 @@ export default function App() {
                 mode="assists"
                 teamName={activeTeamName}
                 isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                isLineupEditMode={isLineupEditMode}
                 onIncrement={handleAssistIncrement}
                 onDecrement={handleAssistDecrement}
                 onScanSticker={(p) => handleOpenScanner(p.id)}
+                onRemovePlayer={handleRequestRemovePlayer}
               />
             ))}
 
@@ -1067,6 +1197,81 @@ export default function App() {
         onUpdatePlayer={handleUpdatePlayerFromSticker}
         onUpdateAllPlayers={handleSaveAllPlayersFromSticker}
       />
+
+      {/* Confirmation Modal when removing a player who already has goals or assists */}
+      {playerPendingRemoval && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                <UserMinus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white font-athletic uppercase tracking-wide">
+                  Remove #{playerPendingRemoval.number} {playerPendingRemoval.name}?
+                </h3>
+                <p className="text-xs text-slate-400">
+                  This player has points recorded in today&apos;s game
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-300 space-y-1">
+              <p>
+                <strong className="text-white">#{playerPendingRemoval.number} {playerPendingRemoval.name}</strong> currently has{' '}
+                <span className="text-amber-400 font-bold">{playerPendingRemoval.goals} goal(s)</span> and{' '}
+                <span className="text-sky-400 font-bold">{playerPendingRemoval.assists} assist(s)</span>.
+              </p>
+              <p className="text-slate-400 text-[11px]">
+                Removing them will remove their slot from the active lineup. You can restore them anytime with Undo or the Add Player button.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPlayerPendingRemoval(null)}
+                className="px-3 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-colors"
+              >
+                Keep in Lineup
+              </button>
+              <button
+                type="button"
+                onClick={() => executeRemovePlayer(playerPendingRemoval)}
+                className="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold shadow-md shadow-rose-500/20 transition-all"
+              >
+                Yes, Remove Player
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Undo Pill after removing a player */}
+      {lastRemovedPlayer && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 border border-rose-500/50 shadow-2xl rounded-xl px-4 py-2.5 flex items-center gap-3 text-xs text-slate-200 animate-in fade-in slide-in-from-bottom-2">
+          <UserMinus className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>
+            Removed <strong className="text-white font-bold">#{lastRemovedPlayer.player.number} {lastRemovedPlayer.player.name || 'player'}</strong> from lineup
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoRemovePlayer}
+            className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-sm transition-all"
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+            <span>Undo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setLastRemovedPlayer(null)}
+            className="p-1 text-slate-400 hover:text-white transition-colors"
+            title="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

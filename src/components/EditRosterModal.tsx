@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, RotateCcw, Check, Users, Camera, Sparkles, Layers, Edit3, ArrowUpDown } from 'lucide-react';
+import { X, RotateCcw, Check, Users, Camera, Sparkles, Layers, Edit3, ArrowUpDown, Trash2, UserPlus, UserMinus } from 'lucide-react';
 import { Player } from '../types';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from '../data/defaultPlayers';
 
@@ -48,6 +48,26 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
     );
   };
 
+  const handleRemovePlayer = (id: string) => {
+    setEditedList((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleAddPlayer = () => {
+    const existingNumbers = new Set(editedList.map((p) => p.number));
+    let nextNum = 1;
+    while (existingNumbers.has(nextNum) && nextNum <= 99) {
+      nextNum++;
+    }
+    const newPlayer: Player = {
+      id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      number: nextNum > 99 ? 0 : nextNum,
+      name: '',
+      goals: 0,
+      assists: 0,
+    };
+    setEditedList((prev) => [...prev, newPlayer]);
+  };
+
   const handleSortByNumber = () => {
     setEditedList((prev) => [...prev].sort((a, b) => a.number - b.number));
   };
@@ -83,10 +103,10 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
             <Users className={`w-5 h-5 ${isVisitor ? 'text-rose-400' : 'text-amber-400'}`} />
             <div>
               <h2 className="text-base font-bold text-white font-athletic uppercase tracking-wider">
-                Edit {editedList.length}-Player Roster
+                Manage Lineup & Roster ({editedList.length} Players)
               </h2>
               <p className="text-[11px] text-slate-400">
-                {currentTeamName}
+                {currentTeamName} • Remove absent players, add slots, or edit names and numbers
               </p>
             </div>
           </div>
@@ -153,69 +173,129 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1 gap-2">
-            <p className="text-xs text-slate-400">
-              Customize any of the {editedList.length} players or use the camera icon on individual slots:
-            </p>
-            <button
-              type="button"
-              onClick={handleSortByNumber}
-              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 flex items-center gap-1.5 transition-colors shrink-0"
-              title="Sort players by their jersey number from smallest to largest"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              <span>Sort by # (1-99)</span>
-            </button>
+          {/* Lineup Bar: Active count, Add Player button, and Sort button */}
+          <div className="flex flex-wrap items-center justify-between pt-1 gap-2">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-slate-300 font-semibold">
+                Lineup: <span className={isVisitor ? 'text-rose-400' : 'text-amber-400'}>{editedList.length} Players</span>
+              </p>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                • Tap the red trash icon to remove any player not present today
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleAddPlayer}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 flex items-center gap-1.5 transition-colors"
+                title="Add a new player slot to the lineup"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>+ Add Player</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSortByNumber}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 flex items-center gap-1.5 transition-colors shrink-0"
+                title="Sort players by their jersey number from smallest to largest"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span>Sort by # (1-99)</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {editedList.map((player, idx) => (
-              <div
-                key={player.id}
-                className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/70 border border-slate-800 focus-within:border-amber-500/60"
-              >
-                <span className="text-[11px] font-mono text-slate-500 w-4 text-right">
-                  {idx + 1}.
-                </span>
-                <div className="w-14">
-                  <label className="text-[9px] uppercase font-bold text-slate-400 block">Number</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={player.number}
-                    onChange={(e) => handleChange(player.id, 'number', e.target.value)}
-                    className="w-full bg-slate-800 text-slate-100 font-athletic font-bold px-2 py-1 rounded text-sm border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <label className="text-[9px] uppercase font-bold text-slate-400 block">Player Name</label>
-                  <input
-                    type="text"
-                    value={player.name}
-                    onChange={(e) => handleChange(player.id, 'name', e.target.value)}
-                    className="w-full bg-slate-800 text-slate-100 font-semibold px-2 py-1 rounded text-sm border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                    placeholder="Player Name"
-                    required
-                  />
-                </div>
-                {onOpenScanner && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSave(editedList);
-                      onClose();
-                      onOpenScanner(player.id);
-                    }}
-                    className="self-end mb-0.5 p-1.5 rounded-md bg-slate-800 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-700 transition-colors"
-                    title={`Scan sticker with camera for #${player.number} ${player.name}`}
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
-                )}
+          {/* If list is empty */}
+          {editedList.length === 0 ? (
+            <div className="p-8 text-center bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+              <UserMinus className="w-8 h-8 text-slate-500 mx-auto" />
+              <p className="text-sm font-bold text-slate-300">All players have been removed</p>
+              <p className="text-xs text-slate-400">Add players manually or reset to team defaults.</p>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleAddPlayer}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Add Player</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetToDefault}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Restore 20 Defaults</span>
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {editedList.map((player, idx) => (
+                <div
+                  key={player.id}
+                  className="flex items-center gap-1.5 sm:gap-2 p-2 rounded-lg bg-slate-950/70 border border-slate-800 focus-within:border-amber-500/60 transition-all hover:border-slate-700"
+                >
+                  <span className="text-[11px] font-mono text-slate-500 w-4 text-right">
+                    {idx + 1}.
+                  </span>
+                  <div className="w-14">
+                    <label className="text-[9px] uppercase font-bold text-slate-400 block">Number</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={player.number}
+                      onChange={(e) => handleChange(player.id, 'number', e.target.value)}
+                      className="w-full bg-slate-800 text-slate-100 font-athletic font-bold px-2 py-1 rounded text-sm border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <label className="text-[9px] uppercase font-bold text-slate-400 block">Player Name</label>
+                    <input
+                      type="text"
+                      value={player.name}
+                      onChange={(e) => handleChange(player.id, 'name', e.target.value)}
+                      className="w-full bg-slate-800 text-slate-100 font-semibold px-2 py-1 rounded text-sm border border-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                      placeholder="Player Name"
+                      required
+                    />
+                  </div>
+
+                  {/* Actions for this player */}
+                  <div className="flex items-center gap-1 self-end mb-0.5">
+                    {onOpenScanner && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSave(editedList);
+                          onClose();
+                          onOpenScanner(player.id);
+                        }}
+                        className="p-1.5 rounded-md bg-slate-800 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-700 transition-colors"
+                        title={`Scan sticker with camera for #${player.number} ${player.name}`}
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {/* Remove player who is not present */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePlayer(player.id)}
+                      className="p-1.5 rounded-md bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-500/40 transition-colors"
+                      title={`Remove #${player.number} ${player.name || 'player'} (not present today)`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="pt-4 flex items-center justify-between border-t border-slate-800 mt-4">
             <button
@@ -224,7 +304,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
               className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{isVisitor ? 'Reset to Visitor Defaults' : 'Reset to Pelham Defaults'}</span>
+              <span>{isVisitor ? 'Reset to Visitor Defaults (20)' : 'Reset to Pelham Defaults (20)'}</span>
             </button>
 
             <div className="flex items-center gap-2">
@@ -240,7 +320,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
                 className={`px-4 py-1.5 rounded-lg ${isVisitor ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20' : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'} font-bold text-xs flex items-center gap-1.5 shadow-md transition-all`}
               >
                 <Check className="w-4 h-4" />
-                <span>Save Roster</span>
+                <span>Save Lineup ({editedList.length})</span>
               </button>
             </div>
           </div>
