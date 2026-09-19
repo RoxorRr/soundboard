@@ -501,3 +501,18 @@ export function generateAssistPrompt(playerNumber: number, playerName: string): 
   return `Assisted by number ${playerNumber}, ${playerName}!`;
 }
 
+export function generateGoalWithAssistPrompt(
+  scorerNumber: number,
+  scorerName: string,
+  assistNumber?: number | null,
+  assistName?: string | null,
+  teamName: string = 'Pelham Pelicans'
+): string {
+  const safeTeam = teamName?.trim() || 'Pelham Pelicans';
+  const scorerPart = `Scored by number ${scorerNumber}, ${scorerName}!`;
+  if (assistNumber !== undefined && assistNumber !== null && assistName && assistName.trim().length > 0) {
+    return `${safeTeam} goal! ${scorerPart} Assisted by number ${assistNumber}, ${assistName}!`;
+  }
+  return `${safeTeam} goal! ${scorerPart} Unassisted!`;
+}
+

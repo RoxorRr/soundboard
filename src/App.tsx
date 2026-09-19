@@ -3,11 +3,12 @@ import { PlayerTrackerRow } from './components/PlayerTrackerRow';
 import { EditRosterModal } from './components/EditRosterModal';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { CameraStickerScannerModal } from './components/CameraStickerScannerModal';
+import { QuickGoalModal } from './components/QuickGoalModal';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
-import { soundEngine, generateGoalPrompt, generateAssistPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera } from 'lucide-react';
+import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt } from './utils/audio';
+import { Flame, Award, Edit2, Check, X, Shield, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -210,6 +211,7 @@ export default function App() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [scannerTargetPlayerId, setScannerTargetPlayerId] = useState<string | null>(null);
+  const [isQuickGoalModalOpen, setIsQuickGoalModalOpen] = useState(false);
 
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
@@ -623,6 +625,98 @@ export default function App() {
     setIsEditingVisitorName(false);
   }, [tempVisitorName]);
 
+  // Score goal with assist from numeric keypad entry
+  const handleScoreGoalWithAssist = useCallback(
+    async (team: 'home' | 'visitor', scorer: Player, assistPlayer?: Player | null) => {
+      soundEngine.unlock();
+
+      const isCurrentVisitor = team === 'visitor';
+      const currentTeam = isCurrentVisitor
+        ? (visitorTeamName.trim() || 'Visiting Team')
+        : 'Pelham Pelicans';
+
+      // 1. Update goals for scorer and assists for assist player
+      if (isCurrentVisitor) {
+        setVisitorPlayers((prev) => {
+          const exists = prev.some((p) => p.number === scorer.number);
+          let updated = exists
+            ? prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p))
+            : [...prev, { ...scorer, id: scorer.id || `visitor_${scorer.number}`, goals: 1, assists: 0 }];
+
+          if (assistPlayer && assistPlayer.number) {
+            const assistExists = updated.some((p) => p.number === assistPlayer.number);
+            updated = assistExists
+              ? updated.map((p) => (p.number === assistPlayer.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...assistPlayer, id: assistPlayer.id || `visitor_${assistPlayer.number}`, goals: 0, assists: 1 }];
+          }
+          return sortPlayersByNumber(updated);
+        });
+      } else {
+        setHomePlayers((prev) => {
+          const exists = prev.some((p) => p.number === scorer.number);
+          let updated = exists
+            ? prev.map((p) => (p.number === scorer.number ? { ...p, goals: p.goals + 1 } : p))
+            : [...prev, { ...scorer, id: scorer.id || `home_${scorer.number}`, goals: 1, assists: 0 }];
+
+          if (assistPlayer && assistPlayer.number) {
+            const assistExists = updated.some((p) => p.number === assistPlayer.number);
+            updated = assistExists
+              ? updated.map((p) => (p.number === assistPlayer.number ? { ...p, assists: p.assists + 1 } : p))
+              : [...updated, { ...assistPlayer, id: assistPlayer.id || `home_${assistPlayer.number}`, goals: 0, assists: 1 }];
+          }
+          return sortPlayersByNumber(updated);
+        });
+      }
+
+      // 2. Generate combined voice prompt
+      const prompt = generateGoalWithAssistPrompt(
+        scorer.number,
+        scorer.name,
+        assistPlayer ? assistPlayer.number : null,
+        assistPlayer ? assistPlayer.name : null,
+        currentTeam
+      );
+
+      const announcement: Announcement = {
+        id: `${Date.now()}-${scorer.number}`,
+        type: 'goal',
+        playerId: scorer.id,
+        playerNumber: scorer.number,
+        playerName: scorer.name,
+        text: prompt,
+        timestamp: Date.now(),
+        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+      };
+
+      setCurrentAnnouncement(announcement);
+      setIsAnnouncing(true);
+      setActiveAnnouncePlayerId(scorer.id);
+
+      try {
+        const res = await soundEngine.announce(prompt, 'nhl');
+        if (res.source) {
+          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+        }
+        if (res.error) {
+          setVoiceFeedback({
+            message: `Voice notice: ${res.error}`,
+            type: 'warning',
+          });
+        }
+      } catch (err: any) {
+        console.error('Goal announcement error:', err);
+        setVoiceFeedback({
+          message: err?.message || 'Goal announcement failed',
+          type: 'warning',
+        });
+      } finally {
+        setIsAnnouncing(false);
+        setActiveAnnouncePlayerId(null);
+      }
+    },
+    [visitorTeamName, voiceStatus?.configured]
+  );
+
   return (
     <div
       ref={appContainerRef}
@@ -736,6 +830,21 @@ export default function App() {
                 <RefreshCw className={`w-3 h-3 ${isAnnouncing ? 'animate-spin' : ''}`} />
               </button>
             </div>
+          )}
+
+          {/* Quick Keypad Goal & Assist Entry Trigger */}
+          {currentTab !== 'settings' && (
+            <button
+              id="nav-quick-goal-btn"
+              type="button"
+              onClick={() => setIsQuickGoalModalOpen(true)}
+              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm shadow-amber-500/20"
+              title="Input jersey numbers of scorer and assist maker with numeric keypad"
+            >
+              <Hash className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Keypad Goal</span>
+              <span className="sm:hidden">Keypad</span>
+            </button>
           )}
 
           {/* Quick Mute/Unmute toggle */}
@@ -967,6 +1076,21 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Quick Keypad Goal & Assist Entry */}
+              <button
+                type="button"
+                onClick={() => setIsQuickGoalModalOpen(true)}
+                className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                  isVisitor
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+                }`}
+                title="Input jersey numbers of scorer and assist maker with numeric keypad"
+              >
+                <Hash className="w-3.5 h-3.5 font-black" />
+                <span className="font-athletic uppercase tracking-wider">Keypad Goal Entry</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsRosterModalOpen(true)}
@@ -1052,6 +1176,19 @@ export default function App() {
 
             {/* Big Team Goals Scoreboard */}
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsQuickGoalModalOpen(true)}
+                className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${
+                  isVisitor
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                }`}
+                title="Enter jersey # of scorer & assist maker with numeric keypad"
+              >
+                <Hash className="w-3 h-3" />
+                <span className="hidden sm:inline">Keypad Entry</span>
+              </button>
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
                 Team Total:
               </span>
@@ -1196,6 +1333,18 @@ export default function App() {
         onClose={() => setIsScannerModalOpen(false)}
         onUpdatePlayer={handleUpdatePlayerFromSticker}
         onUpdateAllPlayers={handleSaveAllPlayersFromSticker}
+      />
+
+      {/* Quick Goal & Assist Entry Modal with Numeric Keypad */}
+      <QuickGoalModal
+        isOpen={isQuickGoalModalOpen}
+        onClose={() => setIsQuickGoalModalOpen(false)}
+        homePlayers={homePlayers}
+        visitorPlayers={visitorPlayers}
+        activeTeamTab={activeTeamTab}
+        onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
+        visitorTeamName={visitorTeamName}
+        onScoreGoalWithAssist={handleScoreGoalWithAssist}
       />
 
       {/* Confirmation Modal when removing a player who already has goals or assists */}
