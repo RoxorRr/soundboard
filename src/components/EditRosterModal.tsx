@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, RotateCcw, Check, Users, Camera, Sparkles, Layers, Edit3 } from 'lucide-react';
+import { X, RotateCcw, Check, Users, Camera, Sparkles, Layers, Edit3, ArrowUpDown } from 'lucide-react';
 import { Player } from '../types';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from '../data/defaultPlayers';
 
@@ -29,7 +29,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
 
   // Sync with prop whenever it opens
   useEffect(() => {
-    setEditedList(players);
+    setEditedList([...players].sort((a, b) => a.number - b.number));
     setCurrentTeamName(teamName);
   }, [players, teamName, isOpen]);
 
@@ -48,10 +48,15 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
     );
   };
 
+  const handleSortByNumber = () => {
+    setEditedList((prev) => [...prev].sort((a, b) => a.number - b.number));
+  };
+
   const handleResetToDefault = () => {
     const defaultSource = isVisitor ? DEFAULT_VISITOR_PLAYERS : DEFAULT_PELHAM_PLAYERS;
+    const sortedDefaults = [...defaultSource].sort((a, b) => a.number - b.number);
     setEditedList(
-      defaultSource.map((def, idx) => ({
+      sortedDefaults.map((def, idx) => ({
         ...def,
         goals: players[idx]?.goals ?? 0,
         assists: players[idx]?.assists ?? 0,
@@ -64,7 +69,8 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
     if (isVisitor && onUpdateTeamName && currentTeamName.trim()) {
       onUpdateTeamName(currentTeamName.trim());
     }
-    onSave(editedList);
+    const sorted = [...editedList].sort((a, b) => a.number - b.number);
+    onSave(sorted);
     onClose();
   };
 
@@ -147,10 +153,19 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center justify-between pt-1 gap-2">
             <p className="text-xs text-slate-400">
               Customize any of the {editedList.length} players or use the camera icon on individual slots:
             </p>
+            <button
+              type="button"
+              onClick={handleSortByNumber}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 flex items-center gap-1.5 transition-colors shrink-0"
+              title="Sort players by their jersey number from smallest to largest"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>Sort by # (1-99)</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

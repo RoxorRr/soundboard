@@ -15,15 +15,20 @@ const LEGACY_HOME_STORAGE_KEY = 'pelham_pelicans_players_v1';
 const LEGACY_VISITOR_STORAGE_KEY = 'pelham_visitor_players_v1';
 const VISITOR_NAME_KEY = 'pelham_visitor_team_name';
 
+/** Helper to sort players ascending by their jersey numbers (smallest to largest) */
+const sortPlayersByNumber = (list: Player[]): Player[] => {
+  return [...list].sort((a, b) => a.number - b.number);
+};
+
 export default function App() {
-  // Home (Pelham Pelicans) 20 players state with local persistence
+  // Home (Pelham Pelicans) 20 players state with local persistence (sorted 1-99)
   const [homePlayers, setHomePlayers] = useState<Player[]>(() => {
     try {
       const savedV2 = localStorage.getItem(HOME_STORAGE_KEY);
       if (savedV2) {
         const parsed = JSON.parse(savedV2);
         if (Array.isArray(parsed) && parsed.length === DEFAULT_PELHAM_PLAYERS.length) {
-          return parsed;
+          return sortPlayersByNumber(parsed);
         }
       }
       // Migrate from v1 storage to preserve custom names & scores while adding the 5 new rows
@@ -35,24 +40,24 @@ export default function App() {
           const newRows = DEFAULT_PELHAM_PLAYERS.filter((p) => !existingIds.has(p.id));
           const merged = [...parsedV1, ...newRows];
           if (merged.length === DEFAULT_PELHAM_PLAYERS.length) {
-            return merged;
+            return sortPlayersByNumber(merged);
           }
         }
       }
     } catch (e) {
       console.warn('Failed to load saved home players:', e);
     }
-    return DEFAULT_PELHAM_PLAYERS;
+    return sortPlayersByNumber(DEFAULT_PELHAM_PLAYERS);
   });
 
-  // Visitor 20 players state with local persistence
+  // Visitor 20 players state with local persistence (sorted 1-99)
   const [visitorPlayers, setVisitorPlayers] = useState<Player[]>(() => {
     try {
       const savedV2 = localStorage.getItem(VISITOR_STORAGE_KEY);
       if (savedV2) {
         const parsed = JSON.parse(savedV2);
         if (Array.isArray(parsed) && parsed.length === DEFAULT_VISITOR_PLAYERS.length) {
-          return parsed;
+          return sortPlayersByNumber(parsed);
         }
       }
       // Migrate from v1 storage to preserve custom names & scores while adding the 5 new rows
@@ -64,14 +69,14 @@ export default function App() {
           const newRows = DEFAULT_VISITOR_PLAYERS.filter((p) => !existingIds.has(p.id));
           const merged = [...parsedV1, ...newRows];
           if (merged.length === DEFAULT_VISITOR_PLAYERS.length) {
-            return merged;
+            return sortPlayersByNumber(merged);
           }
         }
       }
     } catch (e) {
       console.warn('Failed to load saved visitor players:', e);
     }
-    return DEFAULT_VISITOR_PLAYERS;
+    return sortPlayersByNumber(DEFAULT_VISITOR_PLAYERS);
   });
 
   // Visitor team name with local persistence
@@ -167,6 +172,12 @@ export default function App() {
       .catch((err) => console.warn('Could not fetch server voice status:', err));
   }, []);
 
+  // Auto-sort existing saved rosters from smallest to largest by player number on mount
+  useEffect(() => {
+    setHomePlayers((prev) => sortPlayersByNumber(prev));
+    setVisitorPlayers((prev) => sortPlayersByNumber(prev));
+  }, []);
+
   // Compute team totals
   const homeGoals = useMemo(() => homePlayers.reduce((sum, p) => sum + p.goals, 0), [homePlayers]);
   const homeAssists = useMemo(() => homePlayers.reduce((sum, p) => sum + p.assists, 0), [homePlayers]);
@@ -174,7 +185,10 @@ export default function App() {
   const visitorAssists = useMemo(() => visitorPlayers.reduce((sum, p) => sum + p.assists, 0), [visitorPlayers]);
 
   const isVisitor = activeTeamTab === 'visitor';
-  const activePlayers = isVisitor ? visitorPlayers : homePlayers;
+  const activePlayers = useMemo(() => {
+    const list = isVisitor ? visitorPlayers : homePlayers;
+    return sortPlayersByNumber(list);
+  }, [isVisitor, visitorPlayers, homePlayers]);
   const activeTeamName = isVisitor ? visitorTeamName : 'Pelham Pelicans';
   const activeGoals = isVisitor ? visitorGoals : homeGoals;
   const activeAssists = isVisitor ? visitorAssists : homeAssists;
@@ -426,10 +440,11 @@ export default function App() {
   }, []);
 
   const handleSaveRoster = useCallback((updated: Player[]) => {
+    const sorted = sortPlayersByNumber(updated);
     if (activeTeamTab === 'visitor') {
-      setVisitorPlayers(updated);
+      setVisitorPlayers(sorted);
     } else {
-      setHomePlayers(updated);
+      setHomePlayers(sorted);
     }
   }, [activeTeamTab]);
 
@@ -441,20 +456,25 @@ export default function App() {
   const handleUpdatePlayerFromSticker = useCallback((playerId: string, newNumber: number, newName: string) => {
     if (activeTeamTab === 'visitor') {
       setVisitorPlayers((prev) =>
-        prev.map((p) => (p.id === playerId ? { ...p, number: newNumber, name: newName } : p))
+        sortPlayersByNumber(
+          prev.map((p) => (p.id === playerId ? { ...p, number: newNumber, name: newName } : p))
+        )
       );
     } else {
       setHomePlayers((prev) =>
-        prev.map((p) => (p.id === playerId ? { ...p, number: newNumber, name: newName } : p))
+        sortPlayersByNumber(
+          prev.map((p) => (p.id === playerId ? { ...p, number: newNumber, name: newName } : p))
+        )
       );
     }
   }, [activeTeamTab]);
 
   const handleSaveAllPlayersFromSticker = useCallback((updatedPlayers: Player[]) => {
+    const sorted = sortPlayersByNumber(updatedPlayers);
     if (activeTeamTab === 'visitor') {
-      setVisitorPlayers(updatedPlayers);
+      setVisitorPlayers(sorted);
     } else {
-      setHomePlayers(updatedPlayers);
+      setHomePlayers(sorted);
     }
   }, [activeTeamTab]);
 

@@ -1,15 +1,15 @@
 import { Player } from '../types';
 
 export const DEFAULT_PELHAM_PLAYERS: Player[] = [
-  { id: 'p-1', number: 12, name: 'Adrian Repka', goals: 0, assists: 0 },
-  { id: 'p-2', number: 17, name: 'Maklin Kunka', goals: 0, assists: 0 },
   { id: 'p-3', number: 4, name: 'Liam Carter', goals: 0, assists: 0 },
   { id: 'p-4', number: 7, name: 'Owen Miller', goals: 0, assists: 0 },
   { id: 'p-5', number: 8, name: 'Connor Hughes', goals: 0, assists: 0 },
   { id: 'p-6', number: 9, name: 'Noah Smith', goals: 0, assists: 0 },
   { id: 'p-7', number: 10, name: 'Ethan Davies', goals: 0, assists: 0 },
   { id: 'p-8', number: 11, name: 'Lucas Brown', goals: 0, assists: 0 },
+  { id: 'p-1', number: 12, name: 'Adrian Repka', goals: 0, assists: 0 },
   { id: 'p-9', number: 14, name: 'Cole Anderson', goals: 0, assists: 0 },
+  { id: 'p-2', number: 17, name: 'Maklin Kunka', goals: 0, assists: 0 },
   { id: 'p-10', number: 19, name: 'Mason Taylor', goals: 0, assists: 0 },
   { id: 'p-11', number: 22, name: 'Jackson White', goals: 0, assists: 0 },
   { id: 'p-12', number: 27, name: 'Caleb Wilson', goals: 0, assists: 0 },
