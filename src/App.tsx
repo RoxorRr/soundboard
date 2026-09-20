@@ -487,6 +487,11 @@ export default function App() {
           message: `Voice Notice: ${res.error}`,
           type: 'warning'
         });
+      } else if (res.source === 'cartesia') {
+        setVoiceFeedback({
+          message: `Cartesia Sonic voice playing (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
       } else if (res.source === 'elevenlabs') {
         setVoiceFeedback({
           message: `ElevenLabs voice playing (${res.voiceId || 'announcer'})`,

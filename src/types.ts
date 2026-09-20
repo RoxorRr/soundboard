@@ -6,6 +6,8 @@ export interface Player {
   assists: number;
 }
 
+export type TTSProvider = 'elevenlabs' | 'cartesia';
+
 export interface Announcement {
   id: string;
   type: 'goal' | 'assist' | 'penalty' | 'welcome';
@@ -14,7 +16,7 @@ export interface Announcement {
   playerName: string;
   text: string;
   timestamp: number;
-  source: 'elevenlabs' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'webspeech';
   team?: string;
   penaltyInfraction?: string;
   penaltyDuration?: string;
@@ -22,9 +24,14 @@ export interface Announcement {
 
 export interface VoiceStatus {
   configured: boolean;
+  elevenLabsConfigured?: boolean;
+  cartesiaConfigured?: boolean;
+  activeProvider?: TTSProvider;
   geminiConfigured?: boolean;
   voiceId: string;
+  cartesiaVoiceId?: string;
   model: string;
+  cartesiaModel?: string;
   team: string;
 }
 
@@ -50,5 +57,13 @@ export interface ElevenLabsVoiceSettings {
   similarity_boost: number;
   style: number;
   use_speaker_boost: boolean;
+}
+
+export interface CartesiaVoiceSettings {
+  voiceId: string;
+  modelId: string;
+  speed: number;
+  pitchCents: number;
+  emotion?: 'neutral' | 'excited' | 'optimistic' | 'authoritative';
 }
 

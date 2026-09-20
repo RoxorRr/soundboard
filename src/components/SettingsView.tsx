@@ -21,9 +21,10 @@ import {
   Mic,
   Maximize,
   Minimize,
+  Cpu,
 } from 'lucide-react';
-import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings } from '../types';
-import { soundEngine, DEFAULT_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
+import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
+import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
 
 interface SettingsViewProps {
   homePlayers: Player[];
@@ -79,6 +80,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isEditingVisitorName, setIsEditingVisitorName] = useState(false);
   const [tempVisitorName, setTempVisitorName] = useState(visitorTeamName);
 
+  // Active TTS Provider Selection ('elevenlabs' | 'cartesia')
+  const [selectedProvider, setSelectedProvider] = useState<TTSProvider>(() => {
+    return soundEngine.getTTSProvider();
+  });
+
   // ElevenLabs Voice Customization State
   const [voiceSettings, setVoiceSettings] = useState<ElevenLabsVoiceSettings>(() => {
     return soundEngine.getVoiceSettings();
@@ -92,6 +98,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       voiceSettings.voiceId || ''
     )
   );
+
+  // Cartesia Sonic Voice Customization State
+  const [cartesiaSettings, setCartesiaSettings] = useState<CartesiaVoiceSettings>(() => {
+    return soundEngine.getCartesiaSettings();
+  });
+  const [cartesiaPreset, setCartesiaPreset] = useState<string>('arena');
+  const [customCartesiaVoiceIdInput, setCustomCartesiaVoiceIdInput] = useState<string>(
+    cartesiaSettings.voiceId || '694f9389-aac1-45b6-b726-9d9369183238'
+  );
+  const [isCustomCartesiaVoiceSelected, setIsCustomCartesiaVoiceSelected] = useState<boolean>(
+    !['694f9389-aac1-45b6-b726-9d9369183238', '47c38ca4-5f35-497b-b1a3-415245fb35e1', 'a167e0f3-df7e-4d52-a9c3-f949145efdab', 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4'].includes(
+      cartesiaSettings.voiceId || ''
+    )
+  );
+
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
   const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
@@ -104,9 +125,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George (Broadcast)', desc: 'Classic Sports Host' },
   ];
 
+  const CARTESIA_PRESET_VOICES = [
+    { id: '694f9389-aac1-45b6-b726-9d9369183238', name: 'Barbershop Announcer', desc: 'Deep & Confident Stadium Voice' },
+    { id: '47c38ca4-5f35-497b-b1a3-415245fb35e1', name: 'Daniel (Sports Broadcast)', desc: 'Clear & Natural Play-by-Play' },
+    { id: 'a167e0f3-df7e-4d52-a9c3-f949145efdab', name: 'Commercial Promo Host', desc: 'Dynamic High-Octane Hype' },
+    { id: 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4', name: 'Skylar (Expressive)', desc: 'Energetic Female Announcer' },
+  ];
+
   const showSavedNotification = (msg = 'Settings saved') => {
     setSaveBadgeText(msg);
     setTimeout(() => setSaveBadgeText(null), 2500);
+  };
+
+  const handleSwitchProvider = (provider: TTSProvider) => {
+    setSelectedProvider(provider);
+    soundEngine.setTTSProvider(provider);
+    showSavedNotification(`Switched to ${provider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} TTS`);
   };
 
   const handleUpdateSetting = <K extends keyof ElevenLabsVoiceSettings>(
@@ -117,6 +151,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setVoiceSettings(updated);
     soundEngine.setVoiceSettings(updated);
     setActivePreset('custom');
+    showSavedNotification();
+  };
+
+  const handleUpdateCartesiaSetting = <K extends keyof CartesiaVoiceSettings>(
+    key: K,
+    val: CartesiaVoiceSettings[K]
+  ) => {
+    const updated = { ...cartesiaSettings, [key]: val };
+    setCartesiaSettings(updated);
+    soundEngine.setCartesiaSettings(updated);
+    setCartesiaPreset('custom');
     showSavedNotification();
   };
 
@@ -166,14 +211,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showSavedNotification(`Applied "${presetName}" preset`);
   };
 
+  const handleApplyCartesiaPreset = (presetName: string) => {
+    let updates: Partial<CartesiaVoiceSettings> = {};
+    if (presetName === 'arena') {
+      updates = {
+        speed: 1.10,
+        pitchCents: 40,
+        emotion: 'excited',
+      };
+    } else if (presetName === 'deep') {
+      updates = {
+        speed: 0.95,
+        pitchCents: -120,
+        emotion: 'authoritative',
+      };
+    } else if (presetName === 'rapid') {
+      updates = {
+        speed: 1.20,
+        pitchCents: 60,
+        emotion: 'excited',
+      };
+    } else if (presetName === 'classic') {
+      updates = {
+        speed: 1.00,
+        pitchCents: 0,
+        emotion: 'neutral',
+      };
+    }
+    const merged = { ...cartesiaSettings, ...updates };
+    setCartesiaSettings(merged);
+    soundEngine.setCartesiaSettings(merged);
+    setCartesiaPreset(presetName);
+    showSavedNotification(`Applied Cartesia "${presetName}" preset`);
+  };
+
   const handleResetToDefaults = () => {
-    const fresh = { ...DEFAULT_VOICE_SETTINGS };
-    setVoiceSettings(fresh);
-    soundEngine.setVoiceSettings(fresh);
-    setCustomVoiceIdInput(fresh.voiceId);
-    setIsCustomVoiceSelected(false);
-    setActivePreset('arena');
-    showSavedNotification('Reset to optimal arena defaults');
+    if (selectedProvider === 'cartesia') {
+      const freshCartesia = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
+      setCartesiaSettings(freshCartesia);
+      soundEngine.setCartesiaSettings(freshCartesia);
+      setCustomCartesiaVoiceIdInput(freshCartesia.voiceId);
+      setIsCustomCartesiaVoiceSelected(false);
+      setCartesiaPreset('arena');
+      showSavedNotification('Reset Cartesia to optimal arena defaults');
+    } else {
+      const fresh = { ...DEFAULT_VOICE_SETTINGS };
+      setVoiceSettings(fresh);
+      soundEngine.setVoiceSettings(fresh);
+      setCustomVoiceIdInput(fresh.voiceId);
+      setIsCustomVoiceSelected(false);
+      setActivePreset('arena');
+      showSavedNotification('Reset ElevenLabs to optimal arena defaults');
+    }
   };
 
   const handleSelectVoiceId = (id: string) => {
@@ -192,6 +281,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleSelectCartesiaVoiceId = (id: string) => {
+    if (id === 'custom') {
+      setIsCustomCartesiaVoiceSelected(true);
+      return;
+    }
+    setIsCustomCartesiaVoiceSelected(false);
+    handleUpdateCartesiaSetting('voiceId', id);
+  };
+
+  const handleApplyCustomCartesiaVoiceId = () => {
+    if (customCartesiaVoiceIdInput.trim()) {
+      handleUpdateCartesiaSetting('voiceId', customCartesiaVoiceIdInput.trim());
+      showSavedNotification('Custom Cartesia Voice ID applied');
+    }
+  };
+
   const handleTestAnnouncerWithCurrentSettings = async () => {
     soundEngine.unlock();
     setIsTestingVoiceCustom(true);
@@ -206,7 +311,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     try {
-      await soundEngine.announce(testText, voiceSettings.voiceId, voiceSettings);
+      if (selectedProvider === 'cartesia') {
+        await soundEngine.announce(testText, cartesiaSettings.voiceId);
+      } else {
+        await soundEngine.announce(testText, voiceSettings.voiceId, voiceSettings);
+      }
     } finally {
       setIsTestingVoiceCustom(false);
     }
@@ -461,23 +570,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* Top Bar: Status & Mute */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800/80">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
                     <Volume2 className="w-4 h-4 text-amber-400" />
                     <span>Arena Play-by-Play Announcer</span>
                   </h3>
-                  {voiceStatus?.configured ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                      ElevenLabs Active
-                    </span>
+                  {selectedProvider === 'cartesia' ? (
+                    voiceStatus?.cartesiaConfigured ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                        Cartesia Sonic Active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        Cartesia (Local Browser Fallback)
+                      </span>
+                    )
                   ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                      Local Browser Voice Active
-                    </span>
+                    voiceStatus?.elevenLabsConfigured ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        ElevenLabs Active
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        ElevenLabs (Local Browser Fallback)
+                      </span>
+                    )
                   )}
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Announces goals and assists automatically using custom speech synthesis parameters.
+                  Announces goals, assists, and penalties automatically using real-time vocal synthesis.
                 </p>
               </div>
 
@@ -507,324 +630,682 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Voice Tuning Presets */}
-            <div className="space-y-2">
+            {/* TTS PROVIDER SWITCHER */}
+            <div className="space-y-2 p-3.5 rounded-xl bg-slate-950/90 border border-slate-800">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Announcer Style Presets</span>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Choose Voice Announcer Engine</span>
                 </label>
-                <span className="text-[11px] text-slate-500">Quickly apply tailored voice profiles</span>
+                <span className="text-[11px] text-slate-400">Switch anytime between providers</span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Provider 1: ElevenLabs */}
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('arena')}
-                  className={`px-3 py-2 rounded-lg border text-left transition-all ${
-                    activePreset === 'arena'
-                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                  id="select-provider-elevenlabs"
+                  onClick={() => handleSwitchProvider('elevenlabs')}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    selectedProvider === 'elevenlabs'
+                      ? 'bg-amber-500/15 border-amber-500/70 text-white shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
-                  <div className="text-xs font-bold flex items-center gap-1">
-                    <span>⚡ Arena High-Energy</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                          selectedProvider === 'elevenlabs'
+                            ? 'border-amber-400 bg-amber-400'
+                            : 'border-slate-600 bg-slate-800'
+                        }`}
+                      >
+                        {selectedProvider === 'elevenlabs' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
+                        )}
+                      </div>
+                      <span className="text-sm font-bold text-white">ElevenLabs TTS</span>
+                    </div>
+                    {voiceStatus?.elevenLabsConfigured ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                        Browser Fallback
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">1.05x Speed • +40 Pitch</div>
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                    Deep, stadium announcer voicing with stability tuning, clarity boost, and custom NHL accents.
+                  </p>
                 </button>
 
+                {/* Provider 2: Cartesia Sonic */}
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('deep')}
-                  className={`px-3 py-2 rounded-lg border text-left transition-all ${
-                    activePreset === 'deep'
-                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                  id="select-provider-cartesia"
+                  onClick={() => handleSwitchProvider('cartesia')}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    selectedProvider === 'cartesia'
+                      ? 'bg-cyan-500/15 border-cyan-500/70 text-white shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
-                  <div className="text-xs font-bold flex items-center gap-1">
-                    <span>🎙️ Deep Stadium Boom</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                          selectedProvider === 'cartesia'
+                            ? 'border-cyan-400 bg-cyan-400'
+                            : 'border-slate-600 bg-slate-800'
+                        }`}
+                      >
+                        {selectedProvider === 'cartesia' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-white">Cartesia Sonic TTS</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">
+                          Sonic 3.5
+                        </span>
+                      </div>
+                    </div>
+                    {voiceStatus?.cartesiaConfigured ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                        Browser Fallback
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">0.95x Speed • -150 Pitch</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset('rapid')}
-                  className={`px-3 py-2 rounded-lg border text-left transition-all ${
-                    activePreset === 'rapid'
-                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="text-xs font-bold flex items-center gap-1">
-                    <span>🚀 Rapid Play-by-Play</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">1.15x Speed • +80 Pitch</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset('classic')}
-                  className={`px-3 py-2 rounded-lg border text-left transition-all ${
-                    activePreset === 'classic'
-                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="text-xs font-bold flex items-center gap-1">
-                    <span>📻 Classic Broadcast</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">1.00x Speed • 0 Pitch</div>
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                    Ultra-low latency real-time voice with high-energy emotional delivery for goal calls and official rules.
+                  </p>
                 </button>
               </div>
             </div>
 
-            {/* Voice Model / Persona Selection */}
-            <div className="space-y-2 pt-2 border-t border-slate-800/60">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <Mic className="w-3.5 h-3.5 text-sky-400" />
-                <span>Voice Persona / ElevenLabs Voice ID</span>
-              </label>
+            {/* CONDITIONAL PANEL: CARTESIA SONIC SETTINGS */}
+            {selectedProvider === 'cartesia' ? (
+              <div className="space-y-4">
+                {/* Cartesia Presets */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Cartesia Sonic Announcer Presets</span>
+                    </label>
+                    <span className="text-[11px] text-slate-500">Instant energy and style profiles</span>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {PRESET_VOICES.map((v) => {
-                  const isSelected = !isCustomVoiceSelected && voiceSettings.voiceId === v.id;
-                  return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
-                      key={v.id}
                       type="button"
-                      onClick={() => handleSelectVoiceId(v.id)}
+                      onClick={() => handleApplyCartesiaPreset('arena')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        cartesiaPreset === 'arena'
+                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 ring-1 ring-cyan-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>⚡ Arena Sonic Turbo</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.10x Speed • Excited • +40 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCartesiaPreset('deep')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        cartesiaPreset === 'deep'
+                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 ring-1 ring-cyan-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🎙️ Stadium Boom</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">0.95x Speed • Authoritative • -120 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCartesiaPreset('rapid')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        cartesiaPreset === 'rapid'
+                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 ring-1 ring-cyan-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🚀 Rapid Play-by-Play</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.20x Speed • Excited • +60 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCartesiaPreset('classic')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        cartesiaPreset === 'classic'
+                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300 ring-1 ring-cyan-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>📻 Classic Broadcast</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.00x Speed • Neutral • 0 Pitch</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cartesia Voice Selection */}
+                <div className="space-y-2 pt-2 border-t border-slate-800/60">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Cartesia Voice Persona / Voice ID</span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {CARTESIA_PRESET_VOICES.map((v) => {
+                      const isSelected = !isCustomCartesiaVoiceSelected && cartesiaSettings.voiceId === v.id;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => handleSelectCartesiaVoiceId(v.id)}
+                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                            isSelected
+                              ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200 ring-1 ring-cyan-500/40'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="text-xs font-bold text-white truncate">{v.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{v.desc}</div>
+                        </button>
+                      );
+                    })}
+
+                    {/* Custom Cartesia Voice Option */}
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomCartesiaVoiceSelected(true)}
                       className={`p-2.5 rounded-lg border text-left transition-all ${
-                        isSelected
+                        isCustomCartesiaVoiceSelected
+                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200 ring-1 ring-cyan-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-white">⚙️ Custom Voice UUID</div>
+                      <div className="text-[10px] text-slate-400 truncate">Enter any Cartesia Voice ID</div>
+                    </button>
+                  </div>
+
+                  {/* Custom Cartesia Voice Input */}
+                  {isCustomCartesiaVoiceSelected && (
+                    <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+                      <div className="text-xs font-semibold text-slate-300">
+                        Paste your Cartesia Voice ID (UUID from play.cartesia.ai):
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={customCartesiaVoiceIdInput}
+                          onChange={(e) => setCustomCartesiaVoiceIdInput(e.target.value)}
+                          placeholder="e.g. 694f9389-aac1-45b6-b726-9d9369183238"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyCustomCartesiaVoiceId}
+                          className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
+                        >
+                          Apply Voice ID
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Cartesia Emotion & Delivery Style */}
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Cartesia Delivery Emotion</span>
+                    </span>
+                    <span className="text-[10px] text-cyan-400 font-mono">Dynamic Expression</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: 'excited', label: '🔥 Excited', desc: 'Goal calls & game explosions' },
+                      { id: 'optimistic', label: '⚡ Optimistic', desc: 'Pre-game welcome & rosters' },
+                      { id: 'authoritative', label: '🛡️ Authoritative', desc: 'Penalties & official rules' },
+                      { id: 'neutral', label: '🎙️ Neutral', desc: 'Standard sports broadcast' },
+                    ].map((em) => (
+                      <button
+                        key={em.id}
+                        type="button"
+                        onClick={() => handleUpdateCartesiaSetting('emotion', em.id as any)}
+                        className={`p-2 rounded-lg border text-left transition-all ${
+                          cartesiaSettings.emotion === em.id
+                            ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200 ring-1 ring-cyan-500/40'
+                            : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white">{em.label}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">{em.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cartesia Core Sliders: Speed and Pitch */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  {/* SPEED SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Speech Speed (Tempo)</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        {cartesiaSettings.speed.toFixed(2)}x
+                      </span>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="0.70"
+                      max="1.35"
+                      step="0.05"
+                      value={cartesiaSettings.speed}
+                      onChange={(e) => handleUpdateCartesiaSetting('speed', parseFloat(e.target.value))}
+                      className="w-full accent-cyan-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>0.70x (Deliberate)</span>
+                      <span>1.00x (Standard)</span>
+                      <span>1.35x (Fast Arena)</span>
+                    </div>
+                  </div>
+
+                  {/* PITCH SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Music className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Pitch Tuning (Detune)</span>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          {cartesiaSettings.pitchCents === 0
+                            ? '0 cents (Standard)'
+                            : `${cartesiaSettings.pitchCents > 0 ? '+' : ''}${cartesiaSettings.pitchCents} cents`}
+                        </span>
+                        {cartesiaSettings.pitchCents !== 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateCartesiaSetting('pitchCents', 0)}
+                            className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+                            title="Reset pitch to 0"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="-500"
+                      max="500"
+                      step="25"
+                      value={cartesiaSettings.pitchCents}
+                      onChange={(e) => handleUpdateCartesiaSetting('pitchCents', parseInt(e.target.value, 10))}
+                      className="w-full accent-cyan-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>-500 cents (Deeper)</span>
+                      <span>0 (Standard)</span>
+                      <span>+500 cents (Higher)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* CONDITIONAL PANEL: ELEVENLABS SETTINGS */
+              <div className="space-y-4">
+                {/* Voice Tuning Presets */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>ElevenLabs Style Presets</span>
+                    </label>
+                    <span className="text-[11px] text-slate-500">Quickly apply tailored voice profiles</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('arena')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        activePreset === 'arena'
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>⚡ Arena High-Energy</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.05x Speed • +40 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('deep')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        activePreset === 'deep'
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🎙️ Deep Stadium Boom</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">0.95x Speed • -150 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('rapid')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        activePreset === 'rapid'
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🚀 Rapid Play-by-Play</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.15x Speed • +80 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPreset('classic')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        activePreset === 'classic'
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>📻 Classic Broadcast</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">1.00x Speed • 0 Pitch</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Voice Model / Persona Selection */}
+                <div className="space-y-2 pt-2 border-t border-slate-800/60">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Voice Persona / ElevenLabs Voice ID</span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {PRESET_VOICES.map((v) => {
+                      const isSelected = !isCustomVoiceSelected && voiceSettings.voiceId === v.id;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => handleSelectVoiceId(v.id)}
+                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                            isSelected
+                              ? 'bg-sky-500/20 border-sky-500/60 text-sky-200 ring-1 ring-sky-500/40'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="text-xs font-bold text-white truncate">{v.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{v.desc}</div>
+                        </button>
+                      );
+                    })}
+
+                    {/* Custom Voice Option */}
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomVoiceSelected(true)}
+                      className={`p-2.5 rounded-lg border text-left transition-all ${
+                        isCustomVoiceSelected
                           ? 'bg-sky-500/20 border-sky-500/60 text-sky-200 ring-1 ring-sky-500/40'
                           : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
                       }`}
                     >
-                      <div className="text-xs font-bold text-white truncate">{v.name}</div>
-                      <div className="text-[10px] text-slate-400 truncate">{v.desc}</div>
+                      <div className="text-xs font-bold text-white">⚙️ Custom Voice ID</div>
+                      <div className="text-[10px] text-slate-400 truncate">Enter your own ElevenLabs ID</div>
                     </button>
-                  );
-                })}
-
-                {/* Custom Voice Option */}
-                <button
-                  type="button"
-                  onClick={() => setIsCustomVoiceSelected(true)}
-                  className={`p-2.5 rounded-lg border text-left transition-all ${
-                    isCustomVoiceSelected
-                      ? 'bg-sky-500/20 border-sky-500/60 text-sky-200 ring-1 ring-sky-500/40'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="text-xs font-bold text-white">⚙️ Custom Voice ID</div>
-                  <div className="text-[10px] text-slate-400 truncate">Enter your own ElevenLabs ID</div>
-                </button>
-              </div>
-
-              {/* Custom Voice Input */}
-              {isCustomVoiceSelected && (
-                <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="text-xs font-semibold text-slate-300">
-                    Paste your ElevenLabs Voice ID from elevenlabs.io:
                   </div>
-                  <div className="flex gap-2">
+
+                  {/* Custom Voice Input */}
+                  {isCustomVoiceSelected && (
+                    <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
+                      <div className="text-xs font-semibold text-slate-300">
+                        Paste your ElevenLabs Voice ID from elevenlabs.io:
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={customVoiceIdInput}
+                          onChange={(e) => setCustomVoiceIdInput(e.target.value)}
+                          placeholder="e.g. 6j98Cb2txyqvHRXeRQYZ"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyCustomVoiceId}
+                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors"
+                        >
+                          Apply Voice ID
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Core Sliders: Speed and Pitch */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+                  {/* SPEED SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Speech Speed (Tempo)</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {voiceSettings.speed.toFixed(2)}x
+                      </span>
+                    </div>
+
                     <input
-                      type="text"
-                      value={customVoiceIdInput}
-                      onChange={(e) => setCustomVoiceIdInput(e.target.value)}
-                      placeholder="e.g. 6j98Cb2txyqvHRXeRQYZ"
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                      type="range"
+                      min="0.70"
+                      max="1.30"
+                      step="0.05"
+                      value={voiceSettings.speed}
+                      onChange={(e) => handleUpdateSetting('speed', parseFloat(e.target.value))}
+                      className="w-full accent-amber-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
                     />
-                    <button
-                      type="button"
-                      onClick={handleApplyCustomVoiceId}
-                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors"
-                    >
-                      Apply Voice ID
-                    </button>
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>0.70x (Deliberate)</span>
+                      <span>1.00x (Normal)</span>
+                      <span>1.30x (Fast Arena)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-tight">
+                      Tuning speech pace for hockey announcements. 1.05x delivers authentic arena urgency.
+                    </p>
+                  </div>
+
+                  {/* PITCH SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Music className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Pitch Tuning (Detune)</span>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {voiceSettings.pitchCents === 0
+                            ? '0 cents (Standard)'
+                            : `${voiceSettings.pitchCents > 0 ? '+' : ''}${voiceSettings.pitchCents} cents (${(
+                                voiceSettings.pitchCents / 100
+                              ).toFixed(2)} st)`}
+                        </span>
+                        {voiceSettings.pitchCents !== 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSetting('pitchCents', 0)}
+                            className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+                            title="Reset pitch to 0"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="-500"
+                      max="500"
+                      step="25"
+                      value={voiceSettings.pitchCents}
+                      onChange={(e) => handleUpdateSetting('pitchCents', parseInt(e.target.value, 10))}
+                      className="w-full accent-emerald-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>-500 cents (Deeper)</span>
+                      <span>0 (Standard)</span>
+                      <span>+500 cents (Higher)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-tight">
+                      Pitch modulation in musical cents (100 cents = 1 semitone). Negative values create deep stadium resonance.
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Core Sliders: Speed and Pitch */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
-              {/* SPEED SLIDER */}
-              <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                    <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Speech Speed (Tempo)</span>
-                  </span>
-                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    {voiceSettings.speed.toFixed(2)}x
-                  </span>
-                </div>
-
-                <input
-                  type="range"
-                  min="0.70"
-                  max="1.30"
-                  step="0.05"
-                  value={voiceSettings.speed}
-                  onChange={(e) => handleUpdateSetting('speed', parseFloat(e.target.value))}
-                  className="w-full accent-amber-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
-                />
-
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                  <span>0.70x (Deliberate)</span>
-                  <span>1.00x (Normal)</span>
-                  <span>1.30x (Fast Arena)</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-tight">
-                  Tuning speech pace for hockey announcements. 1.05x delivers authentic arena urgency.
-                </p>
-              </div>
-
-              {/* PITCH SLIDER */}
-              <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                    <Music className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Pitch Tuning (Detune)</span>
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      {voiceSettings.pitchCents === 0
-                        ? '0 cents (Standard)'
-                        : `${voiceSettings.pitchCents > 0 ? '+' : ''}${voiceSettings.pitchCents} cents (${(
-                            voiceSettings.pitchCents / 100
-                          ).toFixed(2)} st)`}
+                {/* Advanced Voice Personality Dynamics */}
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-purple-400" />
+                      <span>ElevenLabs Voice Dynamics & Style</span>
                     </span>
-                    {voiceSettings.pitchCents !== 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateSetting('pitchCents', 0)}
-                        className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
-                        title="Reset pitch to 0"
-                      >
-                        Reset
-                      </button>
-                    )}
+                    <span className="text-[10px] text-slate-400 font-mono">Synthesis Engine</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Stability */}
+                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">Stability:</span>
+                        <span className="font-mono font-bold text-purple-300">
+                          {Math.round(voiceSettings.stability * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={voiceSettings.stability}
+                        onChange={(e) => handleUpdateSetting('stability', parseFloat(e.target.value))}
+                        className="w-full accent-purple-400 bg-slate-800 h-1.5 rounded cursor-pointer"
+                      />
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Lower = more expressive energy. Higher = steady consistency.
+                      </p>
+                    </div>
+
+                    {/* Similarity */}
+                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">Clarity & Likeness:</span>
+                        <span className="font-mono font-bold text-sky-300">
+                          {Math.round(voiceSettings.similarity_boost * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={voiceSettings.similarity_boost}
+                        onChange={(e) => handleUpdateSetting('similarity_boost', parseFloat(e.target.value))}
+                        className="w-full accent-sky-400 bg-slate-800 h-1.5 rounded cursor-pointer"
+                      />
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Higher values reproduce the original announcer voice character.
+                      </p>
+                    </div>
+
+                    {/* Style */}
+                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold text-slate-300">Style Exaggeration:</span>
+                        <span className="font-mono font-bold text-rose-300">
+                          {Math.round(voiceSettings.style * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={voiceSettings.style}
+                        onChange={(e) => handleUpdateSetting('style', parseFloat(e.target.value))}
+                        className="w-full accent-rose-400 bg-slate-800 h-1.5 rounded cursor-pointer"
+                      />
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Amplifies dramatic inflection and arena hockey enthusiasm.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Speaker Boost Checkbox */}
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-800/60">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={voiceSettings.use_speaker_boost}
+                        onChange={(e) => handleUpdateSetting('use_speaker_boost', e.target.checked)}
+                        className="w-4 h-4 rounded accent-amber-400 bg-slate-800 border-slate-700"
+                      />
+                      <span className="text-xs font-semibold text-slate-200">
+                        Speaker Boost (Optimized for Arena Stadium Audio)
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-slate-500">Improves voice presence and cutoff punch</span>
                   </div>
                 </div>
-
-                <input
-                  type="range"
-                  min="-500"
-                  max="500"
-                  step="25"
-                  value={voiceSettings.pitchCents}
-                  onChange={(e) => handleUpdateSetting('pitchCents', parseInt(e.target.value, 10))}
-                  className="w-full accent-emerald-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
-                />
-
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                  <span>-500 cents (Deeper)</span>
-                  <span>0 (Standard)</span>
-                  <span>+500 cents (Higher)</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-tight">
-                  Pitch modulation in musical cents (100 cents = 1 semitone). Negative values create deep stadium resonance.
-                </p>
               </div>
-            </div>
-
-            {/* Advanced Voice Personality Dynamics */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-purple-400" />
-                  <span>ElevenLabs Voice Dynamics & Style</span>
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">Synthesis Engine</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Stability */}
-                <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-300">Stability:</span>
-                    <span className="font-mono font-bold text-purple-300">
-                      {Math.round(voiceSettings.stability * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.0"
-                    max="1.0"
-                    step="0.05"
-                    value={voiceSettings.stability}
-                    onChange={(e) => handleUpdateSetting('stability', parseFloat(e.target.value))}
-                    className="w-full accent-purple-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                  />
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Lower = more expressive energy. Higher = steady consistency.
-                  </p>
-                </div>
-
-                {/* Similarity */}
-                <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-300">Clarity & Likeness:</span>
-                    <span className="font-mono font-bold text-sky-300">
-                      {Math.round(voiceSettings.similarity_boost * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.0"
-                    max="1.0"
-                    step="0.05"
-                    value={voiceSettings.similarity_boost}
-                    onChange={(e) => handleUpdateSetting('similarity_boost', parseFloat(e.target.value))}
-                    className="w-full accent-sky-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                  />
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Higher values reproduce the original announcer voice character.
-                  </p>
-                </div>
-
-                {/* Style */}
-                <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-300">Style Exaggeration:</span>
-                    <span className="font-mono font-bold text-rose-300">
-                      {Math.round(voiceSettings.style * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.0"
-                    max="1.0"
-                    step="0.05"
-                    value={voiceSettings.style}
-                    onChange={(e) => handleUpdateSetting('style', parseFloat(e.target.value))}
-                    className="w-full accent-rose-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                  />
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Amplifies dramatic inflection and arena hockey enthusiasm.
-                  </p>
-                </div>
-              </div>
-
-              {/* Speaker Boost Checkbox */}
-              <div className="pt-2 flex items-center justify-between border-t border-slate-800/60">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={voiceSettings.use_speaker_boost}
-                    onChange={(e) => handleUpdateSetting('use_speaker_boost', e.target.checked)}
-                    className="w-4 h-4 rounded accent-amber-400 bg-slate-800 border-slate-700"
-                  />
-                  <span className="text-xs font-semibold text-slate-200">
-                    Speaker Boost (Optimized for Arena Stadium Audio)
-                  </span>
-                </label>
-                <span className="text-[10px] text-slate-500">Improves voice presence and cutoff punch</span>
-              </div>
-            </div>
+            )}
 
             {/* Test Announcer Bar & Reset Defaults */}
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -895,10 +1376,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   id="settings-test-custom-voice-btn"
                   onClick={handleTestAnnouncerWithCurrentSettings}
                   disabled={isTestingVoiceCustom || isAnnouncing}
-                  className="flex-1 sm:flex-initial px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
+                  className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50 ${
+                    selectedProvider === 'cartesia'
+                      ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'
+                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+                  }`}
                 >
                   <Sparkles className={`w-3.5 h-3.5 ${isTestingVoiceCustom || isAnnouncing ? 'animate-spin' : ''}`} />
-                  <span>{isTestingVoiceCustom || isAnnouncing ? 'Announcing...' : 'Test Announcer Voice'}</span>
+                  <span>
+                    {isTestingVoiceCustom || isAnnouncing
+                      ? 'Announcing...'
+                      : `Test ${selectedProvider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} Voice`}
+                  </span>
                 </button>
               </div>
             </div>

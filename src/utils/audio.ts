@@ -1,8 +1,8 @@
-// Professional Web Audio Arena sound engine and ElevenLabs TTS player
-import { ElevenLabsVoiceSettings } from '../types';
+// Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
+import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
 
 export interface AnnounceResult {
-  source: 'elevenlabs' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'webspeech';
   voiceId?: string;
   error?: string;
 }
@@ -17,6 +17,14 @@ export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   use_speaker_boost: true
 };
 
+export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
+  voiceId: '694f9389-aac1-45b6-b726-9d9369183238', // Barbershop Man / Announcer
+  modelId: 'sonic-3.5',
+  speed: 1.05,
+  pitchCents: 0,
+  emotion: 'excited'
+};
+
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -27,15 +35,27 @@ class SoundEngine {
   private isUnlocked: boolean = false;
   private htmlAudio: HTMLAudioElement | null = null;
   private htmlAudioUnlocked: boolean = false;
+  private ttsProvider: TTSProvider = 'elevenlabs';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
+  private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
 
   constructor() {
     // Restore persistent voice settings from localStorage if available
     if (typeof window !== 'undefined') {
       try {
+        const savedProvider = localStorage.getItem('pelham_tts_provider');
+        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
+          this.ttsProvider = savedProvider;
+        }
+
         const saved = localStorage.getItem('pelham_voice_settings');
         if (saved) {
           this.voiceSettings = { ...DEFAULT_VOICE_SETTINGS, ...JSON.parse(saved) };
+        }
+
+        const savedCartesia = localStorage.getItem('pelham_cartesia_voice_settings');
+        if (savedCartesia) {
+          this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
         }
       } catch (_) {}
 
@@ -47,6 +67,20 @@ class SoundEngine {
       };
       unlockEvents.forEach((ev) => window.addEventListener(ev, onUserInteraction, { passive: true }));
     }
+  }
+
+  public getTTSProvider(): TTSProvider {
+    return this.ttsProvider;
+  }
+
+  public setTTSProvider(provider: TTSProvider): TTSProvider {
+    this.ttsProvider = provider;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_tts_provider', provider);
+      } catch (_) {}
+    }
+    return this.ttsProvider;
   }
 
   public getVoiceSettings(): ElevenLabsVoiceSettings {
@@ -61,6 +95,20 @@ class SoundEngine {
       } catch (_) {}
     }
     return { ...this.voiceSettings };
+  }
+
+  public getCartesiaSettings(): CartesiaVoiceSettings {
+    return { ...this.cartesiaVoiceSettings };
+  }
+
+  public setCartesiaSettings(newSettings: Partial<CartesiaVoiceSettings>): CartesiaVoiceSettings {
+    this.cartesiaVoiceSettings = { ...this.cartesiaVoiceSettings, ...newSettings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_cartesia_voice_settings', JSON.stringify(this.cartesiaVoiceSettings));
+      } catch (_) {}
+    }
+    return { ...this.cartesiaVoiceSettings };
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -230,7 +278,11 @@ class SoundEngine {
   }
 
   // Play audio from base64 string using HTML5 Audio or Web Audio for pitch tuning
-  private async playBase64Audio(base64: string, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
+  private async playBase64Audio(
+    base64: string,
+    pitchCents = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents,
+    mimeType = 'audio/mpeg'
+  ): Promise<boolean> {
     // If pitch shifting is requested, Web Audio API provides hardware-accelerated detune
     if (typeof pitchCents === 'number' && pitchCents !== 0) {
       try {
@@ -246,7 +298,7 @@ class SoundEngine {
       }
     }
 
-    const dataUrl = `data:audio/mpeg;base64,${base64}`;
+    const dataUrl = `data:${mimeType};base64,${base64}`;
 
     // METHOD A: Pre-unlocked HTMLAudioElement
     try {
@@ -299,14 +351,18 @@ class SoundEngine {
   }
 
   // Play audio from binary ArrayBuffer
-  private async playArrayBuffer(arrayBuffer: ArrayBuffer, pitchCents = this.voiceSettings.pitchCents): Promise<boolean> {
+  private async playArrayBuffer(
+    arrayBuffer: ArrayBuffer,
+    pitchCents = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents,
+    mimeType = 'audio/mpeg'
+  ): Promise<boolean> {
     if (typeof pitchCents === 'number' && pitchCents !== 0) {
       return await this.playWebAudio(arrayBuffer, pitchCents);
     }
 
     // METHOD A: Blob Object URL with HTMLAudioElement
     try {
-      const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+      const blob = new Blob([arrayBuffer], { type: mimeType });
       const audioUrl = URL.createObjectURL(blob);
       const audio = this.htmlAudio || new Audio();
       this.htmlAudio = audio;
@@ -395,7 +451,7 @@ class SoundEngine {
     }
   }
 
-  // Announce text using ElevenLabs voice with custom speed, pitch, stability, and voice parameters
+  // Announce text using currently selected TTS provider (Cartesia or ElevenLabs) with WebSpeech fallback
   public async announce(
     text: string,
     overrideVoiceId?: string,
@@ -405,6 +461,79 @@ class SoundEngine {
       return { source: 'webspeech' };
     }
 
+    this.unlock();
+    this.stopAll();
+
+    const provider = this.ttsProvider;
+
+    // CARTESIA TTS ROUTE
+    if (provider === 'cartesia') {
+      const cSettings = { ...this.cartesiaVoiceSettings };
+      const effectiveCartesiaVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
+        ? overrideVoiceId
+        : cSettings.voiceId;
+
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, audio/mpeg, audio/wav, */*'
+          },
+          body: JSON.stringify({
+            text,
+            provider: 'cartesia',
+            voiceId: effectiveCartesiaVoice,
+            cartesiaSettings: {
+              voiceId: effectiveCartesiaVoice,
+              modelId: cSettings.modelId,
+              speed: cSettings.speed,
+              pitchCents: cSettings.pitchCents,
+              emotion: cSettings.emotion
+            },
+            format: 'base64'
+          })
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+
+          if (data.success && data.audioBase64) {
+            const played = await this.playBase64Audio(data.audioBase64, cSettings.pitchCents, data.mimeType || 'audio/mpeg');
+            if (played) {
+              return { source: 'cartesia', voiceId: data.voiceId };
+            }
+          }
+
+          const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Cartesia synthesis failed');
+          console.warn('Cartesia TTS server fallback active:', errorMsg, data);
+          this.speakWebSpeech(text);
+          return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
+        }
+
+        if (contentType.includes('audio/')) {
+          const arrayBuffer = await response.arrayBuffer();
+          const headerVoice = response.headers.get('x-cartesia-voice') || effectiveCartesiaVoice;
+          const mime = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
+
+          const played = await this.playArrayBuffer(arrayBuffer, cSettings.pitchCents, mime);
+          if (played) {
+            return { source: 'cartesia', voiceId: headerVoice };
+          }
+        }
+
+        this.speakWebSpeech(text);
+        return { source: 'webspeech', error: 'Unexpected voice response format' };
+      } catch (err: any) {
+        console.warn('Cartesia API request failed, falling back to Web Speech API:', err);
+        this.speakWebSpeech(text);
+        return { source: 'webspeech', error: err?.message || 'Network error during Cartesia voice playback' };
+      }
+    }
+
+    // ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
       ...(overrideSettings || {})
@@ -414,9 +543,6 @@ class SoundEngine {
       overrideVoiceId && overrideVoiceId !== 'nhl'
         ? overrideVoiceId
         : settings.voiceId || 'nhl';
-
-    this.unlock();
-    this.stopAll();
 
     try {
       // Request base64 format for maximum reliability across Vercel serverless edge
@@ -428,6 +554,7 @@ class SoundEngine {
         },
         body: JSON.stringify({
           text,
+          provider: 'elevenlabs',
           voiceId: effectiveVoiceId,
           voiceSettings: {
             speed: settings.speed,
@@ -455,8 +582,8 @@ class SoundEngine {
 
         // Server returned fallback or error info
         const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Voice synthesis failed');
-        console.warn('TTS server fallback active:', errorMsg, data);
-        this.speakWebSpeech(text, settings);
+        console.warn('ElevenLabs TTS server fallback active:', errorMsg, data);
+        this.speakWebSpeech(text);
         return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
       }
 
@@ -473,17 +600,17 @@ class SoundEngine {
 
       // If unexpected response
       console.warn('Unexpected TTS response format:', contentType);
-      this.speakWebSpeech(text, settings);
+      this.speakWebSpeech(text);
       return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('ElevenLabs API request failed, falling back to Web Speech API:', err);
-      this.speakWebSpeech(text, settings);
+      this.speakWebSpeech(text);
       return { source: 'webspeech', error: err?.message || 'Network error during voice playback' };
     }
   }
 
-  // Web Speech API with rate and pitch controls matching ElevenLabs settings
-  private speakWebSpeech(text: string, settings = this.voiceSettings) {
+  // Web Speech API with rate and pitch controls matching active provider settings
+  private speakWebSpeech(text: string) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
 
     try {
@@ -492,11 +619,14 @@ class SoundEngine {
         window.speechSynthesis.resume();
       }
 
+      const activeSpeed = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.speed : this.voiceSettings.speed;
+      const activePitch = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents;
+
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = Math.max(0.7, Math.min(1.4, settings.speed));
+      utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
 
       // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
-      const pitchOffset = settings.pitchCents / 1000;
+      const pitchOffset = activePitch / 1000;
       utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
 
       // Fix for Chromium garbage-collection bug where synthesis stops early

@@ -29,18 +29,219 @@ export default async function handler(req: any, res: any) {
     }
     body = body || {};
 
-    const { text, voiceId: reqVoiceId, format: reqFormat, voiceSettings: customSettings } = body;
+    const {
+      text,
+      provider: reqProvider,
+      voiceId: reqVoiceId,
+      model: reqModel,
+      format: reqFormat,
+      voiceSettings: customSettings,
+      cartesiaSettings,
+    } = body;
+
     if (!text || typeof text !== "string") {
       res.status(400).json({ error: "Missing or invalid 'text' in request body", fallback: true });
       return;
     }
 
+    const provider = (reqProvider || "elevenlabs").toLowerCase();
+
+    // ==========================================
+    // PROVIDER 1: CARTESIA SONIC TTS
+    // ==========================================
+    if (provider === "cartesia") {
+      const cartesiaApiKey = process.env.CARTESIA_API_KEY?.trim();
+      const envCartesiaVoiceId = process.env.CARTESIA_VOICE_ID?.trim();
+
+      if (!cartesiaApiKey) {
+        res.status(200).json({
+          fallback: true,
+          provider: "cartesia",
+          error: "CARTESIA_API_KEY is not configured in environment variables",
+          voiceId: cartesiaSettings?.voiceId || envCartesiaVoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
+        });
+        return;
+      }
+
+      // Build Cartesia voice candidates: user requested -> env configured -> top arena presets
+      const userCartesiaVoice = (cartesiaSettings?.voiceId || reqVoiceId || "").trim();
+      const cartesiaCandidates: string[] = [];
+      if (userCartesiaVoice && userCartesiaVoice.toLowerCase() !== "nhl") cartesiaCandidates.push(userCartesiaVoice);
+      if (envCartesiaVoiceId) cartesiaCandidates.push(envCartesiaVoiceId);
+      cartesiaCandidates.push("694f9389-aac1-45b6-b726-9d9369183238"); // Barbershop Man / Announcer (Male, Deep & Confident)
+      cartesiaCandidates.push("47c38ca4-5f35-497b-b1a3-415245fb35e1"); // Daniel (Male, Clear & Natural)
+      cartesiaCandidates.push("a167e0f3-df7e-4d52-a9c3-f949145efdab"); // Commercial / Promo Man
+      cartesiaCandidates.push("db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"); // Skylar (Female, Expressive)
+
+      const uniqueCartesiaVoices = Array.from(new Set(cartesiaCandidates.filter(Boolean)));
+      const preferredModel = cartesiaSettings?.modelId || reqModel || "sonic-3.5";
+      const modelsToTry = [preferredModel, "sonic-2", "sonic"].filter((m, i, arr) => arr.indexOf(m) === i);
+
+      const speed = typeof cartesiaSettings?.speed === "number"
+        ? Math.max(0.6, Math.min(1.5, cartesiaSettings.speed))
+        : 1.05;
+      const emotion = cartesiaSettings?.emotion || "excited";
+
+      let successfulAudioBuffer: ArrayBuffer | null = null;
+      let winningVoiceId = uniqueCartesiaVoices[0];
+      let winningMime = "audio/mpeg";
+      let lastStatus = 0;
+      let lastErrorDetails = "";
+
+      for (const voiceCandidate of uniqueCartesiaVoices) {
+        for (const modelCandidate of modelsToTry) {
+          try {
+            // Attempt 1: MP3 container
+            const payload: Record<string, any> = {
+              model_id: modelCandidate,
+              transcript: text,
+              voice: {
+                mode: "id",
+                id: voiceCandidate,
+              },
+              output_format: {
+                container: "mp3",
+                sample_rate: 44100,
+              },
+              language: "en",
+            };
+
+            if (speed && speed !== 1.0) {
+              payload.generation_config = { speed };
+              if (emotion && emotion !== "neutral") {
+                payload.generation_config.emotion = emotion;
+              }
+            }
+
+            let response = await fetch("https://api.cartesia.ai/tts/bytes", {
+              method: "POST",
+              headers: {
+                "X-API-Key": cartesiaApiKey,
+                "Cartesia-Version": "2024-06-10",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            });
+
+            // If container mp3 or generation_config caused 400 error, retry with WAV and stripped generation_config
+            if (response.status === 400) {
+              const retryPayload = {
+                model_id: modelCandidate,
+                transcript: text,
+                voice: {
+                  mode: "id",
+                  id: voiceCandidate,
+                },
+                output_format: {
+                  container: "wav",
+                  encoding: "pcm_s16le",
+                  sample_rate: 44100,
+                },
+                language: "en",
+              };
+              response = await fetch("https://api.cartesia.ai/tts/bytes", {
+                method: "POST",
+                headers: {
+                  "X-API-Key": cartesiaApiKey,
+                  "Cartesia-Version": "2024-06-10",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(retryPayload),
+              });
+              if (response.ok) {
+                winningMime = "audio/wav";
+              }
+            }
+
+            if (response.ok) {
+              successfulAudioBuffer = await response.arrayBuffer();
+              winningVoiceId = voiceCandidate;
+              const respContentType = response.headers.get("content-type") || "";
+              if (respContentType.includes("wav")) winningMime = "audio/wav";
+              break;
+            }
+
+            lastStatus = response.status;
+            lastErrorDetails = await response.text();
+
+            if (response.status === 401 || response.status === 402 || response.status === 429) {
+              break;
+            }
+          } catch (err: any) {
+            console.warn(`Cartesia attempt error for voice ${voiceCandidate} on ${modelCandidate}:`, err?.message);
+            lastErrorDetails = err?.message || String(err);
+          }
+        }
+        if (successfulAudioBuffer || lastStatus === 401 || lastStatus === 402 || lastStatus === 429) {
+          break;
+        }
+      }
+
+      if (!successfulAudioBuffer) {
+        let userFriendlyError = "Cartesia Sonic speech synthesis failed";
+        if (lastStatus === 401) {
+          userFriendlyError = "Cartesia API key is unauthorized or invalid (401). Verify CARTESIA_API_KEY in environment.";
+        } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit")) {
+          userFriendlyError = "Cartesia credits or quota limit reached on your account. Falling back to local voice.";
+        } else if (lastStatus === 404) {
+          userFriendlyError = "Cartesia voice or model could not be found (404). Falling back to local voice.";
+        } else if (lastErrorDetails) {
+          try {
+            const parsed = JSON.parse(lastErrorDetails);
+            userFriendlyError = parsed.message || parsed.error || userFriendlyError;
+          } catch {
+            userFriendlyError = lastErrorDetails.slice(0, 160) || userFriendlyError;
+          }
+        }
+
+        res.status(200).json({
+          fallback: true,
+          provider: "cartesia",
+          error: userFriendlyError,
+          details: lastErrorDetails,
+          voiceId: winningVoiceId,
+          status: lastStatus,
+        });
+        return;
+      }
+
+      const buffer = Buffer.from(successfulAudioBuffer);
+      const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
+
+      if (wantsBase64) {
+        res.status(200).json({
+          success: true,
+          provider: "cartesia",
+          audioBase64: buffer.toString("base64"),
+          mimeType: winningMime,
+          voiceId: winningVoiceId,
+          size: buffer.length,
+        });
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": winningMime,
+        "Content-Length": buffer.length.toString(),
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Access-Control-Allow-Origin": "*",
+        "X-Cartesia-Voice": winningVoiceId,
+        "X-TTS-Provider": "cartesia",
+      });
+      res.end(buffer);
+      return;
+    }
+
+    // ==========================================
+    // PROVIDER 2: ELEVENLABS TTS (DEFAULT)
+    // ==========================================
     const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
     const envVoiceId = process.env.ELEVENLABS_VOICE_ID?.trim();
 
     if (!apiKey) {
       res.status(200).json({
         fallback: true,
+        provider: "elevenlabs",
         error: "ELEVENLABS_API_KEY is not configured in environment variables",
         voiceId: envVoiceId || "nhl"
       });
@@ -157,6 +358,7 @@ export default async function handler(req: any, res: any) {
 
       res.status(200).json({
         fallback: true,
+        provider: "elevenlabs",
         error: userFriendlyError,
         details: lastErrorDetails,
         voiceId: winningVoiceId,
@@ -171,6 +373,7 @@ export default async function handler(req: any, res: any) {
     if (wantsBase64) {
       res.status(200).json({
         success: true,
+        provider: "elevenlabs",
         audioBase64: buffer.toString("base64"),
         mimeType: "audio/mpeg",
         voiceId: winningVoiceId,
@@ -185,7 +388,8 @@ export default async function handler(req: any, res: any) {
       "Content-Length": buffer.length.toString(),
       "Cache-Control": "no-cache, no-store, must-revalidate",
       "Access-Control-Allow-Origin": "*",
-      "X-ElevenLabs-Voice": winningVoiceId
+      "X-ElevenLabs-Voice": winningVoiceId,
+      "X-TTS-Provider": "elevenlabs",
     });
     res.end(buffer);
   } catch (err: any) {
