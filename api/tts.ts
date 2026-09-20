@@ -50,14 +50,14 @@ export default async function handler(req: any, res: any) {
     // PROVIDER 1: CARTESIA SONIC TTS
     // ==========================================
     if (provider === "cartesia") {
-      const cartesiaApiKey = process.env.CARTESIA_API_KEY?.trim();
-      const envCartesiaVoiceId = process.env.CARTESIA_VOICE_ID?.trim();
+      const cartesiaApiKey = (process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim();
+      const envCartesiaVoiceId = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE)?.trim();
 
       if (!cartesiaApiKey) {
         res.status(200).json({
           fallback: true,
           provider: "cartesia",
-          error: "CARTESIA_API_KEY is not configured in environment variables",
+          error: "CARTESIA_API_KEY is not configured in Vercel environment variables. Add CARTESIA_API_KEY in Vercel Project Settings > Environment Variables.",
           voiceId: cartesiaSettings?.voiceId || envCartesiaVoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
         });
         return;
@@ -75,7 +75,7 @@ export default async function handler(req: any, res: any) {
 
       const uniqueCartesiaVoices = Array.from(new Set(cartesiaCandidates.filter(Boolean)));
       const preferredModel = cartesiaSettings?.modelId || reqModel || "sonic-3.5";
-      const modelsToTry = [preferredModel, "sonic-2", "sonic"].filter((m, i, arr) => arr.indexOf(m) === i);
+      const modelsToTry = [preferredModel, "sonic-3.6", "sonic-2", "sonic-english", "sonic"].filter((m, i, arr) => arr.indexOf(m) === i);
 
       const speed = typeof cartesiaSettings?.speed === "number"
         ? Math.max(0.6, Math.min(1.5, cartesiaSettings.speed))
@@ -235,14 +235,14 @@ export default async function handler(req: any, res: any) {
     // ==========================================
     // PROVIDER 2: ELEVENLABS TTS (DEFAULT)
     // ==========================================
-    const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
-    const envVoiceId = process.env.ELEVENLABS_VOICE_ID?.trim();
+    const apiKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
+    const envVoiceId = (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID)?.trim();
 
     if (!apiKey) {
       res.status(200).json({
         fallback: true,
         provider: "elevenlabs",
-        error: "ELEVENLABS_API_KEY is not configured in environment variables",
+        error: "ELEVENLABS_API_KEY is not configured in Vercel environment variables. Add ELEVENLABS_API_KEY in Vercel Project Settings > Environment Variables.",
         voiceId: envVoiceId || "nhl"
       });
       return;

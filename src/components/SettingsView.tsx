@@ -22,6 +22,7 @@ import {
   Maximize,
   Minimize,
   Cpu,
+  Key,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
 import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
@@ -733,6 +734,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* CONDITIONAL PANEL: CARTESIA SONIC SETTINGS */}
             {selectedProvider === 'cartesia' ? (
               <div className="space-y-4">
+                {/* Vercel Setup Notice when not configured */}
+                {!voiceStatus?.cartesiaConfigured && (
+                  <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-cyan-300">
+                        <Key className="w-4 h-4 text-cyan-400" />
+                        <span>Vercel Configuration: CARTESIA_API_KEY Required</span>
+                      </div>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-300 border border-cyan-700/50">
+                        Vercel Env Var
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      To activate Cartesia Sonic ultra-realistic voices on your Vercel deployment:
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">1. Variable Name:</span>
+                        <code className="text-cyan-300 font-bold bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60 selection:bg-cyan-600">
+                          CARTESIA_API_KEY
+                        </code>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">2. Location:</span>
+                        <span className="text-slate-300 font-sans">Vercel Dashboard &rarr; Project Settings &rarr; Environment Variables</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">3. Next Step:</span>
+                        <span className="text-amber-300 font-sans">Save &amp; trigger a <strong>Redeploy</strong> to apply</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Until configured, game and test announcements seamlessly use your browser's built-in vocal engine.
+                    </p>
+                  </div>
+                )}
+
                 {/* Cartesia Presets */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -986,6 +1024,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             ) : (
               /* CONDITIONAL PANEL: ELEVENLABS SETTINGS */
               <div className="space-y-4">
+                {/* Vercel Setup Notice when not configured */}
+                {!voiceStatus?.elevenLabsConfigured && (
+                  <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/30 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-amber-300">
+                        <Key className="w-4 h-4 text-amber-400" />
+                        <span>Vercel Configuration: ELEVENLABS_API_KEY Required</span>
+                      </div>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-900/60 text-amber-300 border border-amber-700/50">
+                        Vercel Env Var
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      To activate ElevenLabs AI arena voices on your Vercel deployment:
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">1. Variable Name:</span>
+                        <code className="text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800/60 selection:bg-amber-600">
+                          ELEVENLABS_API_KEY
+                        </code>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">2. Location:</span>
+                        <span className="text-slate-300 font-sans">Vercel Dashboard &rarr; Project Settings &rarr; Environment Variables</span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">3. Next Step:</span>
+                        <span className="text-amber-300 font-sans">Save &amp; trigger a <strong>Redeploy</strong> to apply</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Until configured, game and test announcements seamlessly use your browser's built-in vocal engine.
+                    </p>
+                  </div>
+                )}
+
                 {/* Voice Tuning Presets */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">

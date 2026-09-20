@@ -12,11 +12,11 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const hasElevenLabs = Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim().length > 0);
-  const hasCartesia = Boolean(process.env.CARTESIA_API_KEY && process.env.CARTESIA_API_KEY.trim().length > 0);
+  const hasElevenLabs = Boolean((process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim());
+  const hasCartesia = Boolean((process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim());
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
-  const voiceId = process.env.ELEVENLABS_VOICE_ID || "nhl";
-  const cartesiaVoiceId = process.env.CARTESIA_VOICE_ID || "694f9389-aac1-45b6-b726-9d9369183238";
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID || "nhl";
+  const cartesiaVoiceId = process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE || "694f9389-aac1-45b6-b726-9d9369183238";
 
   res.status(200).json({
     configured: hasElevenLabs || hasCartesia,
