@@ -20,6 +20,7 @@ export interface Announcement {
   team?: string;
   penaltyInfraction?: string;
   penaltyDuration?: string;
+  penaltyClockTime?: string;
 }
 
 export interface VoiceStatus {

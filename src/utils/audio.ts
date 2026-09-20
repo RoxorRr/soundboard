@@ -714,11 +714,13 @@ export function generatePenaltyPrompt(
   durationText: string = 'two minutes',
   infraction: string = 'hooking',
   playerName?: string,
-  includePlayerName: boolean = false
+  includePlayerName: boolean = false,
+  penaltyClockTime?: string
 ): string {
   const safeTeam = teamName?.trim() || 'Pelham Pelicans';
   const cleanDuration = durationText?.trim();
   const cleanInfraction = infraction?.trim().toLowerCase() || 'hooking';
+  const cleanClock = penaltyClockTime?.trim();
 
   // Determine if a duration should be spoken
   const hasTime = Boolean(
@@ -731,14 +733,15 @@ export function generatePenaltyPrompt(
   );
 
   const timePart = hasTime ? ` ${cleanDuration}` : '';
+  const clockPart = cleanClock ? ` Time of the penalty, ${cleanClock}.` : '';
 
   if (includePlayerName && playerName && playerName.trim().length > 0) {
-    return `Number ${playerNumber}, ${playerName.trim()}, ${safeTeam}${timePart} for ${cleanInfraction}.`;
+    return `Number ${playerNumber}, ${playerName.trim()}, ${safeTeam}${timePart} for ${cleanInfraction}.${clockPart}`;
   }
 
   // With time: 'Number 12, Pelham Pelicans two minutes for [foul].'
   // Without time: 'Number 12, Pelham Pelicans for [foul].'
-  return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.`;
+  return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.${clockPart}`;
 }
 
 export function generateWelcomePrompt(opponentTeam: string = 'Visitor Team'): string {

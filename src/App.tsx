@@ -755,7 +755,8 @@ export default function App() {
       player: Player,
       durationText: string,
       infraction: string,
-      promptText: string
+      promptText: string,
+      clockTime?: string
     ) => {
       soundEngine.unlock();
 
@@ -776,6 +777,7 @@ export default function App() {
         team: currentTeam,
         penaltyInfraction: infraction,
         penaltyDuration: durationText && durationText.trim() !== '' ? durationText : 'Without time',
+        penaltyClockTime: clockTime && clockTime.trim() !== '' ? clockTime.trim() : undefined,
       };
 
       setCurrentAnnouncement(announcement);
