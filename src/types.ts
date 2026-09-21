@@ -8,6 +8,8 @@ export interface Player {
 
 export type TTSProvider = 'elevenlabs' | 'cartesia';
 
+export type AccountChoice = 'account1' | 'account2';
+
 export interface Announcement {
   id: string;
   type: 'goal' | 'assist' | 'penalty' | 'welcome';
@@ -27,7 +29,10 @@ export interface VoiceStatus {
   configured: boolean;
   elevenLabsConfigured?: boolean;
   cartesiaConfigured?: boolean;
+  cartesiaAccount1Configured?: boolean;
+  cartesiaAccount2Configured?: boolean;
   activeProvider?: TTSProvider;
+  activeCartesiaAccount?: AccountChoice;
   geminiConfigured?: boolean;
   voiceId: string;
   cartesiaVoiceId?: string;

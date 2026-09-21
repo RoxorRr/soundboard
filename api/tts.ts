@@ -32,6 +32,7 @@ export default async function handler(req: any, res: any) {
     const {
       text,
       provider: reqProvider,
+      account: reqAccount, // 'account1' | 'account2' for Cartesia
       voiceId: reqVoiceId,
       model: reqModel,
       format: reqFormat,
@@ -50,14 +51,21 @@ export default async function handler(req: any, res: any) {
     // PROVIDER 1: CARTESIA SONIC TTS
     // ==========================================
     if (provider === "cartesia") {
-      const cartesiaApiKey = (process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim();
+      const isAccount2 = reqAccount === "account2";
+      const cartesiaApiKey = isAccount2
+        ? (process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_KEY_2)?.trim()
+        : (process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim();
       const envCartesiaVoiceId = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE)?.trim();
 
       if (!cartesiaApiKey) {
+        const errorMsg = isAccount2
+          ? "CARTESIA_API_KEY_2 (Account 2) is not configured in Environment Variables. Add CARTESIA_API_KEY_2 or switch to Account 1."
+          : "CARTESIA_API_KEY (Account 1) is not configured in Environment Variables. Add CARTESIA_API_KEY.";
         res.status(200).json({
           fallback: true,
           provider: "cartesia",
-          error: "CARTESIA_API_KEY is not configured in Vercel environment variables. Add CARTESIA_API_KEY in Vercel Project Settings > Environment Variables.",
+          account: isAccount2 ? "account2" : "account1",
+          error: errorMsg,
           voiceId: cartesiaSettings?.voiceId || envCartesiaVoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
         });
         return;
@@ -178,13 +186,14 @@ export default async function handler(req: any, res: any) {
       }
 
       if (!successfulAudioBuffer) {
-        let userFriendlyError = "Cartesia Sonic speech synthesis failed";
+        const accountLabel = isAccount2 ? "Cartesia Account 2" : "Cartesia Account 1";
+        let userFriendlyError = `${accountLabel} Sonic speech synthesis failed`;
         if (lastStatus === 401) {
-          userFriendlyError = "Cartesia API key is unauthorized or invalid (401). Verify CARTESIA_API_KEY in environment.";
+          userFriendlyError = `${accountLabel} API key is unauthorized or invalid (401). Verify ${isAccount2 ? 'CARTESIA_API_KEY_2' : 'CARTESIA_API_KEY'} in environment.`;
         } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit")) {
-          userFriendlyError = "Cartesia credits or quota limit reached on your account. Falling back to local voice.";
+          userFriendlyError = `${accountLabel} credits or quota limit reached on your account. Switch to your other Cartesia account or local voice.`;
         } else if (lastStatus === 404) {
-          userFriendlyError = "Cartesia voice or model could not be found (404). Falling back to local voice.";
+          userFriendlyError = `${accountLabel} voice or model could not be found (404). Falling back to local voice.`;
         } else if (lastErrorDetails) {
           try {
             const parsed = JSON.parse(lastErrorDetails);
@@ -197,6 +206,7 @@ export default async function handler(req: any, res: any) {
         res.status(200).json({
           fallback: true,
           provider: "cartesia",
+          account: isAccount2 ? "account2" : "account1",
           error: userFriendlyError,
           details: lastErrorDetails,
           voiceId: winningVoiceId,
@@ -212,6 +222,7 @@ export default async function handler(req: any, res: any) {
         res.status(200).json({
           success: true,
           provider: "cartesia",
+          account: isAccount2 ? "account2" : "account1",
           audioBase64: buffer.toString("base64"),
           mimeType: winningMime,
           voiceId: winningVoiceId,
@@ -226,6 +237,7 @@ export default async function handler(req: any, res: any) {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Access-Control-Allow-Origin": "*",
         "X-Cartesia-Voice": winningVoiceId,
+        "X-Cartesia-Account": isAccount2 ? "account2" : "account1",
         "X-TTS-Provider": "cartesia",
       });
       res.end(buffer);
@@ -242,7 +254,7 @@ export default async function handler(req: any, res: any) {
       res.status(200).json({
         fallback: true,
         provider: "elevenlabs",
-        error: "ELEVENLABS_API_KEY is not configured in Vercel environment variables. Add ELEVENLABS_API_KEY in Vercel Project Settings > Environment Variables.",
+        error: "ELEVENLABS_API_KEY is not configured in Environment Variables. Add ELEVENLABS_API_KEY.",
         voiceId: envVoiceId || "nhl"
       });
       return;
@@ -342,9 +354,9 @@ export default async function handler(req: any, res: any) {
     if (!successfulAudioBuffer) {
       let userFriendlyError = "ElevenLabs speech synthesis failed";
       if (lastStatus === 401) {
-        userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in Vercel.";
+        userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in environment.";
       } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota")) {
-        userFriendlyError = "ElevenLabs character quota exceeded on your account. Falling back to local voice.";
+        userFriendlyError = "ElevenLabs character quota exceeded on your account. Switch to Cartesia or local voice.";
       } else if (lastStatus === 404) {
         userFriendlyError = "ElevenLabs voice could not be loaded (404). Falling back to local voice.";
       } else if (lastErrorDetails) {
@@ -400,4 +412,5 @@ export default async function handler(req: any, res: any) {
     });
   }
 }
+
 

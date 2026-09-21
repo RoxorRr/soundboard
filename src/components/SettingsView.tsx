@@ -23,9 +23,23 @@ import {
   Minimize,
   Cpu,
   Key,
+  Clock,
+  ShieldAlert,
+  Timer,
+  Pin,
+  Plus,
+  Minus,
 } from 'lucide-react';
-import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
+import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider, AccountChoice } from '../types';
 import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
+import {
+  getSavedGamePenaltyDuration,
+  saveGamePenaltyDuration,
+  STANDARD_PENALTY_DURATIONS,
+  formatMinutesAndSecondsToSpoken,
+  formatDurationDisplay,
+  PenaltyDurationOption,
+} from '../utils/penaltyTime';
 
 interface SettingsViewProps {
   homePlayers: Player[];
@@ -86,6 +100,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return soundEngine.getTTSProvider();
   });
 
+  // Cartesia Multi-Account Selection State
+  const [activeCartesiaAccount, setActiveCartesiaAccount] = useState<AccountChoice>(() => {
+    return soundEngine.getCartesiaAccount();
+  });
+
   // ElevenLabs Voice Customization State
   const [voiceSettings, setVoiceSettings] = useState<ElevenLabsVoiceSettings>(() => {
     return soundEngine.getVoiceSettings();
@@ -118,6 +137,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
   const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
 
+  // Game Default Penalty Duration Setting
+  const [gamePenaltyDuration, setGamePenaltyDuration] = useState<{ value: string; label: string }>(() =>
+    getSavedGamePenaltyDuration()
+  );
+  const [isCustomPenaltyDurationOpen, setIsCustomPenaltyDurationOpen] = useState(false);
+  const [customPenaltyMinutes, setCustomPenaltyMinutes] = useState(2);
+  const [customPenaltySeconds, setCustomPenaltySeconds] = useState(0);
+
+  const handleSelectGamePenalty = (opt: PenaltyDurationOption) => {
+    saveGamePenaltyDuration(opt.value, opt.label);
+    setGamePenaltyDuration({ value: opt.value, label: opt.label });
+    showSavedNotification(`Game penalty duration set to ${opt.label}`);
+  };
+
+  const handleApplyCustomGamePenalty = () => {
+    const spoken = formatMinutesAndSecondsToSpoken(customPenaltyMinutes, customPenaltySeconds);
+    const label = formatDurationDisplay(customPenaltyMinutes, customPenaltySeconds);
+    saveGamePenaltyDuration(spoken, label);
+    setGamePenaltyDuration({ value: spoken, label });
+    setIsCustomPenaltyDurationOpen(false);
+    showSavedNotification(`Game penalty duration set to ${label}`);
+  };
+
   const PRESET_VOICES = [
     { id: '6j98Cb2txyqvHRXeRQYZ', name: 'Pelham Custom NHL', desc: 'Arena Play-by-Play' },
     { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Deep Baritone)', desc: 'Resonant Stadium Boom' },
@@ -141,7 +183,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSwitchProvider = (provider: TTSProvider) => {
     setSelectedProvider(provider);
     soundEngine.setTTSProvider(provider);
-    showSavedNotification(`Switched to ${provider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} TTS`);
+    const providerName = provider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs';
+    showSavedNotification(`Switched to ${providerName} TTS`);
+  };
+
+  const handleSwitchCartesiaAccount = (acc: AccountChoice) => {
+    setActiveCartesiaAccount(acc);
+    soundEngine.setCartesiaAccount(acc);
+    showSavedNotification(`Switched to Cartesia ${acc === 'account1' ? 'Account 1 (Primary)' : 'Account 2 (Secondary)'}`);
   };
 
   const handleUpdateSetting = <K extends keyof ElevenLabsVoiceSettings>(
@@ -553,6 +602,234 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
+        {/* SECTION: Game Rules & Penalty Time Duration */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-athletic flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Game Rules: Penalty Time Duration</span>
+            </h2>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+              Default: {gamePenaltyDuration.label}
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                  <span>Game Minor Penalty Duration</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Different leagues and age groups use different penalty times. Choose your game&apos;s standard penalty length so all penalty calls use this duration by default.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCustomPenaltyDurationOpen(!isCustomPenaltyDurationOpen)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-amber-400 border border-slate-700 flex items-center gap-1.5 self-start sm:self-auto shrink-0 transition-colors"
+              >
+                {isCustomPenaltyDurationOpen ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Show Standard Presets</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Set Custom Time</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Custom Penalty Stepper */}
+            {isCustomPenaltyDurationOpen ? (
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <Timer className="w-3.5 h-3.5" />
+                    <span>Exact Custom Penalty Duration</span>
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                    {formatDurationDisplay(customPenaltyMinutes, customPenaltySeconds)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Minutes */}
+                  <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-semibold">
+                      <span>Minutes</span>
+                      <span className="text-amber-400 font-bold font-mono">{customPenaltyMinutes} min</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCustomPenaltyMinutes((m) => Math.max(0, m - 1))}
+                        className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={customPenaltyMinutes}
+                        onChange={(e) => setCustomPenaltyMinutes(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        className="flex-1 text-center bg-slate-950 border border-slate-700 rounded-lg py-1 text-sm font-mono font-bold text-white focus:ring-amber-500 focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCustomPenaltyMinutes((m) => Math.min(60, m + 1))}
+                        className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {[0, 1, 2, 3, 4, 5, 10].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setCustomPenaltyMinutes(m)}
+                          className={`px-2 py-0.5 text-[10px] rounded-md font-semibold border ${
+                            customPenaltyMinutes === m
+                              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {m}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Seconds */}
+                  <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-semibold">
+                      <span>Seconds</span>
+                      <span className="text-amber-400 font-bold font-mono">
+                        :{customPenaltySeconds < 10 ? '0' : ''}{customPenaltySeconds} sec
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCustomPenaltySeconds((s) => Math.max(0, s - 15))}
+                        className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold text-xs"
+                      >
+                        -15
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={customPenaltySeconds}
+                        onChange={(e) => setCustomPenaltySeconds(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                        className="flex-1 text-center bg-slate-950 border border-slate-700 rounded-lg py-1 text-sm font-mono font-bold text-white focus:ring-amber-500 focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCustomPenaltySeconds((s) => Math.min(59, s + 15))}
+                        className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center font-bold text-xs"
+                      >
+                        +15
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {[0, 15, 30, 45].map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setCustomPenaltySeconds(s)}
+                          className={`px-2 py-0.5 text-[10px] rounded-md font-semibold border ${
+                            customPenaltySeconds === s
+                              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          :{s < 10 ? '0' : ''}{s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="text-[11px] text-slate-400">
+                    Spoken phrasing: &ldquo;<strong className="text-amber-300">{formatMinutesAndSecondsToSpoken(customPenaltyMinutes, customPenaltySeconds) || 'Without Time'}</strong>&rdquo;
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyCustomGamePenalty}
+                    className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all"
+                  >
+                    <Pin className="w-3.5 h-3.5" />
+                    <span>Save as Game Penalty Duration</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Standard Preset Durations Grid */
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {STANDARD_PENALTY_DURATIONS.map((opt) => {
+                    const isSelected = gamePenaltyDuration.value === opt.value;
+                    const isWithoutTime = opt.value === '';
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleSelectGamePenalty(opt)}
+                        className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center ${
+                          isSelected
+                            ? isWithoutTime
+                              ? 'bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/20 font-black ring-1 ring-rose-400'
+                              : 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20 font-black ring-1 ring-amber-400'
+                            : 'bg-slate-950/70 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                        <span
+                          className={`text-[9px] mt-0.5 leading-none ${
+                            isSelected
+                              ? isWithoutTime
+                                ? 'text-rose-100'
+                                : 'text-slate-900 font-semibold'
+                              : 'text-slate-500'
+                          }`}
+                        >
+                          {opt.sublabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Vocal Preview Info */}
+            <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs text-slate-300 flex items-center justify-between">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Announcements will say:</span>
+              </span>
+              <span className="font-mono text-amber-300 font-semibold text-right">
+                {gamePenaltyDuration.value
+                  ? `&ldquo;...${gamePenaltyDuration.value} for [infraction]&rdquo;`
+                  : '&ldquo;...for [infraction]&rdquo; (no duration)'}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* SECTION 2: Announcer Voice & Audio Settings */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -580,7 +857,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     voiceStatus?.cartesiaConfigured ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                        Cartesia Sonic Active
+                        Cartesia Sonic Active ({activeCartesiaAccount === 'account1' ? 'Acc 1' : 'Acc 2'})
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
@@ -666,20 +943,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
                         )}
                       </div>
-                      <span className="text-sm font-bold text-white">ElevenLabs TTS</span>
+                      <span className="text-sm font-bold text-white">ElevenLabs</span>
                     </div>
                     {voiceStatus?.elevenLabsConfigured ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        Configured
+                        Ready
                       </span>
                     ) : (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                        Browser Fallback
+                        Fallback
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
-                    Deep, stadium announcer voicing with stability tuning, clarity boost, and custom NHL accents.
+                    Deep, resonant NHL stadium announcer voicing.
                   </p>
                 </button>
 
@@ -708,32 +985,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-white">Cartesia Sonic TTS</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">
-                          Sonic 3.5
-                        </span>
+                        <span className="text-sm font-bold text-white">Cartesia Sonic</span>
                       </div>
                     </div>
                     {voiceStatus?.cartesiaConfigured ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                        Configured
+                        {activeCartesiaAccount === 'account1' ? 'Acc 1' : 'Acc 2'}
                       </span>
                     ) : (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                        Browser Fallback
+                        Fallback
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
-                    Ultra-low latency real-time voice with high-energy emotional delivery for goal calls and official rules.
+                    Ultra-low latency real-time voice with high-energy emotional delivery & 2 accounts.
                   </p>
                 </button>
               </div>
             </div>
 
             {/* CONDITIONAL PANEL: CARTESIA SONIC SETTINGS */}
-            {selectedProvider === 'cartesia' ? (
+            {selectedProvider === 'cartesia' && (
               <div className="space-y-4">
+                {/* Cartesia Multi-Account Switcher */}
+                <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Active Cartesia Account</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Switch instantly between your two Cartesia accounts
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      id="cartesia-account-1-btn"
+                      onClick={() => handleSwitchCartesiaAccount('account1')}
+                      className={`p-3 rounded-lg border text-left flex items-center justify-between transition-all ${
+                        activeCartesiaAccount === 'account1'
+                          ? 'bg-cyan-500/20 border-cyan-500/70 text-cyan-200 ring-1 ring-cyan-500/40 shadow-sm'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${activeCartesiaAccount === 'account1' ? 'bg-cyan-400' : 'bg-slate-600'}`}></span>
+                          Account 1 (Primary)
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">CARTESIA_API_KEY</div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        voiceStatus?.cartesiaAccount1Configured
+                          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {voiceStatus?.cartesiaAccount1Configured ? 'Ready' : 'Not configured'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="cartesia-account-2-btn"
+                      onClick={() => handleSwitchCartesiaAccount('account2')}
+                      className={`p-3 rounded-lg border text-left flex items-center justify-between transition-all ${
+                        activeCartesiaAccount === 'account2'
+                          ? 'bg-cyan-500/20 border-cyan-500/70 text-cyan-200 ring-1 ring-cyan-500/40 shadow-sm'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${activeCartesiaAccount === 'account2' ? 'bg-cyan-400' : 'bg-slate-600'}`}></span>
+                          Account 2 (Secondary)
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">CARTESIA_API_KEY_2</div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        voiceStatus?.cartesiaAccount2Configured
+                          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {voiceStatus?.cartesiaAccount2Configured ? 'Ready' : 'Not configured'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Vercel Setup Notice when not configured */}
                 {!voiceStatus?.cartesiaConfigured && (
                   <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs space-y-2">
@@ -753,7 +1094,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <span className="text-slate-400">1. Variable Name:</span>
                         <code className="text-cyan-300 font-bold bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60 selection:bg-cyan-600">
-                          CARTESIA_API_KEY
+                          CARTESIA_API_KEY (or CARTESIA_API_KEY_2)
                         </code>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -1021,8 +1362,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
               </div>
-            ) : (
-              /* CONDITIONAL PANEL: ELEVENLABS SETTINGS */
+            )}
+
+            {/* CONDITIONAL PANEL: ELEVENLABS SETTINGS */}
+            {selectedProvider === 'elevenlabs' && (
               <div className="space-y-4">
                 {/* Vercel Setup Notice when not configured */}
                 {!voiceStatus?.elevenLabsConfigured && (

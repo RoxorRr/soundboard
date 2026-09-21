@@ -1,5 +1,5 @@
 // Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
-import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
+import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider, AccountChoice } from '../types';
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'webspeech';
@@ -36,6 +36,7 @@ class SoundEngine {
   private htmlAudio: HTMLAudioElement | null = null;
   private htmlAudioUnlocked: boolean = false;
   private ttsProvider: TTSProvider = 'elevenlabs';
+  private activeCartesiaAccount: AccountChoice = 'account1';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
 
@@ -45,7 +46,15 @@ class SoundEngine {
       try {
         const savedProvider = localStorage.getItem('pelham_tts_provider');
         if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
-          this.ttsProvider = savedProvider;
+          this.ttsProvider = savedProvider as TTSProvider;
+        } else if (savedProvider === 'google') {
+          this.ttsProvider = 'elevenlabs';
+          localStorage.setItem('pelham_tts_provider', 'elevenlabs');
+        }
+
+        const savedCartesiaAccount = localStorage.getItem('pelham_active_cartesia_account');
+        if (savedCartesiaAccount === 'account1' || savedCartesiaAccount === 'account2') {
+          this.activeCartesiaAccount = savedCartesiaAccount;
         }
 
         const saved = localStorage.getItem('pelham_voice_settings');
@@ -81,6 +90,20 @@ class SoundEngine {
       } catch (_) {}
     }
     return this.ttsProvider;
+  }
+
+  public getCartesiaAccount(): AccountChoice {
+    return this.activeCartesiaAccount;
+  }
+
+  public setCartesiaAccount(account: AccountChoice): AccountChoice {
+    this.activeCartesiaAccount = account;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_active_cartesia_account', account);
+      } catch (_) {}
+    }
+    return this.activeCartesiaAccount;
   }
 
   public getVoiceSettings(): ElevenLabsVoiceSettings {
@@ -466,7 +489,7 @@ class SoundEngine {
 
     const provider = this.ttsProvider;
 
-    // CARTESIA TTS ROUTE
+    // 1. CARTESIA TTS ROUTE
     if (provider === 'cartesia') {
       const cSettings = { ...this.cartesiaVoiceSettings };
       const effectiveCartesiaVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
@@ -483,6 +506,7 @@ class SoundEngine {
           body: JSON.stringify({
             text,
             provider: 'cartesia',
+            account: this.activeCartesiaAccount,
             voiceId: effectiveCartesiaVoice,
             cartesiaSettings: {
               voiceId: effectiveCartesiaVoice,
@@ -509,7 +533,7 @@ class SoundEngine {
 
           const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Cartesia synthesis failed');
           console.warn('Cartesia TTS server fallback active:', errorMsg, data);
-          this.speakWebSpeech(text);
+          this.speakWebSpeech(text, 'cartesia');
           return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
         }
 
@@ -524,16 +548,16 @@ class SoundEngine {
           }
         }
 
-        this.speakWebSpeech(text);
+        this.speakWebSpeech(text, 'cartesia');
         return { source: 'webspeech', error: 'Unexpected voice response format' };
       } catch (err: any) {
         console.warn('Cartesia API request failed, falling back to Web Speech API:', err);
-        this.speakWebSpeech(text);
+        this.speakWebSpeech(text, 'cartesia');
         return { source: 'webspeech', error: err?.message || 'Network error during Cartesia voice playback' };
       }
     }
 
-    // ELEVENLABS TTS ROUTE (DEFAULT)
+    // 2. ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
       ...(overrideSettings || {})
@@ -583,7 +607,7 @@ class SoundEngine {
         // Server returned fallback or error info
         const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Voice synthesis failed');
         console.warn('ElevenLabs TTS server fallback active:', errorMsg, data);
-        this.speakWebSpeech(text);
+        this.speakWebSpeech(text, 'elevenlabs');
         return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
       }
 
@@ -600,17 +624,17 @@ class SoundEngine {
 
       // If unexpected response
       console.warn('Unexpected TTS response format:', contentType);
-      this.speakWebSpeech(text);
+      this.speakWebSpeech(text, 'elevenlabs');
       return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('ElevenLabs API request failed, falling back to Web Speech API:', err);
-      this.speakWebSpeech(text);
+      this.speakWebSpeech(text, 'elevenlabs');
       return { source: 'webspeech', error: err?.message || 'Network error during voice playback' };
     }
   }
 
   // Web Speech API with rate and pitch controls matching active provider settings
-  private speakWebSpeech(text: string) {
+  private speakWebSpeech(text: string, forceProvider?: TTSProvider) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
 
     try {
@@ -619,8 +643,14 @@ class SoundEngine {
         window.speechSynthesis.resume();
       }
 
-      const activeSpeed = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.speed : this.voiceSettings.speed;
-      const activePitch = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents;
+      const activeProvider = forceProvider || this.ttsProvider;
+      let activeSpeed = this.voiceSettings.speed;
+      let activePitch = this.voiceSettings.pitchCents;
+
+      if (activeProvider === 'cartesia') {
+        activeSpeed = this.cartesiaVoiceSettings.speed;
+        activePitch = this.cartesiaVoiceSettings.pitchCents;
+      }
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
