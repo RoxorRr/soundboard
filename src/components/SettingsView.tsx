@@ -206,6 +206,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isRefreshingCredits, setIsRefreshingCredits] = useState<boolean>(false);
   const [editingAccount, setEditingAccount] = useState<'elevenlabs' | 'cartesia1' | 'cartesia2' | null>(null);
   const [manualBalanceInput, setManualBalanceInput] = useState<string>('130000');
+  const [selectedMalePresetId, setSelectedMalePresetId] = useState<string>(() => {
+    const cur = soundEngine.getWebSpeechSettings().voiceURI.toLowerCase();
+    const found = POPULAR_NATURAL_MALE_PRESETS.find((p) => p.keywords.some((k) => cur.includes(k)));
+    return found ? found.id : 'guy';
+  });
 
   useEffect(() => {
     soundEngine.fetchCredits().then((status) => {
@@ -386,38 +391,130 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showSavedNotification('Reset Browser WebSpeech defaults');
   };
 
-  const handleSelectNaturalMalePreset = (preset: NaturalMaleVoicePreset) => {
+  const handleSelectNaturalMalePreset = async (preset: NaturalMaleVoicePreset) => {
+    setSelectedMalePresetId(preset.id);
+    if (selectedProvider !== 'webspeech') {
+      handleSwitchProvider('webspeech');
+    }
+
+    let voices = availableBrowserVoices;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const live = window.speechSynthesis.getVoices();
+      if (live && live.length > 0) {
+        voices = live;
+        setAvailableBrowserVoices(live);
+      }
+    }
+
     const target =
-      availableBrowserVoices.find((v) => {
+      voices.find((v) => {
         const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
         return preset.keywords.every((k) => combined.includes(k));
       }) ||
-      availableBrowserVoices.find((v) => {
+      voices.find((v) => {
         const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
         return preset.keywords.some((k) => combined.includes(k));
       });
 
     if (target) {
       handleUpdateWebSpeechSetting('voiceURI', target.voiceURI || target.name);
-      showSavedNotification(`Selected Natural Man Voice: ${preset.name}`);
+      showSavedNotification(`Selected Natural Man Voice: ${preset.name} (${target.name})`);
     } else {
-      const best = findBestNaturalMaleVoice(availableBrowserVoices);
+      const best = findBestNaturalMaleVoice(voices);
       if (best) {
         handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
-        showSavedNotification(`${preset.name} not on this OS. Selected ${best.name} instead.`);
+        showSavedNotification(`${preset.name} set (matched with OS voice: ${best.name})`);
       } else {
-        showSavedNotification(`Preset voice not found on device.`);
+        handleUpdateWebSpeechSetting('voiceURI', preset.keywords[0]);
+        showSavedNotification(`Selected voice preset: ${preset.name}`);
+      }
+    }
+
+    // Immediate audible confirmation
+    try {
+      soundEngine.unlock();
+      await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
+    } catch (e) {
+      console.warn('Voice preview announcement error:', e);
+    }
+  };
+
+  const handleAutoPickBestNaturalMaleVoice = async () => {
+    if (selectedProvider !== 'webspeech') {
+      handleSwitchProvider('webspeech');
+    }
+
+    let voices = availableBrowserVoices;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const live = window.speechSynthesis.getVoices();
+      if (live && live.length > 0) {
+        voices = live;
+        setAvailableBrowserVoices(live);
+      }
+    }
+
+    const best = findBestNaturalMaleVoice(voices);
+    if (best) {
+      handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
+      const matchingPreset = POPULAR_NATURAL_MALE_PRESETS.find((p) =>
+        p.keywords.some((k) => `${best.name} ${best.voiceURI}`.toLowerCase().includes(k))
+      );
+      if (matchingPreset) {
+        setSelectedMalePresetId(matchingPreset.id);
+      }
+      showSavedNotification(`Auto-selected Natural Man Voice: ${best.name}`);
+      try {
+        soundEngine.unlock();
+        await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
+      } catch (e) {
+        console.warn('Voice preview error:', e);
+      }
+    } else {
+      showSavedNotification('No specific natural male voice detected; using system default');
+    }
+  };
+
+  const handleSelectDirectVoice = async (voiceURI: string, voiceName: string) => {
+    if (selectedProvider !== 'webspeech') {
+      handleSwitchProvider('webspeech');
+    }
+    handleUpdateWebSpeechSetting('voiceURI', voiceURI);
+    const matchingPreset = POPULAR_NATURAL_MALE_PRESETS.find((p) =>
+      p.keywords.some((k) => `${voiceName} ${voiceURI}`.toLowerCase().includes(k))
+    );
+    if (matchingPreset) {
+      setSelectedMalePresetId(matchingPreset.id);
+    }
+    showSavedNotification(`Voice set to: ${voiceName}`);
+    try {
+      soundEngine.unlock();
+      await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
+    } catch (e) {
+      console.warn('Voice preview error:', e);
+    }
+  };
+
+  const handleRefreshBrowserVoices = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const v = window.speechSynthesis.getVoices();
+      if (v && v.length > 0) {
+        setAvailableBrowserVoices(v);
+        showSavedNotification(`Detected ${v.length} voices on device`);
+      } else {
+        showSavedNotification('Requesting device voices from browser...');
       }
     }
   };
 
-  const handleAutoPickBestNaturalMaleVoice = () => {
-    const best = findBestNaturalMaleVoice(availableBrowserVoices);
-    if (best) {
-      handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
-      showSavedNotification(`Auto-selected Natural Man Voice: ${best.name}`);
-    } else {
-      showSavedNotification('No specific natural male voice detected');
+  const handleTestWebSpeechVoice = async () => {
+    if (selectedProvider !== 'webspeech') {
+      handleSwitchProvider('webspeech');
+    }
+    try {
+      soundEngine.unlock();
+      await soundEngine.announce('Pelham Goal! Scored by number 9. Assisted by number 17 and number 4.', 'nhl');
+    } catch (e) {
+      console.warn('Voice test error:', e);
     }
   };
 
@@ -1322,8 +1419,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               )}
 
-              {/* 4 Voice Provider & Account Credit Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* 5 Voice Provider & Account Credit Cards Grid - ALL DIRECTLY CLICKABLE */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {/* CARD 1: ElevenLabs Account */}
                 {(() => {
                   const el = creditsStatus?.elevenlabs || {
@@ -1342,10 +1439,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleSwitchProvider('elevenlabs')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchProvider('elevenlabs');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-amber-500/60 ring-1 ring-amber-500/30 shadow-md'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-slate-900/90 border-amber-500 ring-2 ring-amber-500/40 shadow-lg shadow-amber-950/40'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-amber-500/50 hover:bg-slate-900'
                       }`}
                     >
                       <div className="space-y-2">
@@ -1395,15 +1501,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {el.source === 'api'
                               ? 'Official API sync'
                               : el.source === 'calibrated' || el.source === 'manual'
-                              ? 'Calibrated balance'
-                              : 'Tracked usage'}
+                              ? 'Calibrated'
+                              : 'Tracked'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
                           </div>
                         )}
                       </div>
@@ -1411,20 +1517,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={() => handleOpenBalanceEdit('elevenlabs')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenBalanceEdit('elevenlabs');
+                          }}
                           className="text-[10px] text-amber-400 hover:text-amber-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate Balance</span>
+                          <span>Calibrate</span>
                         </button>
-                        {!isCurrentActive && (
-                          <button
-                            type="button"
-                            onClick={() => handleSwitchProvider('elevenlabs')}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
-                          >
-                            Use Now
-                          </button>
+                        {isCurrentActive ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shrink-0">
+                            ✓ In Use
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
+                            Select
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1449,24 +1558,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        handleSwitchProvider('cartesia');
+                        handleSwitchCartesiaAccount('account1');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchProvider('cartesia');
+                          handleSwitchCartesiaAccount('account1');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-cyan-500/60 ring-1 ring-cyan-500/30 shadow-md'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-slate-900/90 border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/50 hover:bg-slate-900'
                       }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                            <span className="text-xs font-bold text-white truncate">Cartesia Account 1</span>
+                            <span className="text-xs font-bold text-white truncate">Cartesia Acc 1</span>
                           </div>
                           {isCurrentActive ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shrink-0">
                               ACTIVE
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Acc 1</span>
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Ready</span>
                           )}
                         </div>
 
@@ -1499,14 +1621,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
                           <span>{percent}% available</span>
                           <span>
-                            {c1.source === 'manual' || c1.source === 'calibrated' ? 'Calibrated balance' : 'Tracked usage'}
+                            {c1.source === 'manual' || c1.source === 'calibrated' ? 'Calibrated' : 'Tracked'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
                           </div>
                         )}
                       </div>
@@ -1514,23 +1636,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={() => handleOpenBalanceEdit('cartesia1')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenBalanceEdit('cartesia1');
+                          }}
                           className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate Balance</span>
+                          <span>Calibrate</span>
                         </button>
-                        {!isCurrentActive && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleSwitchProvider('cartesia');
-                              handleSwitchCartesiaAccount('account1');
-                            }}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
-                          >
-                            Use Now
-                          </button>
+                        {isCurrentActive ? (
+                          <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0">
+                            ✓ In Use
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
+                            Select
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1555,24 +1677,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        handleSwitchProvider('cartesia');
+                        handleSwitchCartesiaAccount('account2');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchProvider('cartesia');
+                          handleSwitchCartesiaAccount('account2');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-cyan-500/60 ring-1 ring-cyan-500/30 shadow-md'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-slate-900/90 border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/50 hover:bg-slate-900'
                       }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                            <span className="text-xs font-bold text-white truncate">Cartesia Account 2</span>
+                            <span className="text-xs font-bold text-white truncate">Cartesia Acc 2</span>
                           </div>
                           {isCurrentActive ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shrink-0">
                               ACTIVE
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Acc 2</span>
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Ready</span>
                           )}
                         </div>
 
@@ -1605,14 +1740,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
                           <span>{percent}% available</span>
                           <span>
-                            {c2.source === 'manual' || c2.source === 'calibrated' ? 'Calibrated balance' : 'Tracked usage'}
+                            {c2.source === 'manual' || c2.source === 'calibrated' ? 'Calibrated' : 'Tracked'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
                           </div>
                         )}
                       </div>
@@ -1620,39 +1755,123 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={() => handleOpenBalanceEdit('cartesia2')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenBalanceEdit('cartesia2');
+                          }}
                           className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate Balance</span>
+                          <span>Calibrate</span>
                         </button>
-                        {!isCurrentActive && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleSwitchProvider('cartesia');
-                              handleSwitchCartesiaAccount('account2');
-                            }}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
-                          >
-                            Use Now
-                          </button>
+                        {isCurrentActive ? (
+                          <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0">
+                            ✓ In Use
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
+                            Select
+                          </span>
                         )}
                       </div>
                     </div>
                   );
                 })()}
 
-                {/* CARD 4: Browser WebSpeech (Native) */}
+                {/* CARD 4: Google Cloud / Sport AI */}
+                {(() => {
+                  const isCurrentActive = selectedProvider === 'google';
+
+                  return (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleSwitchProvider('google')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchProvider('google');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
+                        isCurrentActive
+                          ? 'bg-slate-900/90 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-emerald-500/50 hover:bg-slate-900'
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span className="text-xs font-bold text-white truncate">Google Sport AI</span>
+                          </div>
+                          {isCurrentActive ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">
+                              ACTIVE
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Sport</span>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="text-[11px] text-slate-400">Natural Commentator Engine</div>
+                          <div className="flex items-baseline gap-1.5 mt-0.5">
+                            <span className="text-xl font-mono font-black text-emerald-300">
+                              High Fidelity
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                          <div className="h-full bg-emerald-400 w-full" />
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span>Live Cloud TTS</span>
+                          <span className="text-emerald-400 font-medium">Fast Announcer</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-slate-500">
+                          Arena Voice
+                        </span>
+                        {isCurrentActive ? (
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shrink-0">
+                            ✓ In Use
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
+                            Select
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* CARD 5: Browser WebSpeech (Native) */}
                 {(() => {
                   const isCurrentActive = selectedProvider === 'webspeech';
 
                   return (
                     <div
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      role="button"
+                      tabIndex={0}
+                      id="card-webspeech-quota"
+                      onClick={() => handleSwitchProvider('webspeech')}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchProvider('webspeech');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-violet-500/60 ring-1 ring-violet-500/30 shadow-md'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-slate-900/90 border-violet-500 ring-2 ring-violet-500/40 shadow-lg shadow-violet-950/40'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-violet-500/50 hover:bg-slate-900'
                       }`}
                     >
                       <div className="space-y-2">
@@ -1677,16 +1896,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               Unlimited
                             </span>
                             <span className="text-xs text-slate-500 font-mono">
-                              / ∞ No Quota
+                              / ∞ Free
                             </span>
                           </div>
                         </div>
 
                         {/* Progress Bar (Always 100% full) */}
                         <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-full bg-violet-400 w-full"
-                          />
+                          <div className="h-full bg-violet-400 w-full" />
                         </div>
 
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
@@ -1699,14 +1916,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <span className="text-[10px] text-slate-500">
                           Zero billing risk
                         </span>
-                        {!isCurrentActive && (
-                          <button
-                            type="button"
-                            onClick={() => handleSwitchProvider('webspeech')}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
-                          >
-                            Use Now
-                          </button>
+                        {isCurrentActive ? (
+                          <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[10px] font-bold shrink-0">
+                            ✓ In Use
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
+                            Select
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1839,7 +2056,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   id="select-provider-elevenlabs"
                   onClick={() => handleSwitchProvider('elevenlabs')}
-                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
                     selectedProvider === 'elevenlabs'
                       ? 'bg-amber-500/15 border-amber-500/70 text-white shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -1880,7 +2097,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   id="select-provider-cartesia"
                   onClick={() => handleSwitchProvider('cartesia')}
-                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
                     selectedProvider === 'cartesia'
                       ? 'bg-cyan-500/15 border-cyan-500/70 text-white shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -1923,7 +2140,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   id="select-provider-google"
                   onClick={() => handleSwitchProvider('google')}
-                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
                     selectedProvider === 'google'
                       ? 'bg-emerald-500/15 border-emerald-500/70 text-white shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -1966,7 +2183,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   id="select-provider-webspeech"
                   onClick={() => handleSwitchProvider('webspeech')}
-                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
                     selectedProvider === 'webspeech'
                       ? 'bg-violet-500/15 border-violet-500/70 text-white shadow-lg shadow-violet-500/10 ring-1 ring-violet-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -3049,18 +3266,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         });
 
                         const isCurrentlySelected =
-                          currentVoice &&
-                          preset.keywords.some((k) => `${currentVoice.name} ${currentVoice.voiceURI}`.toLowerCase().includes(k));
+                          selectedMalePresetId === preset.id ||
+                          Boolean(
+                            currentVoice &&
+                            preset.keywords.some((k) => `${currentVoice.name} ${currentVoice.voiceURI}`.toLowerCase().includes(k))
+                          );
 
                         return (
                           <button
                             key={preset.id}
                             type="button"
+                            id={`preset-voice-${preset.id}`}
                             onClick={() => handleSelectNaturalMalePreset(preset)}
-                            className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-1.5 ${
+                            className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer select-none hover:scale-[1.01] active:scale-[0.99] ${
                               isCurrentlySelected
-                                ? 'bg-violet-500/20 border-violet-500 text-white shadow-md shadow-violet-950/40 ring-1 ring-violet-500/50'
-                                : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-violet-500/40 hover:bg-slate-900'
+                                ? 'bg-violet-600/25 border-violet-400 text-white shadow-lg shadow-violet-950/50 ring-2 ring-violet-500/60'
+                                : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-violet-500/50 hover:bg-slate-900'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2">
@@ -3069,55 +3290,74 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <span className="truncate">{preset.name}</span>
                               </span>
                               {isCurrentlySelected ? (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500 text-slate-950 shrink-0">
-                                  ACTIVE
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-400 text-slate-950 shrink-0 shadow">
+                                  ✓ ACTIVE
                                 </span>
                               ) : isInstalled ? (
                                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                                   On Device
                                 </span>
                               ) : (
-                                <span className="text-[9px] text-slate-500 shrink-0">
+                                <span className="text-[9px] text-slate-500 shrink-0 font-mono">
                                   {preset.platform}
                                 </span>
                               )}
                             </div>
-                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                            <p className="text-[11px] text-slate-400 leading-snug">
                               {preset.description}
                             </p>
+                            <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                              <span className="text-slate-500">
+                                {isInstalled ? 'Installed Voice' : 'Preset Config'}
+                              </span>
+                              <span className={isCurrentlySelected ? 'text-violet-300 font-bold' : 'text-violet-400 font-medium'}>
+                                {isCurrentlySelected ? 'Selected & Ready' : 'Click to Set ▶'}
+                              </span>
+                            </div>
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Voice Selection Dropdown */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  {/* Voice Selection & Direct Click Voice Options */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <label htmlFor="webspeech-voice-select" className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                         <Volume2 className="w-3.5 h-3.5 text-violet-400" />
                         <span>Select Installed Device Voice</span>
                       </label>
                       <div className="flex items-center gap-2">
-                        {isCurrentVoiceMale ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                            <span>✓</span>
-                            <span>Natural Man Voice Active</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">
-                            {availableBrowserVoices.length} voices detected
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={handleRefreshBrowserVoices}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Refresh Voices</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTestWebSpeechVoice}
+                          className="px-2.5 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold shadow-md shadow-violet-700/20 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>📣</span>
+                          <span>Test Announcer</span>
+                        </button>
                       </div>
                     </div>
 
+                    {/* Standard Dropdown */}
                     <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
                       <select
                         id="webspeech-voice-select"
                         value={webSpeechSettings.voiceURI}
-                        onChange={(e) => handleUpdateWebSpeechSetting('voiceURI', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 font-sans"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const found = availableBrowserVoices.find((v) => (v.voiceURI || v.name) === val);
+                          handleSelectDirectVoice(val, found ? found.name : val);
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 font-sans cursor-pointer hover:border-slate-600"
                       >
                         {naturalMaleVoices.length > 0 && (
                           <optgroup label="🎙️ Natural Man Commentator Voices (Recommended)">
@@ -3147,9 +3387,95 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           )}
                         </span>
                         <span className="text-slate-500">
-                          {naturalMaleVoices.length} natural male voice{naturalMaleVoices.length === 1 ? '' : 's'} available
+                          {naturalMaleVoices.length} natural male voice{naturalMaleVoices.length === 1 ? '' : 's'} detected ({availableBrowserVoices.length} total)
                         </span>
                       </div>
+                    </div>
+
+                    {/* Direct-Clickable Voice Options (Fail-safe for unclickable dropdowns) */}
+                    <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wide">
+                          <span>👆</span>
+                          <span>Or Click Any Voice Directly To Select:</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500">Click to activate & hear instant preview</span>
+                      </div>
+
+                      {availableBrowserVoices.length === 0 ? (
+                        <div className="p-3 text-center bg-slate-900/50 rounded-lg border border-dashed border-slate-800">
+                          <p className="text-xs text-slate-400">Loading browser voices...</p>
+                          <button
+                            type="button"
+                            onClick={handleRefreshBrowserVoices}
+                            className="mt-2 px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded text-xs font-bold"
+                          >
+                            Click to Load Voices
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {/* Natural Male Voices First */}
+                          {naturalMaleVoices.map((v) => {
+                            const val = v.voiceURI || v.name;
+                            const isSelected = webSpeechSettings.voiceURI === val || (currentVoice && (currentVoice.voiceURI === val || currentVoice.name === val));
+
+                            return (
+                              <button
+                                key={`chip-male-${val}`}
+                                type="button"
+                                onClick={() => handleSelectDirectVoice(val, v.name)}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border text-left flex items-center gap-2 transition-all cursor-pointer select-none ${
+                                  isSelected
+                                    ? 'bg-violet-600 text-white border-violet-400 shadow-md shadow-violet-900/50 ring-1 ring-white/30'
+                                    : 'bg-slate-900 hover:bg-violet-950/40 text-slate-200 border-violet-800/40 hover:border-violet-500'
+                                }`}
+                              >
+                                <span>🎙️</span>
+                                <span className="font-bold">{v.name}</span>
+                                <span className="text-[10px] opacity-70">({v.lang})</span>
+                                {isSelected ? (
+                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-black/40 text-white ml-1">
+                                    ACTIVE
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-violet-300 font-mono">
+                                    [Natural Male]
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+
+                          {/* Other Voices */}
+                          {otherVoices.map((v) => {
+                            const val = v.voiceURI || v.name;
+                            const isSelected = webSpeechSettings.voiceURI === val || (currentVoice && (currentVoice.voiceURI === val || currentVoice.name === val));
+
+                            return (
+                              <button
+                                key={`chip-other-${val}`}
+                                type="button"
+                                onClick={() => handleSelectDirectVoice(val, v.name)}
+                                className={`px-2 py-1 rounded-md text-[11px] font-medium border text-left flex items-center gap-1.5 transition-all cursor-pointer select-none ${
+                                  isSelected
+                                    ? 'bg-violet-700 text-white border-violet-400 shadow'
+                                    : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-600'
+                                }`}
+                              >
+                                <span>🗣️</span>
+                                <span className="truncate max-w-[140px]">{v.name}</span>
+                                <span className="text-[9px] text-slate-500">({v.lang})</span>
+                                {isSelected && (
+                                  <span className="text-[8px] font-bold px-1 rounded bg-black/50 text-violet-200">
+                                    ✓
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
 
