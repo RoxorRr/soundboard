@@ -12,59 +12,24 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const hasElevenLabs = Boolean(
-    (
-      process.env.ELEVENLABS_API_KEY ||
-      process.env.ELEVEN_LABS_API_KEY ||
-      process.env.VITE_ELEVENLABS_API_KEY ||
-      process.env.VITE_ELEVEN_LABS_API_KEY ||
-      process.env.ELEVENLABS_KEY ||
-      process.env.ELEVEN_API_KEY ||
-      process.env.XI_API_KEY ||
-      process.env.VITE_XI_API_KEY ||
-      process.env.ELEVEN_LABS_KEY
-    )?.trim()
-  );
-  const hasCartesia1 = Boolean(
-    (
-      process.env.CARTESIA_API_KEY ||
-      process.env.CARTESIA_KEY ||
-      process.env.VITE_CARTESIA_API_KEY ||
-      process.env.CARTESIA_API_KEY_1 ||
-      process.env.CARTESIA_KEY_1 ||
-      process.env.CARTESIA_APIKEY ||
-      process.env.CARTESIA_APIKEY_1
-    )?.trim()
-  );
-  const hasCartesia2 = Boolean(
-    (
-      process.env.CARTESIA_API_KEY_2 ||
-      process.env.CARTESIA_KEY_2 ||
-      process.env.VITE_CARTESIA_API_KEY_2 ||
-      process.env.CARTESIA_APIKEY_2
-    )?.trim()
-  );
+  const hasElevenLabs = Boolean((process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim());
+  const hasCartesia1 = Boolean((process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim());
+  const hasCartesia2 = Boolean((process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_KEY_2)?.trim());
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
-  const hasGoogleCloud = Boolean((process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_CLOUD_API_KEY)?.trim());
-  const hasGoogle = hasGemini || hasGoogleCloud;
   const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID || "nhl";
   const cartesiaVoiceId = process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE || "694f9389-aac1-45b6-b726-9d9369183238";
-  const googleVoiceId = (process.env.GOOGLE_TTS_VOICE_ID || process.env.GOOGLE_VOICE_ID || "Puck").trim();
 
   res.status(200).json({
-    configured: hasElevenLabs || hasCartesia1 || hasCartesia2 || hasGoogle,
+    configured: hasElevenLabs || hasCartesia1 || hasCartesia2,
     elevenLabsConfigured: hasElevenLabs,
     cartesiaConfigured: hasCartesia1 || hasCartesia2,
     cartesiaAccount1Configured: hasCartesia1,
     cartesiaAccount2Configured: hasCartesia2,
-    googleConfigured: hasGoogle,
     geminiConfigured: hasGemini,
     voiceId,
     cartesiaVoiceId,
-    googleVoiceId,
     model: "eleven_turbo_v2_5",
     cartesiaModel: "sonic-3.5",
-    team: "Pelham Pelicans",
-    isVercel: Boolean(process.env.VERCEL)
+    team: "Pelham Pelicans"
   });
 }

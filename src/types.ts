@@ -6,7 +6,7 @@ export interface Player {
   assists: number;
 }
 
-export type TTSProvider = 'elevenlabs' | 'cartesia' | 'google' | 'webspeech';
+export type TTSProvider = 'elevenlabs' | 'cartesia';
 
 export type AccountChoice = 'account1' | 'account2';
 
@@ -18,7 +18,7 @@ export interface Announcement {
   playerName: string;
   text: string;
   timestamp: number;
-  source: 'elevenlabs' | 'cartesia' | 'google' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'webspeech';
   team?: string;
   penaltyInfraction?: string;
   penaltyDuration?: string;
@@ -31,13 +31,11 @@ export interface VoiceStatus {
   cartesiaConfigured?: boolean;
   cartesiaAccount1Configured?: boolean;
   cartesiaAccount2Configured?: boolean;
-  googleConfigured?: boolean;
   activeProvider?: TTSProvider;
   activeCartesiaAccount?: AccountChoice;
   geminiConfigured?: boolean;
   voiceId: string;
   cartesiaVoiceId?: string;
-  googleVoiceId?: string;
   model: string;
   cartesiaModel?: string;
   team: string;
@@ -73,20 +71,6 @@ export interface CartesiaVoiceSettings {
   speed: number;
   pitchCents: number;
   emotion?: 'neutral' | 'excited' | 'optimistic' | 'authoritative';
-}
-
-export interface GoogleVoiceSettings {
-  voiceId: string;
-  speed: number;
-  pitchCents: number;
-  commentatorStyle?: 'play-by-play' | 'arena-pa' | 'thriller' | 'dramatic' | 'analyst' | 'color-analyst';
-}
-
-export interface WebSpeechVoiceSettings {
-  voiceURI: string;
-  speed: number;
-  pitch: number; // 0.5 to 2.0 (standard WebSpeech pitch)
-  preferNaturalMale?: boolean;
 }
 
 export interface AccountCreditInfo {

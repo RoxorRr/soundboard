@@ -1,9 +1,7 @@
-// Professional Web Audio Arena sound engine, ElevenLabs, Cartesia & Google TTS player
+// Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
 import {
   ElevenLabsVoiceSettings,
   CartesiaVoiceSettings,
-  GoogleVoiceSettings,
-  WebSpeechVoiceSettings,
   TTSProvider,
   AccountChoice,
   CreditsStatus,
@@ -13,7 +11,7 @@ import {
 export const CREDIT_SWITCH_THRESHOLD = 400;
 
 export interface AnnounceResult {
-  source: 'elevenlabs' | 'cartesia' | 'google' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'webspeech';
   voiceId?: string;
   error?: string;
   autoSwitched?: boolean;
@@ -37,147 +35,6 @@ export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
   emotion: 'excited'
 };
 
-export const DEFAULT_GOOGLE_VOICE_SETTINGS: GoogleVoiceSettings = {
-  voiceId: 'Puck', // Google's natural upbeat sport commentator (Gemini Natural AI)
-  speed: 1.05,
-  pitchCents: 0,
-  commentatorStyle: 'play-by-play',
-};
-
-export interface NaturalMaleVoicePreset {
-  id: string;
-  name: string;
-  platform: string;
-  keywords: string[];
-  description: string;
-}
-
-export const POPULAR_NATURAL_MALE_PRESETS: NaturalMaleVoicePreset[] = [
-  {
-    id: 'edge-guy',
-    name: 'Guy (Natural Online)',
-    platform: 'Edge / Windows',
-    keywords: ['guy', 'natural'],
-    description: 'High-energy, crisp natural American male commentator voice.',
-  },
-  {
-    id: 'mac-daniel',
-    name: 'Daniel (Natural Male PA)',
-    platform: 'macOS / iOS / Safari',
-    keywords: ['daniel'],
-    description: 'Crisp baritone arena sports public address announcer.',
-  },
-  {
-    id: 'mac-alex',
-    name: 'Alex (Natural Male)',
-    platform: 'Apple / macOS',
-    keywords: ['alex'],
-    description: 'Classic resonant natural male voice with athletic clarity.',
-  },
-  {
-    id: 'edge-christopher',
-    name: 'Christopher (Natural Online)',
-    platform: 'Edge / Windows',
-    keywords: ['christopher', 'natural'],
-    description: 'Authoritative play-by-play natural male sports broadcaster.',
-  },
-  {
-    id: 'google-male',
-    name: 'Google US/UK Male',
-    platform: 'Chrome / Android',
-    keywords: ['google', 'male'],
-    description: 'Clear Google-synthesized masculine commentator voice.',
-  },
-  {
-    id: 'win-david',
-    name: 'David (Desktop Male)',
-    platform: 'Windows Desktop',
-    keywords: ['david'],
-    description: 'Reliable built-in Windows desktop male announcer.',
-  },
-];
-
-const FEMALE_VOICE_NAMES = [
-  'jenny', 'aria', 'samantha', 'zira', 'susan', 'victoria', 'karen',
-  'kendra', 'ava', 'allison', 'catherine', 'hazel', 'stephanie', 'elena',
-  'female', 'woman', 'girl', 'lisa', 'kate', 'michelle', 'serena', 'tessa', 'fiona',
-  'steffi', 'laura', 'veena', 'priya', 'monica', 'alice', 'anna', 'helena', 'ioana',
-  'milena', 'zoe', 'chloe', 'claire', 'julie', 'sara', 'sarah', 'emma'
-];
-
-export function isFemaleVoice(nameOrUri: string): boolean {
-  const lower = (nameOrUri || '').toLowerCase();
-  return FEMALE_VOICE_NAMES.some((f) => lower.includes(f));
-}
-
-export function isNaturalMaleVoice(voice: { name: string; voiceURI?: string; lang?: string }): boolean {
-  const name = (voice.name || '').toLowerCase();
-  const uri = (voice.voiceURI || '').toLowerCase();
-  const combined = `${name} ${uri}`;
-
-  if (isFemaleVoice(combined)) return false;
-
-  const maleKeywords = [
-    'guy', 'christopher', 'eric', 'brian', 'steffan', 'davis', 'andrew',
-    'daniel', 'alex', 'evan', 'nathan', 'oliver', 'tom', 'aaron', 'fred',
-    'david', 'mark', 'george', 'ryan', 'male', 'man', 'jack', 'james', 'john'
-  ];
-
-  return maleKeywords.some((m) => combined.includes(m));
-}
-
-export function findBestNaturalMaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (!voices || voices.length === 0) return null;
-
-  const englishVoices = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('en'));
-  const pool = englishVoices.length > 0 ? englishVoices : voices;
-
-  // 1. Natural / Enhanced / Online male voices (e.g. "Microsoft Guy Online (Natural)", "Daniel (Enhanced)", "Alex", "Christopher Online (Natural)")
-  const naturalMale = pool.find((v) => {
-    const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
-    const hasNaturalTag = combined.includes('natural') || combined.includes('enhanced') || combined.includes('online');
-    return hasNaturalTag && isNaturalMaleVoice(v);
-  });
-  if (naturalMale) return naturalMale;
-
-  // 2. Prioritized top male voices
-  const prioritized = [
-    'guy',
-    'christopher',
-    'daniel',
-    'alex',
-    'evan',
-    'brian',
-    'eric',
-    'nathan',
-    'oliver',
-    'david',
-    'mark',
-    'male',
-  ];
-
-  for (const key of prioritized) {
-    const match = pool.find((v) => {
-      const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
-      return combined.includes(key) && !isFemaleVoice(combined);
-    });
-    if (match) return match;
-  }
-
-  // 3. Fallback: Any English voice that is not explicitly female
-  const nonFemale = pool.find((v) => !isFemaleVoice(`${v.name} ${v.voiceURI}`));
-  if (nonFemale) return nonFemale;
-
-  return pool[0] || null;
-}
-
-export const DEFAULT_WEBSPEECH_SETTINGS: WebSpeechVoiceSettings = {
-  voiceURI: '',
-  speed: 1.05,
-  pitch: 0.95, // Athletic natural male commentator pitch
-  preferNaturalMale: true,
-};
-
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -192,8 +49,6 @@ class SoundEngine {
   private activeCartesiaAccount: AccountChoice = 'account1';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
-  private googleVoiceSettings: GoogleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS };
-  private webSpeechSettings: WebSpeechVoiceSettings = { ...DEFAULT_WEBSPEECH_SETTINGS };
   private creditsStatus: CreditsStatus | null = null;
   private isAutoSwitchEnabled: boolean = true;
   private autoSwitchListeners: Set<(event: AutoSwitchEvent) => void> = new Set();
@@ -204,8 +59,11 @@ class SoundEngine {
     if (typeof window !== 'undefined') {
       try {
         const savedProvider = localStorage.getItem('pelham_tts_provider');
-        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia' || savedProvider === 'google' || savedProvider === 'webspeech') {
+        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
           this.ttsProvider = savedProvider as TTSProvider;
+        } else if (savedProvider === 'google') {
+          this.ttsProvider = 'elevenlabs';
+          localStorage.setItem('pelham_tts_provider', 'elevenlabs');
         }
 
         const savedCartesiaAccount = localStorage.getItem('pelham_active_cartesia_account');
@@ -226,16 +84,6 @@ class SoundEngine {
         const savedCartesia = localStorage.getItem('pelham_cartesia_voice_settings');
         if (savedCartesia) {
           this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
-        }
-
-        const savedGoogle = localStorage.getItem('pelham_google_voice_settings');
-        if (savedGoogle) {
-          this.googleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS, ...JSON.parse(savedGoogle) };
-        }
-
-        const savedWebSpeech = localStorage.getItem('pelham_webspeech_settings');
-        if (savedWebSpeech) {
-          this.webSpeechSettings = { ...DEFAULT_WEBSPEECH_SETTINGS, ...JSON.parse(savedWebSpeech) };
         }
       } catch (_) {}
 
@@ -308,73 +156,6 @@ class SoundEngine {
       } catch (_) {}
     }
     return { ...this.cartesiaVoiceSettings };
-  }
-
-  public getGoogleVoiceSettings(): GoogleVoiceSettings {
-    return { ...this.googleVoiceSettings };
-  }
-
-  public setGoogleVoiceSettings(newSettings: Partial<GoogleVoiceSettings>): GoogleVoiceSettings {
-    this.googleVoiceSettings = { ...this.googleVoiceSettings, ...newSettings };
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pelham_google_voice_settings', JSON.stringify(this.googleVoiceSettings));
-      } catch (_) {}
-    }
-    return { ...this.googleVoiceSettings };
-  }
-
-  public resetGoogleVoiceSettings(): GoogleVoiceSettings {
-    this.googleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS };
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('pelham_google_voice_settings');
-      } catch (_) {}
-    }
-    return { ...this.googleVoiceSettings };
-  }
-
-  public getWebSpeechSettings(): WebSpeechVoiceSettings {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && !this.webSpeechSettings.voiceURI) {
-      const voices = window.speechSynthesis.getVoices();
-      const best = findBestNaturalMaleVoice(voices);
-      if (best) {
-        this.webSpeechSettings.voiceURI = best.voiceURI || best.name;
-      }
-    }
-    return { ...this.webSpeechSettings };
-  }
-
-  public setWebSpeechSettings(newSettings: Partial<WebSpeechVoiceSettings>): WebSpeechVoiceSettings {
-    this.webSpeechSettings = { ...this.webSpeechSettings, ...newSettings };
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pelham_webspeech_settings', JSON.stringify(this.webSpeechSettings));
-      } catch (_) {}
-    }
-    return { ...this.webSpeechSettings };
-  }
-
-  public resetWebSpeechSettings(): WebSpeechVoiceSettings {
-    this.webSpeechSettings = { ...DEFAULT_WEBSPEECH_SETTINGS };
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const voices = window.speechSynthesis.getVoices();
-      const best = findBestNaturalMaleVoice(voices);
-      if (best) {
-        this.webSpeechSettings.voiceURI = best.voiceURI || best.name;
-      }
-    }
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('pelham_webspeech_settings');
-      } catch (_) {}
-    }
-    return { ...this.webSpeechSettings };
-  }
-
-  public getAvailableWebSpeechVoices(): SpeechSynthesisVoice[] {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
-    return window.speechSynthesis.getVoices();
   }
 
   public getAutoSwitchEnabled(): boolean {
@@ -548,22 +329,17 @@ class SoundEngine {
     }
   }
 
-  // Core auto-switching engine: If active account has <= 400 credits or quota reached, switch to next account
+  // Core auto-switching engine: If active account has <= 400 credits, switch to next account
   public checkAndPerformAutoSwitch(triggerReason?: string): AutoSwitchEvent | null {
-    if (!this.isAutoSwitchEnabled) return null;
+    if (!this.isAutoSwitchEnabled || !this.creditsStatus) return null;
 
     const threshold = CREDIT_SWITCH_THRESHOLD; // 400
-    const el = this.creditsStatus?.elevenlabs || { configured: true, remainingCredits: 100000 };
-    const c1 = this.creditsStatus?.cartesiaAccount1 || { configured: true, remainingCredits: 100000 };
-    const c2 = this.creditsStatus?.cartesiaAccount2 || { configured: true, remainingCredits: 100000 };
+    const el = this.creditsStatus.elevenlabs;
+    const c1 = this.creditsStatus.cartesiaAccount1;
+    const c2 = this.creditsStatus.cartesiaAccount2;
 
     const currentProvider = this.ttsProvider;
     const currentCartesiaAccount = this.activeCartesiaAccount;
-
-    // WebSpeech is client-side native and has unlimited credits
-    if (currentProvider === 'webspeech') {
-      return null;
-    }
 
     // SCENARIO 1: Current provider is Cartesia
     if (currentProvider === 'cartesia') {
@@ -668,53 +444,6 @@ class SoundEngine {
           this.notifyAutoSwitch(event);
           return event;
         }
-      }
-    }
-
-    // SCENARIO 3: Current provider is Google (Gemini Natural Sport Commentator)
-    if (currentProvider === 'google') {
-      // Check if Cartesia Account 1 has credits
-      if (c1.configured && c1.remainingCredits > threshold) {
-        this.setTTSProvider('cartesia');
-        this.setCartesiaAccount('account1');
-        const event: AutoSwitchEvent = {
-          timestamp: Date.now(),
-          fromProvider: 'google',
-          toProvider: 'cartesia',
-          toAccount: 'account1',
-          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to Cartesia Account 1',
-          remainingCredits: c1.remainingCredits,
-        };
-        this.notifyAutoSwitch(event);
-        return event;
-      }
-      // Check if Cartesia Account 2 has credits
-      if (c2.configured && c2.remainingCredits > threshold) {
-        this.setTTSProvider('cartesia');
-        this.setCartesiaAccount('account2');
-        const event: AutoSwitchEvent = {
-          timestamp: Date.now(),
-          fromProvider: 'google',
-          toProvider: 'cartesia',
-          toAccount: 'account2',
-          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to Cartesia Account 2',
-          remainingCredits: c2.remainingCredits,
-        };
-        this.notifyAutoSwitch(event);
-        return event;
-      }
-      // Check if ElevenLabs has credits
-      if (el.configured && el.remainingCredits > threshold) {
-        this.setTTSProvider('elevenlabs');
-        const event: AutoSwitchEvent = {
-          timestamp: Date.now(),
-          fromProvider: 'google',
-          toProvider: 'elevenlabs',
-          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to ElevenLabs',
-          remainingCredits: el.remainingCredits,
-        };
-        this.notifyAutoSwitch(event);
-        return event;
       }
     }
 
@@ -1082,13 +811,6 @@ class SoundEngine {
 
     const provider = this.ttsProvider;
 
-    // 0. BROWSER WEBSPEECH (NATIVE) ROUTE
-    if (provider === 'webspeech') {
-      const targetVoice = overrideVoiceId && overrideVoiceId !== 'nhl' ? overrideVoiceId : this.webSpeechSettings.voiceURI;
-      await this.speakWebSpeechPromise(text, targetVoice);
-      return { source: 'webspeech', voiceId: targetVoice || 'Browser Native' };
-    }
-
     // 1. CARTESIA TTS ROUTE
     if (provider === 'cartesia') {
       const cSettings = { ...this.cartesiaVoiceSettings };
@@ -1169,18 +891,6 @@ class SoundEngine {
           }
         }
 
-        if (!response.ok && !contentType.includes('application/json')) {
-          const errText = await response.text().catch(() => '');
-          console.warn(`Cartesia TTS server error (HTTP ${response.status}):`, errText);
-          this.speakWebSpeech(text, 'cartesia');
-          return {
-            source: 'webspeech',
-            error: response.status === 504
-              ? 'Vercel serverless function timed out (HTTP 504)'
-              : `Cartesia TTS server error (HTTP ${response.status})`
-          };
-        }
-
         this.speakWebSpeech(text, 'cartesia');
         return { source: 'webspeech', error: 'Unexpected voice response format' };
       } catch (err: any) {
@@ -1190,82 +900,7 @@ class SoundEngine {
       }
     }
 
-    // 2. GOOGLE NATURAL SPORT COMMENTATOR TTS ROUTE
-    if (provider === 'google') {
-      const gSettings = { ...this.googleVoiceSettings };
-      const effectiveGoogleVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
-        ? overrideVoiceId
-        : gSettings.voiceId;
-
-      try {
-        const response = await fetch('/api/tts', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, audio/wav, audio/mpeg, */*',
-          },
-          body: JSON.stringify({
-            text,
-            provider: 'google',
-            voiceId: effectiveGoogleVoice,
-            googleSettings: {
-              voiceId: effectiveGoogleVoice,
-              speed: gSettings.speed,
-              pitchCents: gSettings.pitchCents,
-              commentatorStyle: gSettings.commentatorStyle,
-            },
-            format: 'base64',
-          }),
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-
-        if (contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data.success && data.audioBase64) {
-            const played = await this.playBase64Audio(data.audioBase64, gSettings.pitchCents);
-            if (played) {
-              return { source: 'google', voiceId: data.voiceId };
-            }
-          }
-
-          // Handle quota exhaustion (HTTP 429 / RESOURCE_EXHAUSTED) auto-switch
-          if (data.quotaExceeded || (data.error && (data.error.includes('quota') || data.error.includes('429') || data.error.includes('RESOURCE_EXHAUSTED')))) {
-            if (retryCount < 1) {
-              const switched = this.checkAndPerformAutoSwitch('Google Gemini TTS quota reached (429); switching to next voice provider');
-              if (switched) {
-                return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
-              }
-            }
-          }
-
-          const errorMsg = data.error || (data.fallback ? 'Google TTS fallback active' : 'Voice synthesis failed');
-          console.warn('Google TTS server fallback active:', errorMsg, data);
-          this.speakWebSpeech(text, 'google');
-          return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
-        }
-
-        if (contentType.includes('audio/')) {
-          const arrayBuffer = await response.arrayBuffer();
-          const headerVoice = response.headers.get('x-google-voice') || effectiveGoogleVoice;
-          const mime = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
-
-          const played = await this.playArrayBuffer(arrayBuffer, gSettings.pitchCents, mime);
-          if (played) {
-            return { source: 'google', voiceId: headerVoice };
-          }
-        }
-
-        this.speakWebSpeech(text, 'google');
-        return { source: 'webspeech', error: 'Unexpected voice response format' };
-      } catch (err: any) {
-        console.warn('Google TTS API request failed, falling back to Web Speech API:', err);
-        this.speakWebSpeech(text, 'google');
-        return { source: 'webspeech', error: err?.message || 'Network error during Google voice playback' };
-      }
-    }
-
-    // 3. ELEVENLABS TTS ROUTE (DEFAULT)
+    // 2. ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
       ...(overrideSettings || {})
@@ -1346,18 +981,6 @@ class SoundEngine {
         }
       }
 
-      if (!response.ok && !contentType.includes('application/json')) {
-        const errText = await response.text().catch(() => '');
-        console.warn(`ElevenLabs TTS server error (HTTP ${response.status}):`, errText);
-        this.speakWebSpeech(text, 'elevenlabs');
-        return {
-          source: 'webspeech',
-          error: response.status === 504
-            ? 'Vercel serverless function timed out (HTTP 504)'
-            : `ElevenLabs TTS server error (HTTP ${response.status})`
-        };
-      }
-
       // If unexpected response
       console.warn('Unexpected TTS response format:', contentType);
       this.speakWebSpeech(text, 'elevenlabs');
@@ -1383,48 +1006,31 @@ class SoundEngine {
       let activeSpeed = this.voiceSettings.speed;
       let activePitch = this.voiceSettings.pitchCents;
 
-      const utterance = new SpeechSynthesisUtterance(text);
-
-      if (activeProvider === 'webspeech') {
-        utterance.rate = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.speed));
-        utterance.pitch = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.pitch));
-      } else {
-        if (activeProvider === 'cartesia') {
-          activeSpeed = this.cartesiaVoiceSettings.speed;
-          activePitch = this.cartesiaVoiceSettings.pitchCents;
-        } else if (activeProvider === 'google') {
-          activeSpeed = this.googleVoiceSettings.speed;
-          activePitch = this.googleVoiceSettings.pitchCents;
-        }
-        utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
-        // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
-        const pitchOffset = activePitch / 1000;
-        utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
+      if (activeProvider === 'cartesia') {
+        activeSpeed = this.cartesiaVoiceSettings.speed;
+        activePitch = this.cartesiaVoiceSettings.pitchCents;
       }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
+
+      // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
+      const pitchOffset = activePitch / 1000;
+      utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
 
       // Fix for Chromium garbage-collection bug where synthesis stops early
       (window as any).__lastUtterance = utterance;
 
       const voices = window.speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
-        if (activeProvider === 'webspeech' && this.webSpeechSettings.voiceURI) {
-          const matched = voices.find(
-            (v) => v.voiceURI === this.webSpeechSettings.voiceURI || v.name === this.webSpeechSettings.voiceURI
-          );
-          if (matched) {
-            utterance.voice = matched;
-          }
-        }
-        if (!utterance.voice) {
-          const preferredVoice =
-            findBestNaturalMaleVoice(voices) ||
-            voices.find((v) => v.lang.startsWith('en') && !isFemaleVoice(v.name)) ||
-            voices.find((v) => v.lang.startsWith('en')) ||
-            voices[0];
+        const preferredVoice = voices.find(
+          (v) =>
+            v.lang.startsWith('en') &&
+            (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
+        ) || voices.find((v) => v.lang.startsWith('en'));
 
-          if (preferredVoice) {
-            utterance.voice = preferredVoice;
-          }
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
         }
       }
 
@@ -1441,74 +1047,6 @@ class SoundEngine {
     } catch (err) {
       console.warn('Web Speech invocation failed:', err);
     }
-  }
-
-  // Promise-based WebSpeech speaker for announce await and test preview
-  public speakWebSpeechPromise(text: string, overrideVoiceURI?: string): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) {
-        resolve();
-        return;
-      }
-
-      try {
-        window.speechSynthesis.cancel();
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.speed));
-        utterance.pitch = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.pitch));
-
-        const targetURI = overrideVoiceURI || this.webSpeechSettings.voiceURI;
-        const voices = window.speechSynthesis.getVoices();
-        if (voices && voices.length > 0) {
-          if (targetURI) {
-            const matched = voices.find((v) => v.voiceURI === targetURI || v.name === targetURI);
-            if (matched) {
-              utterance.voice = matched;
-            }
-          }
-          if (!utterance.voice) {
-            const preferredVoice =
-              findBestNaturalMaleVoice(voices) ||
-              voices.find((v) => v.lang.startsWith('en') && !isFemaleVoice(v.name)) ||
-              voices.find((v) => v.lang.startsWith('en')) ||
-              voices[0];
-
-            if (preferredVoice) {
-              utterance.voice = preferredVoice;
-            }
-          }
-        }
-
-        (window as any).__lastUtterance = utterance;
-
-        const maxTimeout = setTimeout(() => {
-          (window as any).__lastUtterance = null;
-          resolve();
-        }, 12000);
-
-        utterance.onend = () => {
-          clearTimeout(maxTimeout);
-          (window as any).__lastUtterance = null;
-          resolve();
-        };
-
-        utterance.onerror = (e) => {
-          console.warn('WebSpeech utterance error:', e);
-          clearTimeout(maxTimeout);
-          (window as any).__lastUtterance = null;
-          resolve();
-        };
-
-        window.speechSynthesis.speak(utterance);
-      } catch (err) {
-        console.warn('Web Speech invocation failed:', err);
-        resolve();
-      }
-    });
   }
 }
 

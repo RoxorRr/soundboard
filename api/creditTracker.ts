@@ -6,7 +6,6 @@ export interface MonthCreditUsage {
   cartesia1Used: number;
   cartesia2Used: number;
   elevenlabsUsed: number;
-  googleUsed?: number;
   elevenlabsLimit?: number;
   cartesia1Limit?: number;
   cartesia2Limit?: number;
@@ -97,7 +96,7 @@ export function getCurrentMonthUsage(): MonthCreditUsage {
 }
 
 export function recordCharactersUsed(
-  account: 'cartesia1' | 'cartesia2' | 'elevenlabs' | 'google',
+  account: 'cartesia1' | 'cartesia2' | 'elevenlabs',
   characterCount: number
 ): MonthCreditUsage {
   const current = getCurrentMonthUsage();
@@ -118,8 +117,6 @@ export function recordCharactersUsed(
     if (typeof current.elevenlabsOverrideRemaining === 'number') {
       current.elevenlabsOverrideRemaining = Math.max(0, current.elevenlabsOverrideRemaining - count);
     }
-  } else if (account === 'google') {
-    current.googleUsed = (current.googleUsed || 0) + count;
   }
 
   current.lastUpdated = Date.now();

@@ -283,16 +283,8 @@ export default function App() {
   // Listen for automatic TTS provider/account switches when credits hit <= 400
   useEffect(() => {
     const unsub = soundEngine.onAutoSwitch((event) => {
-      const targetName = event.toProvider === 'cartesia'
-        ? `Cartesia (${event.toAccount === 'account2' ? 'Account 2' : 'Account 1'})`
-        : event.toProvider === 'google'
-        ? 'Google Natural Sport Commentator'
-        : event.toProvider === 'webspeech'
-        ? 'Browser WebSpeech (Native)'
-        : 'ElevenLabs';
-
       setVoiceFeedback({
-        message: `🔄 Auto-switched to ${targetName}: ${event.reason}`,
+        message: `🔄 Auto-switched to ${event.toProvider === 'cartesia' ? `Cartesia (${event.toAccount === 'account2' ? 'Account 2' : 'Account 1'})` : 'ElevenLabs'}: ${event.reason}`,
         type: 'info',
       });
     });
@@ -349,7 +341,7 @@ export default function App() {
       playerName: player.name,
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
     };
 
     setCurrentAnnouncement(announcement);
@@ -416,7 +408,7 @@ export default function App() {
       playerName: player.name,
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
     };
 
     setCurrentAnnouncement(announcement);
@@ -498,7 +490,7 @@ export default function App() {
       playerName: 'Pelham Arena PA',
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
       team: 'Pelham Pelicans',
     };
 
@@ -515,11 +507,6 @@ export default function App() {
         setVoiceFeedback({
           message: `Voice Notice: ${res.error}`,
           type: 'warning'
-        });
-      } else if (res.source === 'google') {
-        setVoiceFeedback({
-          message: `Google Natural Sport Commentator voice playing (${res.voiceId || 'Puck'})`,
-          type: 'success'
         });
       } else if (res.source === 'cartesia') {
         setVoiceFeedback({
@@ -749,7 +736,7 @@ export default function App() {
         playerName: scorer.name,
         text: prompt,
         timestamp: Date.now(),
-        source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
         team: currentTeam,
       };
 
@@ -807,7 +794,7 @@ export default function App() {
         playerName: player.name,
         text: promptText,
         timestamp: Date.now(),
-        source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
         team: currentTeam,
         penaltyInfraction: infraction,
         penaltyDuration: durationText && durationText.trim() !== '' ? durationText : 'Without time',

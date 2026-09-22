@@ -42,8 +42,6 @@ import {
   Player,
   ElevenLabsVoiceSettings,
   CartesiaVoiceSettings,
-  GoogleVoiceSettings,
-  WebSpeechVoiceSettings,
   TTSProvider,
   AccountChoice,
   CreditsStatus,
@@ -53,12 +51,6 @@ import {
   soundEngine,
   DEFAULT_VOICE_SETTINGS,
   DEFAULT_CARTESIA_VOICE_SETTINGS,
-  DEFAULT_GOOGLE_VOICE_SETTINGS,
-  DEFAULT_WEBSPEECH_SETTINGS,
-  POPULAR_NATURAL_MALE_PRESETS,
-  findBestNaturalMaleVoice,
-  isNaturalMaleVoice,
-  NaturalMaleVoicePreset,
   generateWelcomePrompt,
   CREDIT_SWITCH_THRESHOLD,
 } from '../utils/audio';
@@ -163,30 +155,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     )
   );
 
-  // Google Natural Sport Commentator Voice Customization State
-  const [googleVoiceSettings, setGoogleVoiceSettings] = useState<GoogleVoiceSettings>(() => {
-    return soundEngine.getGoogleVoiceSettings();
-  });
-  const [googleCommentatorPreset, setGoogleCommentatorPreset] = useState<string>(
-    googleVoiceSettings.commentatorStyle || 'play-by-play'
-  );
-  const [customGoogleVoiceIdInput, setCustomGoogleVoiceIdInput] = useState<string>(
-    googleVoiceSettings.voiceId || 'Puck'
-  );
-  const [isCustomGoogleVoiceSelected, setIsCustomGoogleVoiceSelected] = useState<boolean>(
-    !['Puck', 'Charon', 'Fenrir', 'Aoede', 'Kore', 'en-US-Journey-O', 'en-US-Journey-F', 'en-US-Studio-O', 'en-US-Neural2-J'].includes(
-      googleVoiceSettings.voiceId || ''
-    )
-  );
-
-  // Browser WebSpeech (Native) Voice Customization State
-  const [webSpeechSettings, setWebSpeechSettings] = useState<WebSpeechVoiceSettings>(() => {
-    return soundEngine.getWebSpeechSettings();
-  });
-  const [availableBrowserVoices, setAvailableBrowserVoices] = useState<SpeechSynthesisVoice[]>(() => {
-    return soundEngine.getAvailableWebSpeechVoices();
-  });
-
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
   const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
@@ -206,11 +174,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isRefreshingCredits, setIsRefreshingCredits] = useState<boolean>(false);
   const [editingAccount, setEditingAccount] = useState<'elevenlabs' | 'cartesia1' | 'cartesia2' | null>(null);
   const [manualBalanceInput, setManualBalanceInput] = useState<string>('130000');
-  const [selectedMalePresetId, setSelectedMalePresetId] = useState<string>(() => {
-    const cur = soundEngine.getWebSpeechSettings().voiceURI.toLowerCase();
-    const found = POPULAR_NATURAL_MALE_PRESETS.find((p) => p.keywords.some((k) => cur.includes(k)));
-    return found ? found.id : 'guy';
-  });
 
   useEffect(() => {
     soundEngine.fetchCredits().then((status) => {
@@ -229,37 +192,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (event.toAccount) {
         setActiveCartesiaAccount(event.toAccount);
       }
-      const targetName = event.toProvider === 'cartesia'
-        ? `Cartesia (${event.toAccount === 'account2' ? 'Account 2' : 'Account 1'})`
-        : event.toProvider === 'google'
-        ? 'Google Natural Sport Commentator'
-        : event.toProvider === 'webspeech'
-        ? 'Browser WebSpeech (Native)'
-        : 'ElevenLabs';
-      showSavedNotification(`Auto-switched to ${targetName}`);
+      showSavedNotification(`Auto-switched to ${event.toProvider === 'cartesia' ? `Cartesia (${event.toAccount === 'account2' ? 'Account 2' : 'Account 1'})` : 'ElevenLabs'}`);
     });
-
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const updateVoices = () => {
-        const v = window.speechSynthesis.getVoices();
-        if (v && v.length > 0) {
-          setAvailableBrowserVoices(v);
-          setWebSpeechSettings((prev) => {
-            if (!prev.voiceURI) {
-              const best = findBestNaturalMaleVoice(v);
-              if (best) {
-                const next = { ...prev, voiceURI: best.voiceURI || best.name };
-                soundEngine.setWebSpeechSettings(next);
-                return next;
-              }
-            }
-            return prev;
-          });
-        }
-      };
-      updateVoices();
-      window.speechSynthesis.onvoiceschanged = updateVoices;
-    }
 
     return () => {
       unsubCredits();
@@ -344,18 +278,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4', name: 'Skylar (Expressive)', desc: 'Energetic Female Announcer' },
   ];
 
-  const GOOGLE_PRESET_VOICES = [
-    { id: 'Puck', name: 'Puck (Natural Commentator)', desc: 'Upbeat, high-energy hockey play-by-play', engine: 'Gemini Natural AI', badge: 'Featured' },
-    { id: 'Charon', name: 'Charon (Veteran Color Analyst)', desc: 'Deep, resonant stadium broadcast authority', engine: 'Gemini Natural AI' },
-    { id: 'Fenrir', name: 'Fenrir (Overtime Thriller)', desc: 'Booming intensity for game-winning goal shouts', engine: 'Gemini Natural AI' },
-    { id: 'Aoede', name: 'Aoede (Dynamic Arena Announcer)', desc: 'Vibrant acoustic projection for arena public address', engine: 'Gemini Natural AI' },
-    { id: 'Kore', name: 'Kore (Crisp PA Host)', desc: 'Articulate, stadium-ready PA announcement cadence', engine: 'Gemini Natural AI' },
-    { id: 'en-US-Journey-O', name: 'Journey-O (Sports Announcer)', desc: 'Natural conversational broadcast tone', engine: 'Google Cloud TTS' },
-    { id: 'en-US-Journey-F', name: 'Journey-F (Expressive Commentator)', desc: 'Bright, emotive sports commentator voice', engine: 'Google Cloud TTS' },
-    { id: 'en-US-Studio-O', name: 'Studio-O (Pristine PA)', desc: 'Studio fidelity public address announcer voice', engine: 'Google Cloud TTS' },
-    { id: 'en-US-Neural2-J', name: 'Neural2-J (Classic Stadium)', desc: 'Classic punchy male sports broadcast voice', engine: 'Google Cloud TTS' },
-  ];
-
   const showSavedNotification = (msg = 'Settings saved') => {
     setSaveBadgeText(msg);
     setTimeout(() => setSaveBadgeText(null), 2500);
@@ -364,158 +286,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSwitchProvider = (provider: TTSProvider) => {
     setSelectedProvider(provider);
     soundEngine.setTTSProvider(provider);
-    const providerName =
-      provider === 'cartesia'
-        ? 'Cartesia Sonic'
-        : provider === 'google'
-        ? 'Google Natural Commentator'
-        : provider === 'webspeech'
-        ? 'Browser WebSpeech (Native)'
-        : 'ElevenLabs';
-    showSavedNotification(`Switched to ${providerName}`);
-  };
-
-  const handleUpdateWebSpeechSetting = <K extends keyof WebSpeechVoiceSettings>(
-    key: K,
-    val: WebSpeechVoiceSettings[K]
-  ) => {
-    const updated = { ...webSpeechSettings, [key]: val };
-    setWebSpeechSettings(updated);
-    soundEngine.setWebSpeechSettings(updated);
-    showSavedNotification();
-  };
-
-  const handleResetWebSpeechSettings = () => {
-    const fresh = soundEngine.resetWebSpeechSettings();
-    setWebSpeechSettings(fresh);
-    showSavedNotification('Reset Browser WebSpeech defaults');
-  };
-
-  const handleSelectNaturalMalePreset = async (preset: NaturalMaleVoicePreset) => {
-    setSelectedMalePresetId(preset.id);
-    if (selectedProvider !== 'webspeech') {
-      handleSwitchProvider('webspeech');
-    }
-
-    let voices = availableBrowserVoices;
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const live = window.speechSynthesis.getVoices();
-      if (live && live.length > 0) {
-        voices = live;
-        setAvailableBrowserVoices(live);
-      }
-    }
-
-    const target =
-      voices.find((v) => {
-        const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
-        return preset.keywords.every((k) => combined.includes(k));
-      }) ||
-      voices.find((v) => {
-        const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
-        return preset.keywords.some((k) => combined.includes(k));
-      });
-
-    if (target) {
-      handleUpdateWebSpeechSetting('voiceURI', target.voiceURI || target.name);
-      showSavedNotification(`Selected Natural Man Voice: ${preset.name} (${target.name})`);
-    } else {
-      const best = findBestNaturalMaleVoice(voices);
-      if (best) {
-        handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
-        showSavedNotification(`${preset.name} set (matched with OS voice: ${best.name})`);
-      } else {
-        handleUpdateWebSpeechSetting('voiceURI', preset.keywords[0]);
-        showSavedNotification(`Selected voice preset: ${preset.name}`);
-      }
-    }
-
-    // Immediate audible confirmation
-    try {
-      soundEngine.unlock();
-      await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
-    } catch (e) {
-      console.warn('Voice preview announcement error:', e);
-    }
-  };
-
-  const handleAutoPickBestNaturalMaleVoice = async () => {
-    if (selectedProvider !== 'webspeech') {
-      handleSwitchProvider('webspeech');
-    }
-
-    let voices = availableBrowserVoices;
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const live = window.speechSynthesis.getVoices();
-      if (live && live.length > 0) {
-        voices = live;
-        setAvailableBrowserVoices(live);
-      }
-    }
-
-    const best = findBestNaturalMaleVoice(voices);
-    if (best) {
-      handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
-      const matchingPreset = POPULAR_NATURAL_MALE_PRESETS.find((p) =>
-        p.keywords.some((k) => `${best.name} ${best.voiceURI}`.toLowerCase().includes(k))
-      );
-      if (matchingPreset) {
-        setSelectedMalePresetId(matchingPreset.id);
-      }
-      showSavedNotification(`Auto-selected Natural Man Voice: ${best.name}`);
-      try {
-        soundEngine.unlock();
-        await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
-      } catch (e) {
-        console.warn('Voice preview error:', e);
-      }
-    } else {
-      showSavedNotification('No specific natural male voice detected; using system default');
-    }
-  };
-
-  const handleSelectDirectVoice = async (voiceURI: string, voiceName: string) => {
-    if (selectedProvider !== 'webspeech') {
-      handleSwitchProvider('webspeech');
-    }
-    handleUpdateWebSpeechSetting('voiceURI', voiceURI);
-    const matchingPreset = POPULAR_NATURAL_MALE_PRESETS.find((p) =>
-      p.keywords.some((k) => `${voiceName} ${voiceURI}`.toLowerCase().includes(k))
-    );
-    if (matchingPreset) {
-      setSelectedMalePresetId(matchingPreset.id);
-    }
-    showSavedNotification(`Voice set to: ${voiceName}`);
-    try {
-      soundEngine.unlock();
-      await soundEngine.announce('Pelham Goal! Scored by number 9.', 'nhl');
-    } catch (e) {
-      console.warn('Voice preview error:', e);
-    }
-  };
-
-  const handleRefreshBrowserVoices = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const v = window.speechSynthesis.getVoices();
-      if (v && v.length > 0) {
-        setAvailableBrowserVoices(v);
-        showSavedNotification(`Detected ${v.length} voices on device`);
-      } else {
-        showSavedNotification('Requesting device voices from browser...');
-      }
-    }
-  };
-
-  const handleTestWebSpeechVoice = async () => {
-    if (selectedProvider !== 'webspeech') {
-      handleSwitchProvider('webspeech');
-    }
-    try {
-      soundEngine.unlock();
-      await soundEngine.announce('Pelham Goal! Scored by number 9. Assisted by number 17 and number 4.', 'nhl');
-    } catch (e) {
-      console.warn('Voice test error:', e);
-    }
+    const providerName = provider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs';
+    showSavedNotification(`Switched to ${providerName} TTS`);
   };
 
   const handleSwitchCartesiaAccount = (acc: AccountChoice) => {
@@ -635,18 +407,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setIsCustomCartesiaVoiceSelected(false);
       setCartesiaPreset('arena');
       showSavedNotification('Reset Cartesia to optimal arena defaults');
-    } else if (selectedProvider === 'google') {
-      const freshGoogle = { ...DEFAULT_GOOGLE_VOICE_SETTINGS };
-      setGoogleVoiceSettings(freshGoogle);
-      soundEngine.resetGoogleVoiceSettings();
-      setCustomGoogleVoiceIdInput(freshGoogle.voiceId);
-      setIsCustomGoogleVoiceSelected(false);
-      setGoogleCommentatorPreset('play-by-play');
-      showSavedNotification('Reset Google Commentator to natural sports defaults');
-    } else if (selectedProvider === 'webspeech') {
-      const freshWebSpeech = soundEngine.resetWebSpeechSettings();
-      setWebSpeechSettings(freshWebSpeech);
-      showSavedNotification('Reset Browser WebSpeech to native defaults');
     } else {
       const fresh = { ...DEFAULT_VOICE_SETTINGS };
       setVoiceSettings(fresh);
@@ -690,81 +450,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleUpdateGoogleSetting = <K extends keyof GoogleVoiceSettings>(
-    key: K,
-    val: GoogleVoiceSettings[K]
-  ) => {
-    const updated = { ...googleVoiceSettings, [key]: val };
-    setGoogleVoiceSettings(updated);
-    soundEngine.setGoogleVoiceSettings(updated);
-    if (key === 'commentatorStyle') {
-      setGoogleCommentatorPreset(val as string);
-    } else {
-      setGoogleCommentatorPreset('custom');
-    }
-    showSavedNotification();
-  };
-
-  const handleApplyGoogleCommentatorPreset = (presetName: 'play-by-play' | 'arena-pa' | 'dramatic' | 'color-analyst') => {
-    let updates: Partial<GoogleVoiceSettings> = {
-      commentatorStyle: presetName,
-    };
-    if (presetName === 'play-by-play') {
-      updates = {
-        voiceId: 'Puck',
-        speed: 1.10,
-        pitchCents: 20,
-        commentatorStyle: 'play-by-play',
-      };
-    } else if (presetName === 'arena-pa') {
-      updates = {
-        voiceId: 'Puck',
-        speed: 1.00,
-        pitchCents: 0,
-        commentatorStyle: 'arena-pa',
-      };
-    } else if (presetName === 'dramatic') {
-      updates = {
-        voiceId: 'Fenrir',
-        speed: 1.15,
-        pitchCents: 40,
-        commentatorStyle: 'dramatic',
-      };
-    } else if (presetName === 'color-analyst') {
-      updates = {
-        voiceId: 'Charon',
-        speed: 0.98,
-        pitchCents: -30,
-        commentatorStyle: 'color-analyst',
-      };
-    }
-    const merged = { ...googleVoiceSettings, ...updates };
-    setGoogleVoiceSettings(merged);
-    soundEngine.setGoogleVoiceSettings(merged);
-    setGoogleCommentatorPreset(presetName);
-    setIsCustomGoogleVoiceSelected(false);
-    if (merged.voiceId) {
-      setCustomGoogleVoiceIdInput(merged.voiceId);
-    }
-    showSavedNotification(`Applied Google Commentator "${presetName}" style`);
-  };
-
-  const handleSelectGoogleVoiceId = (id: string) => {
-    if (id === 'custom') {
-      setIsCustomGoogleVoiceSelected(true);
-      return;
-    }
-    setIsCustomGoogleVoiceSelected(false);
-    handleUpdateGoogleSetting('voiceId', id);
-  };
-
-  const handleApplyCustomGoogleVoiceId = () => {
-    if (customGoogleVoiceIdInput.trim()) {
-      handleUpdateGoogleSetting('voiceId', customGoogleVoiceIdInput.trim());
-      showSavedNotification('Custom Google Voice applied');
-    }
-  };
-
   const handleTestAnnouncerWithCurrentSettings = async () => {
     soundEngine.unlock();
     setIsTestingVoiceCustom(true);
@@ -781,10 +466,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       if (selectedProvider === 'cartesia') {
         await soundEngine.announce(testText, cartesiaSettings.voiceId);
-      } else if (selectedProvider === 'google') {
-        await soundEngine.announce(testText, googleVoiceSettings.voiceId);
-      } else if (selectedProvider === 'webspeech') {
-        await soundEngine.announce(testText, webSpeechSettings.voiceURI);
       } else {
         await soundEngine.announce(testText, voiceSettings.voiceId, voiceSettings);
       }
@@ -1419,8 +1100,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               )}
 
-              {/* 5 Voice Provider & Account Credit Cards Grid - ALL DIRECTLY CLICKABLE */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {/* 3 Account Credit Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* CARD 1: ElevenLabs Account */}
                 {(() => {
                   const el = creditsStatus?.elevenlabs || {
@@ -1439,19 +1120,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleSwitchProvider('elevenlabs')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSwitchProvider('elevenlabs');
-                        }
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-amber-500 ring-2 ring-amber-500/40 shadow-lg shadow-amber-950/40'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-amber-500/50 hover:bg-slate-900'
+                          ? 'bg-slate-900/90 border-amber-500/60 ring-1 ring-amber-500/30 shadow-md'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
                       <div className="space-y-2">
@@ -1501,15 +1173,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             {el.source === 'api'
                               ? 'Official API sync'
                               : el.source === 'calibrated' || el.source === 'manual'
-                              ? 'Calibrated'
-                              : 'Tracked'}
+                              ? 'Calibrated balance'
+                              : 'Tracked usage'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
                           </div>
                         )}
                       </div>
@@ -1517,23 +1189,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenBalanceEdit('elevenlabs');
-                          }}
+                          onClick={() => handleOpenBalanceEdit('elevenlabs')}
                           className="text-[10px] text-amber-400 hover:text-amber-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate</span>
+                          <span>Calibrate Balance</span>
                         </button>
-                        {isCurrentActive ? (
-                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold shrink-0">
-                            ✓ In Use
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
-                            Select
-                          </span>
+                        {!isCurrentActive && (
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchProvider('elevenlabs')}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
+                          >
+                            Use Now
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1558,37 +1227,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        handleSwitchProvider('cartesia');
-                        handleSwitchCartesiaAccount('account1');
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSwitchProvider('cartesia');
-                          handleSwitchCartesiaAccount('account1');
-                        }
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/50 hover:bg-slate-900'
+                          ? 'bg-slate-900/90 border-cyan-500/60 ring-1 ring-cyan-500/30 shadow-md'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                            <span className="text-xs font-bold text-white truncate">Cartesia Acc 1</span>
+                            <span className="text-xs font-bold text-white truncate">Cartesia Account 1</span>
                           </div>
                           {isCurrentActive ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shrink-0">
                               ACTIVE
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Ready</span>
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Acc 1</span>
                           )}
                         </div>
 
@@ -1621,14 +1277,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
                           <span>{percent}% available</span>
                           <span>
-                            {c1.source === 'manual' || c1.source === 'calibrated' ? 'Calibrated' : 'Tracked'}
+                            {c1.source === 'manual' || c1.source === 'calibrated' ? 'Calibrated balance' : 'Tracked usage'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
                           </div>
                         )}
                       </div>
@@ -1636,23 +1292,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenBalanceEdit('cartesia1');
-                          }}
+                          onClick={() => handleOpenBalanceEdit('cartesia1')}
                           className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate</span>
+                          <span>Calibrate Balance</span>
                         </button>
-                        {isCurrentActive ? (
-                          <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0">
-                            ✓ In Use
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
-                            Select
-                          </span>
+                        {!isCurrentActive && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSwitchProvider('cartesia');
+                              handleSwitchCartesiaAccount('account1');
+                            }}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
+                          >
+                            Use Now
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1677,37 +1333,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   return (
                     <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        handleSwitchProvider('cartesia');
-                        handleSwitchCartesiaAccount('account2');
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSwitchProvider('cartesia');
-                          handleSwitchCartesiaAccount('account2');
-                        }
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
+                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                         isCurrentActive
-                          ? 'bg-slate-900/90 border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-950/40'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-cyan-500/50 hover:bg-slate-900'
+                          ? 'bg-slate-900/90 border-cyan-500/60 ring-1 ring-cyan-500/30 shadow-md'
+                          : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                            <span className="text-xs font-bold text-white truncate">Cartesia Acc 2</span>
+                            <span className="text-xs font-bold text-white truncate">Cartesia Account 2</span>
                           </div>
                           {isCurrentActive ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shrink-0">
                               ACTIVE
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Ready</span>
+                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Acc 2</span>
                           )}
                         </div>
 
@@ -1740,14 +1383,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
                           <span>{percent}% available</span>
                           <span>
-                            {c2.source === 'manual' || c2.source === 'calibrated' ? 'Calibrated' : 'Tracked'}
+                            {c2.source === 'manual' || c2.source === 'calibrated' ? 'Calibrated balance' : 'Tracked usage'}
                           </span>
                         </div>
 
                         {isLow && (
                           <div className="p-1.5 rounded-lg bg-red-950/60 border border-red-800/80 text-red-300 text-[10px] font-bold flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits</span>
+                            <span>≤ {CREDIT_SWITCH_THRESHOLD} credits: Switch triggered</span>
                           </div>
                         )}
                       </div>
@@ -1755,175 +1398,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenBalanceEdit('cartesia2');
-                          }}
+                          onClick={() => handleOpenBalanceEdit('cartesia2')}
                           className="text-[10px] text-cyan-400 hover:text-cyan-300 font-medium underline-offset-2 hover:underline flex items-center gap-1"
                         >
                           <Edit2 className="w-3 h-3" />
-                          <span>Calibrate</span>
+                          <span>Calibrate Balance</span>
                         </button>
-                        {isCurrentActive ? (
-                          <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0">
-                            ✓ In Use
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
-                            Select
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* CARD 4: Google Cloud / Sport AI */}
-                {(() => {
-                  const isCurrentActive = selectedProvider === 'google';
-
-                  return (
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleSwitchProvider('google')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSwitchProvider('google');
-                        }
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
-                        isCurrentActive
-                          ? 'bg-slate-900/90 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-emerald-500/50 hover:bg-slate-900'
-                      }`}
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                            <span className="text-xs font-bold text-white truncate">Google Sport AI</span>
-                          </div>
-                          {isCurrentActive ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">
-                              ACTIVE
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Sport</span>
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="text-[11px] text-slate-400">Natural Commentator Engine</div>
-                          <div className="flex items-baseline gap-1.5 mt-0.5">
-                            <span className="text-xl font-mono font-black text-emerald-300">
-                              High Fidelity
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                          <div className="h-full bg-emerald-400 w-full" />
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span>Live Cloud TTS</span>
-                          <span className="text-emerald-400 font-medium">Fast Announcer</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-slate-500">
-                          Arena Voice
-                        </span>
-                        {isCurrentActive ? (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shrink-0">
-                            ✓ In Use
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
-                            Select
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* CARD 5: Browser WebSpeech (Native) */}
-                {(() => {
-                  const isCurrentActive = selectedProvider === 'webspeech';
-
-                  return (
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      id="card-webspeech-quota"
-                      onClick={() => handleSwitchProvider('webspeech')}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSwitchProvider('webspeech');
-                        }
-                      }}
-                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer select-none ${
-                        isCurrentActive
-                          ? 'bg-slate-900/90 border-violet-500 ring-2 ring-violet-500/40 shadow-lg shadow-violet-950/40'
-                          : 'bg-slate-900/60 border-slate-800/80 hover:border-violet-500/50 hover:bg-slate-900'
-                      }`}
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-violet-400"></span>
-                            <span className="text-xs font-bold text-white truncate">WebSpeech (Native)</span>
-                          </div>
-                          {isCurrentActive ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40 shrink-0">
-                              ACTIVE
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">Native</span>
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="text-[11px] text-slate-400">Available Usage & Quota</div>
-                          <div className="flex items-baseline gap-1.5 mt-0.5">
-                            <span className="text-xl font-mono font-black text-violet-300">
-                              Unlimited
-                            </span>
-                            <span className="text-xs text-slate-500 font-mono">
-                              / ∞ Free
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Progress Bar (Always 100% full) */}
-                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                          <div className="h-full bg-violet-400 w-full" />
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span>100% available</span>
-                          <span className="text-violet-400 font-medium">Free • Offline</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-slate-500">
-                          Zero billing risk
-                        </span>
-                        {isCurrentActive ? (
-                          <span className="px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/40 text-[10px] font-bold shrink-0">
-                            ✓ In Use
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0">
-                            Select
-                          </span>
+                        {!isCurrentActive && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSwitchProvider('cartesia');
+                              handleSwitchCartesiaAccount('account2');
+                            }}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 shrink-0 transition-colors"
+                          >
+                            Use Now
+                          </button>
                         )}
                       </div>
                     </div>
@@ -2050,13 +1541,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span className="text-[11px] text-slate-400">Switch anytime between providers</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Provider 1: ElevenLabs */}
                 <button
                   type="button"
                   id="select-provider-elevenlabs"
                   onClick={() => handleSwitchProvider('elevenlabs')}
-                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
                     selectedProvider === 'elevenlabs'
                       ? 'bg-amber-500/15 border-amber-500/70 text-white shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -2097,7 +1588,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   id="select-provider-cartesia"
                   onClick={() => handleSwitchProvider('cartesia')}
-                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
                     selectedProvider === 'cartesia'
                       ? 'bg-cyan-500/15 border-cyan-500/70 text-white shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40'
                       : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -2132,86 +1623,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                     Ultra-low latency real-time voice with high-energy emotional delivery & 2 accounts.
-                  </p>
-                </button>
-
-                {/* Provider 3: Google TTS (Natural Sport Commentator) */}
-                <button
-                  type="button"
-                  id="select-provider-google"
-                  onClick={() => handleSwitchProvider('google')}
-                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
-                    selectedProvider === 'google'
-                      ? 'bg-emerald-500/15 border-emerald-500/70 text-white shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/40'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
-                          selectedProvider === 'google'
-                            ? 'border-emerald-400 bg-emerald-400'
-                            : 'border-slate-600 bg-slate-800'
-                        }`}
-                      >
-                        {selectedProvider === 'google' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-white">Google TTS</span>
-                      </div>
-                    </div>
-                    {voiceStatus?.googleConfigured ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        Sport AI
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                        Ready
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
-                    Natural sport commentator voice with fast play-by-play and energetic hockey goal calls.
-                  </p>
-                </button>
-
-                {/* Provider 4: Browser WebSpeech (Native) */}
-                <button
-                  type="button"
-                  id="select-provider-webspeech"
-                  onClick={() => handleSwitchProvider('webspeech')}
-                  className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer hover:scale-[1.01] active:scale-[0.99] select-none ${
-                    selectedProvider === 'webspeech'
-                      ? 'bg-violet-500/15 border-violet-500/70 text-white shadow-lg shadow-violet-500/10 ring-1 ring-violet-500/40'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
-                          selectedProvider === 'webspeech'
-                            ? 'border-violet-400 bg-violet-400'
-                            : 'border-slate-600 bg-slate-800'
-                        }`}
-                      >
-                        {selectedProvider === 'webspeech' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-white">WebSpeech</span>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
-                      Unlimited
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
-                    Browser native speech. 100% free, zero quota limits, works offline without API keys.
                   </p>
                 </button>
               </div>
@@ -2937,663 +2348,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             )}
 
-            {/* Google Natural Sport Commentator Configuration Panel */}
-            {selectedProvider === 'google' && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-emerald-500/30 shadow-xl shadow-emerald-950/20 space-y-5">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner">
-                      <Radio className="w-5 h-5 text-emerald-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-black text-white uppercase tracking-wider font-athletic">
-                          Google Natural Sport Commentator
-                        </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          Hockey Audio
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        High-energy hockey play-by-play, aggressive goal shouts & stadium public address commentary
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Engine Status Badge */}
-                  <div className="flex items-center gap-2">
-                    {voiceStatus?.googleConfigured ? (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Gemini Natural AI Connected</span>
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
-                        <Radio className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Ready (Natural Browser Fallback)</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Commentary Style Presets */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Hockey Commentary Style Presets</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-mono">Instant Tuning</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleApplyGoogleCommentatorPreset('play-by-play')}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        googleCommentatorPreset === 'play-by-play'
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1">
-                        <span>⚡ Rapid Play-by-Play</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">1.10x • +20 Pitch • Puck</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleApplyGoogleCommentatorPreset('arena-pa')}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        googleCommentatorPreset === 'arena-pa'
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1">
-                        <span>🎙️ Arena PA Host</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">1.00x • 0 Pitch • Puck</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleApplyGoogleCommentatorPreset('dramatic')}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        googleCommentatorPreset === 'dramatic'
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1">
-                        <span>🔥 Overtime Thriller</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">1.15x • +40 Pitch • Fenrir</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleApplyGoogleCommentatorPreset('color-analyst')}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        googleCommentatorPreset === 'color-analyst'
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold flex items-center gap-1">
-                        <span>🎧 Veteran Analyst</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">0.98x • -30 Pitch • Charon</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Google Commentator Voice Selection */}
-                <div className="space-y-2 pt-2 border-t border-slate-800/60">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <Mic className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Sport Commentator Voice Persona</span>
-                    </label>
-                    <span className="text-[10px] text-emerald-400/90 font-medium">Gemini 3.1 & Cloud TTS</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                    {GOOGLE_PRESET_VOICES.map((v) => {
-                      const isSelected = !isCustomGoogleVoiceSelected && googleVoiceSettings.voiceId === v.id;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => handleSelectGoogleVoiceId(v.id)}
-                          className={`p-2.5 rounded-lg border text-left transition-all relative ${
-                            isSelected
-                              ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40'
-                              : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <div className="text-xs font-bold text-white truncate">{v.name}</div>
-                            {v.badge && (
-                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                                {v.badge}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate mt-0.5">{v.desc}</div>
-                          <div className="text-[9px] text-emerald-400/70 font-mono mt-1">{v.engine}</div>
-                        </button>
-                      );
-                    })}
-
-                    {/* Custom Google Voice Option */}
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomGoogleVoiceSelected(true)}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        isCustomGoogleVoiceSelected
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold text-white">⚙️ Custom Voice Model</div>
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">Enter any Gemini or Google Voice</div>
-                      <div className="text-[9px] text-slate-500 font-mono mt-1">Manual ID</div>
-                    </button>
-                  </div>
-
-                  {/* Custom Google Voice Input */}
-                  {isCustomGoogleVoiceSelected && (
-                    <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                      <div className="text-xs font-semibold text-slate-300">
-                        Enter Voice Name or Model (e.g. Puck, Fenrir, Charon, en-US-Journey-O, en-US-Studio-O):
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={customGoogleVoiceIdInput}
-                          onChange={(e) => setCustomGoogleVoiceIdInput(e.target.value)}
-                          placeholder="e.g. Puck"
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleApplyCustomGoogleVoiceId}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors shrink-0"
-                        >
-                          Apply Voice
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Speed & Pitch Detune Sliders */}
-                <div className="space-y-3 pt-2 border-t border-slate-800/60">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Commentator Tempo & Pitch Modulation</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Acoustic Control</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Speed / Pace */}
-                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">Play-by-Play Tempo:</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          {googleVoiceSettings.speed.toFixed(2)}x
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.70"
-                        max="1.40"
-                        step="0.05"
-                        value={googleVoiceSettings.speed}
-                        onChange={(e) => handleUpdateGoogleSetting('speed', parseFloat(e.target.value))}
-                        className="w-full accent-emerald-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                      />
-                      <p className="text-[10px] text-slate-400 leading-tight">
-                        Faster tempo (1.10x–1.20x) captures rapid hockey puck turnover excitement.
-                      </p>
-                    </div>
-
-                    {/* Pitch Detune */}
-                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">Pitch Detune:</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          {googleVoiceSettings.pitchCents > 0 ? `+${googleVoiceSettings.pitchCents}` : googleVoiceSettings.pitchCents} cents
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="-400"
-                        max="400"
-                        step="25"
-                        value={googleVoiceSettings.pitchCents}
-                        onChange={(e) => handleUpdateGoogleSetting('pitchCents', parseInt(e.target.value, 10))}
-                        className="w-full accent-emerald-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                      />
-                      <p className="text-[10px] text-slate-400 leading-tight">
-                        Elevated pitch (+20 to +50 cents) creates stadium urgency for sudden goal moments.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Browser WebSpeech (Native) Configuration Panel */}
-            {selectedProvider === 'webspeech' && (() => {
-              const naturalMaleVoices = availableBrowserVoices.filter((v) => isNaturalMaleVoice(v));
-              const otherVoices = availableBrowserVoices.filter((v) => !isNaturalMaleVoice(v));
-              const currentVoice = availableBrowserVoices.find(
-                (v) => v.voiceURI === webSpeechSettings.voiceURI || v.name === webSpeechSettings.voiceURI
-              );
-              const isCurrentVoiceMale = currentVoice ? isNaturalMaleVoice(currentVoice) : true;
-
-              return (
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-violet-500/30 shadow-xl shadow-violet-950/20 space-y-5">
-                  {/* Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-inner">
-                        <Volume2 className="w-5 h-5 text-violet-400" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base font-black text-white uppercase tracking-wider font-athletic">
-                            Browser WebSpeech (Native Device Voices)
-                          </h3>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
-                            100% Free & Unlimited
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Synthesizes audio entirely inside your browser using your operating system's installed voices. Zero quota, zero costs, and zero API keys.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-violet-400" />
-                        <span>Zero Quota Limits • Always Available</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Natural Man Voice Presets Section */}
-                  <div className="space-y-3 bg-violet-950/20 border border-violet-500/30 p-4 rounded-xl">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-4 h-4 text-violet-400" />
-                            <span>Natural Man Voice Commentator Presets</span>
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            Sports PA Recommended
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Matches the masculine, energetic arena commentator tone of ElevenLabs and Google natural announcers.
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleAutoPickBestNaturalMaleVoice}
-                        className="px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold text-xs transition-colors flex items-center gap-1.5 shrink-0 shadow-md shadow-violet-500/20"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Auto-Pick Best Natural Man Voice</span>
-                      </button>
-                    </div>
-
-                    {/* Presets Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
-                      {POPULAR_NATURAL_MALE_PRESETS.map((preset) => {
-                        const isInstalled = availableBrowserVoices.some((v) => {
-                          const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
-                          return preset.keywords.some((k) => combined.includes(k));
-                        });
-
-                        const isCurrentlySelected =
-                          selectedMalePresetId === preset.id ||
-                          Boolean(
-                            currentVoice &&
-                            preset.keywords.some((k) => `${currentVoice.name} ${currentVoice.voiceURI}`.toLowerCase().includes(k))
-                          );
-
-                        return (
-                          <button
-                            key={preset.id}
-                            type="button"
-                            id={`preset-voice-${preset.id}`}
-                            onClick={() => handleSelectNaturalMalePreset(preset)}
-                            className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-2 cursor-pointer select-none hover:scale-[1.01] active:scale-[0.99] ${
-                              isCurrentlySelected
-                                ? 'bg-violet-600/25 border-violet-400 text-white shadow-lg shadow-violet-950/50 ring-2 ring-violet-500/60'
-                                : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-violet-500/50 hover:bg-slate-900'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                                <span>🎙️</span>
-                                <span className="truncate">{preset.name}</span>
-                              </span>
-                              {isCurrentlySelected ? (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-400 text-slate-950 shrink-0 shadow">
-                                  ✓ ACTIVE
-                                </span>
-                              ) : isInstalled ? (
-                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                                  On Device
-                                </span>
-                              ) : (
-                                <span className="text-[9px] text-slate-500 shrink-0 font-mono">
-                                  {preset.platform}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-400 leading-snug">
-                              {preset.description}
-                            </p>
-                            <div className="pt-1 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-                              <span className="text-slate-500">
-                                {isInstalled ? 'Installed Voice' : 'Preset Config'}
-                              </span>
-                              <span className={isCurrentlySelected ? 'text-violet-300 font-bold' : 'text-violet-400 font-medium'}>
-                                {isCurrentlySelected ? 'Selected & Ready' : 'Click to Set ▶'}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Voice Selection & Direct Click Voice Options */}
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <label htmlFor="webspeech-voice-select" className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5 text-violet-400" />
-                        <span>Select Installed Device Voice</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleRefreshBrowserVoices}
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium border border-slate-700 transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw className="w-3 h-3" />
-                          <span>Refresh Voices</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleTestWebSpeechVoice}
-                          className="px-2.5 py-1 rounded bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold shadow-md shadow-violet-700/20 transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>📣</span>
-                          <span>Test Announcer</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Standard Dropdown */}
-                    <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                      <select
-                        id="webspeech-voice-select"
-                        value={webSpeechSettings.voiceURI}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const found = availableBrowserVoices.find((v) => (v.voiceURI || v.name) === val);
-                          handleSelectDirectVoice(val, found ? found.name : val);
-                        }}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 font-sans cursor-pointer hover:border-slate-600"
-                      >
-                        {naturalMaleVoices.length > 0 && (
-                          <optgroup label="🎙️ Natural Man Commentator Voices (Recommended)">
-                            {naturalMaleVoices.map((v) => (
-                              <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
-                                🎙️ {v.name} ({v.lang}) {v.localService ? '• Local' : '• Online'} [Natural Male]
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        <optgroup label={naturalMaleVoices.length > 0 ? "Other Installed Voices" : "Installed Voices"}>
-                          {otherVoices.map((v) => (
-                            <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
-                              {v.name} ({v.lang}) {v.localService ? '• Local' : '• Online'}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-400">
-                        <span>
-                          {currentVoice ? (
-                            <>
-                              Currently using: <strong className="text-violet-300">{currentVoice.name}</strong> ({currentVoice.lang})
-                            </>
-                          ) : (
-                            'Auto-selecting natural male voice on device.'
-                          )}
-                        </span>
-                        <span className="text-slate-500">
-                          {naturalMaleVoices.length} natural male voice{naturalMaleVoices.length === 1 ? '' : 's'} detected ({availableBrowserVoices.length} total)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Direct-Clickable Voice Options (Fail-safe for unclickable dropdowns) */}
-                    <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wide">
-                          <span>👆</span>
-                          <span>Or Click Any Voice Directly To Select:</span>
-                        </span>
-                        <span className="text-[10px] text-slate-500">Click to activate & hear instant preview</span>
-                      </div>
-
-                      {availableBrowserVoices.length === 0 ? (
-                        <div className="p-3 text-center bg-slate-900/50 rounded-lg border border-dashed border-slate-800">
-                          <p className="text-xs text-slate-400">Loading browser voices...</p>
-                          <button
-                            type="button"
-                            onClick={handleRefreshBrowserVoices}
-                            className="mt-2 px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded text-xs font-bold"
-                          >
-                            Click to Load Voices
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
-                          {/* Natural Male Voices First */}
-                          {naturalMaleVoices.map((v) => {
-                            const val = v.voiceURI || v.name;
-                            const isSelected = webSpeechSettings.voiceURI === val || (currentVoice && (currentVoice.voiceURI === val || currentVoice.name === val));
-
-                            return (
-                              <button
-                                key={`chip-male-${val}`}
-                                type="button"
-                                onClick={() => handleSelectDirectVoice(val, v.name)}
-                                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border text-left flex items-center gap-2 transition-all cursor-pointer select-none ${
-                                  isSelected
-                                    ? 'bg-violet-600 text-white border-violet-400 shadow-md shadow-violet-900/50 ring-1 ring-white/30'
-                                    : 'bg-slate-900 hover:bg-violet-950/40 text-slate-200 border-violet-800/40 hover:border-violet-500'
-                                }`}
-                              >
-                                <span>🎙️</span>
-                                <span className="font-bold">{v.name}</span>
-                                <span className="text-[10px] opacity-70">({v.lang})</span>
-                                {isSelected ? (
-                                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-black/40 text-white ml-1">
-                                    ACTIVE
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] text-violet-300 font-mono">
-                                    [Natural Male]
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-
-                          {/* Other Voices */}
-                          {otherVoices.map((v) => {
-                            const val = v.voiceURI || v.name;
-                            const isSelected = webSpeechSettings.voiceURI === val || (currentVoice && (currentVoice.voiceURI === val || currentVoice.name === val));
-
-                            return (
-                              <button
-                                key={`chip-other-${val}`}
-                                type="button"
-                                onClick={() => handleSelectDirectVoice(val, v.name)}
-                                className={`px-2 py-1 rounded-md text-[11px] font-medium border text-left flex items-center gap-1.5 transition-all cursor-pointer select-none ${
-                                  isSelected
-                                    ? 'bg-violet-700 text-white border-violet-400 shadow'
-                                    : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-600'
-                                }`}
-                              >
-                                <span>🗣️</span>
-                                <span className="truncate max-w-[140px]">{v.name}</span>
-                                <span className="text-[9px] text-slate-500">({v.lang})</span>
-                                {isSelected && (
-                                  <span className="text-[8px] font-bold px-1 rounded bg-black/50 text-violet-200">
-                                    ✓
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Speed & Pitch Controls */}
-                  <div className="space-y-3 pt-2 border-t border-slate-800/60">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                        <Sliders className="w-3.5 h-3.5 text-violet-400" />
-                        <span>WebSpeech Pace & Pitch Modulation</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleResetWebSpeechSettings}
-                        className="text-[11px] text-slate-400 hover:text-white transition-colors"
-                      >
-                        Reset Natural Man Defaults
-                      </button>
-                    </div>
-
-                    {/* Quick Pitch Timbre Presets for Hockey PA */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Arena Timbre:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateWebSpeechSetting('pitch', 0.85)}
-                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
-                          Math.abs(webSpeechSettings.pitch - 0.85) < 0.03
-                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
-                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        Deep Baritone (0.85x)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateWebSpeechSetting('pitch', 0.95)}
-                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
-                          Math.abs(webSpeechSettings.pitch - 0.95) < 0.03
-                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
-                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        Natural Sports PA (0.95x)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateWebSpeechSetting('pitch', 1.00)}
-                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
-                          Math.abs(webSpeechSettings.pitch - 1.00) < 0.03
-                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
-                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        Standard Pitch (1.00x)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateWebSpeechSetting('pitch', 1.10)}
-                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
-                          Math.abs(webSpeechSettings.pitch - 1.10) < 0.03
-                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
-                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        Goal Excitement (1.10x)
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Speed / Pace */}
-                      <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-semibold text-slate-300">Speech Rate:</span>
-                          <span className="font-mono font-bold text-violet-400">
-                            {webSpeechSettings.speed.toFixed(2)}x
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.60"
-                          max="1.50"
-                          step="0.05"
-                          value={webSpeechSettings.speed}
-                          onChange={(e) => handleUpdateWebSpeechSetting('speed', parseFloat(e.target.value))}
-                          className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                        />
-                        <p className="text-[10px] text-slate-400 leading-tight">
-                          Hockey pace recommendation: 1.05x to 1.15x for energetic goal shouts.
-                        </p>
-                      </div>
-
-                      {/* Pitch */}
-                      <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                        <div className="flex justify-between text-xs">
-                          <span className="font-semibold text-slate-300">Voice Pitch:</span>
-                          <span className="font-mono font-bold text-violet-400">
-                            {webSpeechSettings.pitch.toFixed(2)}x
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.60"
-                          max="1.50"
-                          step="0.05"
-                          value={webSpeechSettings.pitch}
-                          onChange={(e) => handleUpdateWebSpeechSetting('pitch', parseFloat(e.target.value))}
-                          className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                        />
-                        <p className="text-[10px] text-slate-400 leading-tight">
-                          Masculine sport announcer timbre: 0.85x to 0.95x gives an authentic arena baritone resonance.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
             {/* Test Announcer Bar & Reset Defaults */}
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="space-y-1">
@@ -3666,10 +2420,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50 ${
                     selectedProvider === 'cartesia'
                       ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'
-                      : selectedProvider === 'google'
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
-                      : selectedProvider === 'webspeech'
-                      ? 'bg-violet-500 hover:bg-violet-400 text-slate-950 shadow-violet-500/20'
                       : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
                   }`}
                 >
@@ -3677,15 +2427,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>
                     {isTestingVoiceCustom || isAnnouncing
                       ? 'Announcing...'
-                      : `Test ${
-                          selectedProvider === 'cartesia'
-                            ? 'Cartesia Sonic'
-                            : selectedProvider === 'google'
-                            ? 'Google Commentator'
-                            : selectedProvider === 'webspeech'
-                            ? 'Browser WebSpeech'
-                            : 'ElevenLabs'
-                        } Voice`}
+                      : `Test ${selectedProvider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} Voice`}
                   </span>
                 </button>
               </div>
