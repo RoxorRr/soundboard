@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import statusHandler from "./api/status";
 import scanStickerHandler from "./api/scan-sticker";
 import ttsHandler from "./api/tts";
+import creditsHandler from "./api/credits";
 
 dotenv.config();
 
@@ -17,6 +18,8 @@ async function startServer() {
 
   // Mount API endpoints shared with Vercel serverless functions
   app.get("/api/status", (req, res) => statusHandler(req, res));
+  app.get("/api/credits", (req, res) => creditsHandler(req, res));
+  app.post("/api/credits", (req, res) => creditsHandler(req, res));
   app.post("/api/scan-sticker", (req, res) => scanStickerHandler(req, res));
   app.post("/api/tts", (req, res) => ttsHandler(req, res));
 

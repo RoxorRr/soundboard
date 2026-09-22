@@ -1,10 +1,22 @@
-// Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
-import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider, AccountChoice } from '../types';
+// Professional Web Audio Arena sound engine, ElevenLabs, Cartesia & Google TTS player
+import {
+  ElevenLabsVoiceSettings,
+  CartesiaVoiceSettings,
+  GoogleVoiceSettings,
+  WebSpeechVoiceSettings,
+  TTSProvider,
+  AccountChoice,
+  CreditsStatus,
+  AutoSwitchEvent,
+} from '../types';
+
+export const CREDIT_SWITCH_THRESHOLD = 400;
 
 export interface AnnounceResult {
-  source: 'elevenlabs' | 'cartesia' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'google' | 'webspeech';
   voiceId?: string;
   error?: string;
+  autoSwitched?: boolean;
 }
 
 export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
@@ -25,6 +37,19 @@ export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
   emotion: 'excited'
 };
 
+export const DEFAULT_GOOGLE_VOICE_SETTINGS: GoogleVoiceSettings = {
+  voiceId: 'Puck', // Google's natural upbeat sport commentator (Gemini Natural AI)
+  speed: 1.05,
+  pitchCents: 0,
+  commentatorStyle: 'play-by-play',
+};
+
+export const DEFAULT_WEBSPEECH_SETTINGS: WebSpeechVoiceSettings = {
+  voiceURI: '',
+  speed: 1.05,
+  pitch: 1.0,
+};
+
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -39,22 +64,30 @@ class SoundEngine {
   private activeCartesiaAccount: AccountChoice = 'account1';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
+  private googleVoiceSettings: GoogleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS };
+  private webSpeechSettings: WebSpeechVoiceSettings = { ...DEFAULT_WEBSPEECH_SETTINGS };
+  private creditsStatus: CreditsStatus | null = null;
+  private isAutoSwitchEnabled: boolean = true;
+  private autoSwitchListeners: Set<(event: AutoSwitchEvent) => void> = new Set();
+  private creditsListeners: Set<(status: CreditsStatus) => void> = new Set();
 
   constructor() {
     // Restore persistent voice settings from localStorage if available
     if (typeof window !== 'undefined') {
       try {
         const savedProvider = localStorage.getItem('pelham_tts_provider');
-        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
+        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia' || savedProvider === 'google' || savedProvider === 'webspeech') {
           this.ttsProvider = savedProvider as TTSProvider;
-        } else if (savedProvider === 'google') {
-          this.ttsProvider = 'elevenlabs';
-          localStorage.setItem('pelham_tts_provider', 'elevenlabs');
         }
 
         const savedCartesiaAccount = localStorage.getItem('pelham_active_cartesia_account');
         if (savedCartesiaAccount === 'account1' || savedCartesiaAccount === 'account2') {
           this.activeCartesiaAccount = savedCartesiaAccount;
+        }
+
+        const savedAutoSwitch = localStorage.getItem('pelham_credits_auto_switch');
+        if (savedAutoSwitch !== null) {
+          this.isAutoSwitchEnabled = savedAutoSwitch === 'true';
         }
 
         const saved = localStorage.getItem('pelham_voice_settings');
@@ -66,7 +99,22 @@ class SoundEngine {
         if (savedCartesia) {
           this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
         }
+
+        const savedGoogle = localStorage.getItem('pelham_google_voice_settings');
+        if (savedGoogle) {
+          this.googleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS, ...JSON.parse(savedGoogle) };
+        }
+
+        const savedWebSpeech = localStorage.getItem('pelham_webspeech_settings');
+        if (savedWebSpeech) {
+          this.webSpeechSettings = { ...DEFAULT_WEBSPEECH_SETTINGS, ...JSON.parse(savedWebSpeech) };
+        }
       } catch (_) {}
+
+      // Initial credit fetch in background
+      setTimeout(() => {
+        this.fetchCredits().catch(() => {});
+      }, 500);
 
       // Auto-unlock on first user interaction anywhere in the window
       const unlockEvents = ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown'];
@@ -132,6 +180,403 @@ class SoundEngine {
       } catch (_) {}
     }
     return { ...this.cartesiaVoiceSettings };
+  }
+
+  public getGoogleVoiceSettings(): GoogleVoiceSettings {
+    return { ...this.googleVoiceSettings };
+  }
+
+  public setGoogleVoiceSettings(newSettings: Partial<GoogleVoiceSettings>): GoogleVoiceSettings {
+    this.googleVoiceSettings = { ...this.googleVoiceSettings, ...newSettings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_google_voice_settings', JSON.stringify(this.googleVoiceSettings));
+      } catch (_) {}
+    }
+    return { ...this.googleVoiceSettings };
+  }
+
+  public resetGoogleVoiceSettings(): GoogleVoiceSettings {
+    this.googleVoiceSettings = { ...DEFAULT_GOOGLE_VOICE_SETTINGS };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('pelham_google_voice_settings');
+      } catch (_) {}
+    }
+    return { ...this.googleVoiceSettings };
+  }
+
+  public getWebSpeechSettings(): WebSpeechVoiceSettings {
+    return { ...this.webSpeechSettings };
+  }
+
+  public setWebSpeechSettings(newSettings: Partial<WebSpeechVoiceSettings>): WebSpeechVoiceSettings {
+    this.webSpeechSettings = { ...this.webSpeechSettings, ...newSettings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_webspeech_settings', JSON.stringify(this.webSpeechSettings));
+      } catch (_) {}
+    }
+    return { ...this.webSpeechSettings };
+  }
+
+  public resetWebSpeechSettings(): WebSpeechVoiceSettings {
+    this.webSpeechSettings = { ...DEFAULT_WEBSPEECH_SETTINGS };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('pelham_webspeech_settings');
+      } catch (_) {}
+    }
+    return { ...this.webSpeechSettings };
+  }
+
+  public getAvailableWebSpeechVoices(): SpeechSynthesisVoice[] {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+    return window.speechSynthesis.getVoices();
+  }
+
+  public getAutoSwitchEnabled(): boolean {
+    return this.isAutoSwitchEnabled;
+  }
+
+  public setAutoSwitchEnabled(enabled: boolean): boolean {
+    this.isAutoSwitchEnabled = enabled;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_credits_auto_switch', String(enabled));
+      } catch (_) {}
+    }
+    if (enabled && this.creditsStatus) {
+      this.checkAndPerformAutoSwitch('Auto-switch option toggled on');
+    }
+    return this.isAutoSwitchEnabled;
+  }
+
+  public getCreditsStatus(): CreditsStatus | null {
+    return this.creditsStatus;
+  }
+
+  public onAutoSwitch(listener: (event: AutoSwitchEvent) => void): () => void {
+    this.autoSwitchListeners.add(listener);
+    return () => {
+      this.autoSwitchListeners.delete(listener);
+    };
+  }
+
+  public onCreditsUpdate(listener: (status: CreditsStatus) => void): () => void {
+    this.creditsListeners.add(listener);
+    if (this.creditsStatus) {
+      try {
+        listener(this.creditsStatus);
+      } catch (_) {}
+    }
+    return () => {
+      this.creditsListeners.delete(listener);
+    };
+  }
+
+  private notifyAutoSwitch(event: AutoSwitchEvent): void {
+    if (this.creditsStatus) {
+      this.creditsStatus.lastAutoSwitch = {
+        timestamp: event.timestamp,
+        from: `${event.fromProvider}${event.fromAccount ? ` (${event.fromAccount})` : ''}`,
+        to: `${event.toProvider}${event.toAccount ? ` (${event.toAccount})` : ''}`,
+        reason: event.reason,
+      };
+    }
+    this.autoSwitchListeners.forEach((fn) => {
+      try {
+        fn(event);
+      } catch (err) {
+        console.warn('AutoSwitch listener error:', err);
+      }
+    });
+  }
+
+  public async fetchCredits(): Promise<CreditsStatus | null> {
+    try {
+      const res = await fetch('/api/credits');
+      if (!res.ok) return null;
+      const data = await res.json();
+
+      const updatedStatus: CreditsStatus = {
+        threshold: data.threshold || CREDIT_SWITCH_THRESHOLD,
+        currentMonth: data.currentMonth || new Date().toISOString().slice(0, 7),
+        elevenlabs: data.elevenlabs || {
+          configured: false,
+          characterLimit: 0,
+          characterCount: 0,
+          remainingCredits: 0,
+          isLowCredits: true,
+          source: 'none',
+        },
+        cartesiaAccount1: data.cartesiaAccount1 || {
+          configured: false,
+          characterLimit: 20000,
+          characterCount: 0,
+          remainingCredits: 0,
+          isLowCredits: true,
+          source: 'none',
+        },
+        cartesiaAccount2: data.cartesiaAccount2 || {
+          configured: false,
+          characterLimit: 20000,
+          characterCount: 0,
+          remainingCredits: 0,
+          isLowCredits: true,
+          source: 'none',
+        },
+        activeProvider: this.ttsProvider,
+        activeCartesiaAccount: this.activeCartesiaAccount,
+        lastChecked: Date.now(),
+        lastAutoSwitch: this.creditsStatus?.lastAutoSwitch || null,
+      };
+
+      this.creditsStatus = updatedStatus;
+
+      // Broadcast to listeners
+      this.creditsListeners.forEach((fn) => {
+        try {
+          fn(updatedStatus);
+        } catch (_) {}
+      });
+
+      // Check auto-switch whenever credits are updated
+      if (this.isAutoSwitchEnabled) {
+        this.checkAndPerformAutoSwitch('Updated credit balance check');
+      }
+
+      return updatedStatus;
+    } catch (err) {
+      console.warn('Failed to fetch credits:', err);
+      return null;
+    }
+  }
+
+  public async setManualAccountBalance(
+    account: 'elevenlabs' | 'cartesia1' | 'cartesia2',
+    remainingCredits: number,
+    limit?: number
+  ): Promise<void> {
+    try {
+      await fetch('/api/credits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_balance',
+          account,
+          remainingCredits: Math.max(0, remainingCredits),
+          limit,
+        }),
+      });
+      await this.fetchCredits();
+    } catch (err) {
+      console.warn('Failed to set manual account balance:', err);
+    }
+  }
+
+  public async setManualCartesiaBalance(
+    account: 'cartesia1' | 'cartesia2',
+    remainingCredits: number
+  ): Promise<void> {
+    return this.setManualAccountBalance(account, remainingCredits);
+  }
+
+  public async syncAllActualBalances(
+    elevenlabs = 130000,
+    cartesia1 = 120000,
+    cartesia2 = 19000
+  ): Promise<void> {
+    try {
+      await fetch('/api/credits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync_all_balances',
+          balances: {
+            elevenlabs,
+            cartesia1,
+            cartesia2,
+          },
+        }),
+      });
+      await this.fetchCredits();
+    } catch (err) {
+      console.warn('Failed to sync all balances:', err);
+    }
+  }
+
+  // Core auto-switching engine: If active account has <= 400 credits or quota reached, switch to next account
+  public checkAndPerformAutoSwitch(triggerReason?: string): AutoSwitchEvent | null {
+    if (!this.isAutoSwitchEnabled) return null;
+
+    const threshold = CREDIT_SWITCH_THRESHOLD; // 400
+    const el = this.creditsStatus?.elevenlabs || { configured: true, remainingCredits: 100000 };
+    const c1 = this.creditsStatus?.cartesiaAccount1 || { configured: true, remainingCredits: 100000 };
+    const c2 = this.creditsStatus?.cartesiaAccount2 || { configured: true, remainingCredits: 100000 };
+
+    const currentProvider = this.ttsProvider;
+    const currentCartesiaAccount = this.activeCartesiaAccount;
+
+    // WebSpeech is client-side native and has unlimited credits
+    if (currentProvider === 'webspeech') {
+      return null;
+    }
+
+    // SCENARIO 1: Current provider is Cartesia
+    if (currentProvider === 'cartesia') {
+      if (currentCartesiaAccount === 'account1') {
+        const remaining = c1.remainingCredits;
+        if (c1.configured && remaining <= threshold) {
+          // Switch to Cartesia Account 2 if it has > 400 credits
+          if (c2.configured && c2.remainingCredits > threshold) {
+            this.setCartesiaAccount('account2');
+            const event: AutoSwitchEvent = {
+              timestamp: Date.now(),
+              fromProvider: 'cartesia',
+              fromAccount: 'account1',
+              toProvider: 'cartesia',
+              toAccount: 'account2',
+              reason: triggerReason || `Cartesia Account 1 reached ${remaining.toLocaleString()} credits (≤ 400 limit)`,
+              remainingCredits: remaining,
+            };
+            this.notifyAutoSwitch(event);
+            return event;
+          }
+          // Else if ElevenLabs has > 400 credits, switch to ElevenLabs
+          if (el.configured && el.remainingCredits > threshold) {
+            this.setTTSProvider('elevenlabs');
+            const event: AutoSwitchEvent = {
+              timestamp: Date.now(),
+              fromProvider: 'cartesia',
+              fromAccount: 'account1',
+              toProvider: 'elevenlabs',
+              reason: triggerReason || `Cartesia Account 1 at ${remaining.toLocaleString()} credits (≤ 400 limit); switched to ElevenLabs`,
+              remainingCredits: remaining,
+            };
+            this.notifyAutoSwitch(event);
+            return event;
+          }
+        }
+      } else if (currentCartesiaAccount === 'account2') {
+        const remaining = c2.remainingCredits;
+        if (c2.configured && remaining <= threshold) {
+          // Switch to Cartesia Account 1 if it has > 400 credits
+          if (c1.configured && c1.remainingCredits > threshold) {
+            this.setCartesiaAccount('account1');
+            const event: AutoSwitchEvent = {
+              timestamp: Date.now(),
+              fromProvider: 'cartesia',
+              fromAccount: 'account2',
+              toProvider: 'cartesia',
+              toAccount: 'account1',
+              reason: triggerReason || `Cartesia Account 2 reached ${remaining.toLocaleString()} credits (≤ 400 limit)`,
+              remainingCredits: remaining,
+            };
+            this.notifyAutoSwitch(event);
+            return event;
+          }
+          // Else if ElevenLabs has > 400 credits, switch to ElevenLabs
+          if (el.configured && el.remainingCredits > threshold) {
+            this.setTTSProvider('elevenlabs');
+            const event: AutoSwitchEvent = {
+              timestamp: Date.now(),
+              fromProvider: 'cartesia',
+              fromAccount: 'account2',
+              toProvider: 'elevenlabs',
+              reason: triggerReason || `Cartesia Account 2 at ${remaining.toLocaleString()} credits (≤ 400 limit); switched to ElevenLabs`,
+              remainingCredits: remaining,
+            };
+            this.notifyAutoSwitch(event);
+            return event;
+          }
+        }
+      }
+    }
+
+    // SCENARIO 2: Current provider is ElevenLabs
+    if (currentProvider === 'elevenlabs') {
+      const remaining = el.remainingCredits;
+      if (el.configured && remaining <= threshold) {
+        // Switch to Cartesia: check Account 1 first, then Account 2
+        if (c1.configured && c1.remainingCredits > threshold) {
+          this.setTTSProvider('cartesia');
+          this.setCartesiaAccount('account1');
+          const event: AutoSwitchEvent = {
+            timestamp: Date.now(),
+            fromProvider: 'elevenlabs',
+            toProvider: 'cartesia',
+            toAccount: 'account1',
+            reason: triggerReason || `ElevenLabs reached ${remaining.toLocaleString()} credits (≤ 400 limit); switched to Cartesia Account 1`,
+            remainingCredits: remaining,
+          };
+          this.notifyAutoSwitch(event);
+          return event;
+        } else if (c2.configured && c2.remainingCredits > threshold) {
+          this.setTTSProvider('cartesia');
+          this.setCartesiaAccount('account2');
+          const event: AutoSwitchEvent = {
+            timestamp: Date.now(),
+            fromProvider: 'elevenlabs',
+            toProvider: 'cartesia',
+            toAccount: 'account2',
+            reason: triggerReason || `ElevenLabs reached ${remaining.toLocaleString()} credits (≤ 400 limit); switched to Cartesia Account 2`,
+            remainingCredits: remaining,
+          };
+          this.notifyAutoSwitch(event);
+          return event;
+        }
+      }
+    }
+
+    // SCENARIO 3: Current provider is Google (Gemini Natural Sport Commentator)
+    if (currentProvider === 'google') {
+      // Check if Cartesia Account 1 has credits
+      if (c1.configured && c1.remainingCredits > threshold) {
+        this.setTTSProvider('cartesia');
+        this.setCartesiaAccount('account1');
+        const event: AutoSwitchEvent = {
+          timestamp: Date.now(),
+          fromProvider: 'google',
+          toProvider: 'cartesia',
+          toAccount: 'account1',
+          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to Cartesia Account 1',
+          remainingCredits: c1.remainingCredits,
+        };
+        this.notifyAutoSwitch(event);
+        return event;
+      }
+      // Check if Cartesia Account 2 has credits
+      if (c2.configured && c2.remainingCredits > threshold) {
+        this.setTTSProvider('cartesia');
+        this.setCartesiaAccount('account2');
+        const event: AutoSwitchEvent = {
+          timestamp: Date.now(),
+          fromProvider: 'google',
+          toProvider: 'cartesia',
+          toAccount: 'account2',
+          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to Cartesia Account 2',
+          remainingCredits: c2.remainingCredits,
+        };
+        this.notifyAutoSwitch(event);
+        return event;
+      }
+      // Check if ElevenLabs has credits
+      if (el.configured && el.remainingCredits > threshold) {
+        this.setTTSProvider('elevenlabs');
+        const event: AutoSwitchEvent = {
+          timestamp: Date.now(),
+          fromProvider: 'google',
+          toProvider: 'elevenlabs',
+          reason: triggerReason || 'Google Gemini TTS quota reached (429); switched to ElevenLabs',
+          remainingCredits: el.remainingCredits,
+        };
+        this.notifyAutoSwitch(event);
+        return event;
+      }
+    }
+
+    return null;
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -478,7 +923,8 @@ class SoundEngine {
   public async announce(
     text: string,
     overrideVoiceId?: string,
-    overrideSettings?: Partial<ElevenLabsVoiceSettings>
+    overrideSettings?: Partial<ElevenLabsVoiceSettings>,
+    retryCount = 0
   ): Promise<AnnounceResult> {
     if (this.isMuted) {
       return { source: 'webspeech' };
@@ -487,7 +933,19 @@ class SoundEngine {
     this.unlock();
     this.stopAll();
 
+    // Auto-switch check before announcement
+    if (retryCount === 0) {
+      this.checkAndPerformAutoSwitch('Pre-announcement credit check');
+    }
+
     const provider = this.ttsProvider;
+
+    // 0. BROWSER WEBSPEECH (NATIVE) ROUTE
+    if (provider === 'webspeech') {
+      const targetVoice = overrideVoiceId && overrideVoiceId !== 'nhl' ? overrideVoiceId : this.webSpeechSettings.voiceURI;
+      await this.speakWebSpeechPromise(text, targetVoice);
+      return { source: 'webspeech', voiceId: targetVoice || 'Browser Native' };
+    }
 
     // 1. CARTESIA TTS ROUTE
     if (provider === 'cartesia') {
@@ -527,7 +985,27 @@ class SoundEngine {
           if (data.success && data.audioBase64) {
             const played = await this.playBase64Audio(data.audioBase64, cSettings.pitchCents, data.mimeType || 'audio/mpeg');
             if (played) {
+              this.fetchCredits().catch(() => {});
               return { source: 'cartesia', voiceId: data.voiceId };
+            }
+          }
+
+          // Handle quota exhaustion auto-switch
+          if (data.quotaExceeded || (data.error && (data.error.includes('credit') || data.error.includes('quota')))) {
+            if (this.creditsStatus) {
+              if (this.activeCartesiaAccount === 'account1') {
+                this.creditsStatus.cartesiaAccount1.remainingCredits = 0;
+                this.creditsStatus.cartesiaAccount1.isLowCredits = true;
+              } else {
+                this.creditsStatus.cartesiaAccount2.remainingCredits = 0;
+                this.creditsStatus.cartesiaAccount2.isLowCredits = true;
+              }
+            }
+            if (retryCount < 1) {
+              const switched = this.checkAndPerformAutoSwitch('Active Cartesia quota exhausted during speech');
+              if (switched) {
+                return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
+              }
             }
           }
 
@@ -544,6 +1022,7 @@ class SoundEngine {
 
           const played = await this.playArrayBuffer(arrayBuffer, cSettings.pitchCents, mime);
           if (played) {
+            this.fetchCredits().catch(() => {});
             return { source: 'cartesia', voiceId: headerVoice };
           }
         }
@@ -557,7 +1036,82 @@ class SoundEngine {
       }
     }
 
-    // 2. ELEVENLABS TTS ROUTE (DEFAULT)
+    // 2. GOOGLE NATURAL SPORT COMMENTATOR TTS ROUTE
+    if (provider === 'google') {
+      const gSettings = { ...this.googleVoiceSettings };
+      const effectiveGoogleVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
+        ? overrideVoiceId
+        : gSettings.voiceId;
+
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, audio/wav, audio/mpeg, */*',
+          },
+          body: JSON.stringify({
+            text,
+            provider: 'google',
+            voiceId: effectiveGoogleVoice,
+            googleSettings: {
+              voiceId: effectiveGoogleVoice,
+              speed: gSettings.speed,
+              pitchCents: gSettings.pitchCents,
+              commentatorStyle: gSettings.commentatorStyle,
+            },
+            format: 'base64',
+          }),
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data.success && data.audioBase64) {
+            const played = await this.playBase64Audio(data.audioBase64, gSettings.pitchCents);
+            if (played) {
+              return { source: 'google', voiceId: data.voiceId };
+            }
+          }
+
+          // Handle quota exhaustion (HTTP 429 / RESOURCE_EXHAUSTED) auto-switch
+          if (data.quotaExceeded || (data.error && (data.error.includes('quota') || data.error.includes('429') || data.error.includes('RESOURCE_EXHAUSTED')))) {
+            if (retryCount < 1) {
+              const switched = this.checkAndPerformAutoSwitch('Google Gemini TTS quota reached (429); switching to next voice provider');
+              if (switched) {
+                return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
+              }
+            }
+          }
+
+          const errorMsg = data.error || (data.fallback ? 'Google TTS fallback active' : 'Voice synthesis failed');
+          console.warn('Google TTS server fallback active:', errorMsg, data);
+          this.speakWebSpeech(text, 'google');
+          return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
+        }
+
+        if (contentType.includes('audio/')) {
+          const arrayBuffer = await response.arrayBuffer();
+          const headerVoice = response.headers.get('x-google-voice') || effectiveGoogleVoice;
+          const mime = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
+
+          const played = await this.playArrayBuffer(arrayBuffer, gSettings.pitchCents, mime);
+          if (played) {
+            return { source: 'google', voiceId: headerVoice };
+          }
+        }
+
+        this.speakWebSpeech(text, 'google');
+        return { source: 'webspeech', error: 'Unexpected voice response format' };
+      } catch (err: any) {
+        console.warn('Google TTS API request failed, falling back to Web Speech API:', err);
+        this.speakWebSpeech(text, 'google');
+        return { source: 'webspeech', error: err?.message || 'Network error during Google voice playback' };
+      }
+    }
+
+    // 3. ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
       ...(overrideSettings || {})
@@ -600,7 +1154,22 @@ class SoundEngine {
         if (data.success && data.audioBase64) {
           const played = await this.playBase64Audio(data.audioBase64, settings.pitchCents);
           if (played) {
+            this.fetchCredits().catch(() => {});
             return { source: 'elevenlabs', voiceId: data.voiceId };
+          }
+        }
+
+        // Handle quota exhaustion auto-switch
+        if (data.quotaExceeded || (data.error && (data.error.includes('credit') || data.error.includes('quota')))) {
+          if (this.creditsStatus) {
+            this.creditsStatus.elevenlabs.remainingCredits = 0;
+            this.creditsStatus.elevenlabs.isLowCredits = true;
+          }
+          if (retryCount < 1) {
+            const switched = this.checkAndPerformAutoSwitch('ElevenLabs character quota exhausted during speech');
+            if (switched) {
+              return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
+            }
           }
         }
 
@@ -618,6 +1187,7 @@ class SoundEngine {
 
         const played = await this.playArrayBuffer(arrayBuffer, settings.pitchCents);
         if (played) {
+          this.fetchCredits().catch(() => {});
           return { source: 'elevenlabs', voiceId: headerVoice };
         }
       }
@@ -647,31 +1217,48 @@ class SoundEngine {
       let activeSpeed = this.voiceSettings.speed;
       let activePitch = this.voiceSettings.pitchCents;
 
-      if (activeProvider === 'cartesia') {
-        activeSpeed = this.cartesiaVoiceSettings.speed;
-        activePitch = this.cartesiaVoiceSettings.pitchCents;
-      }
-
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
 
-      // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
-      const pitchOffset = activePitch / 1000;
-      utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
+      if (activeProvider === 'webspeech') {
+        utterance.rate = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.speed));
+        utterance.pitch = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.pitch));
+      } else {
+        if (activeProvider === 'cartesia') {
+          activeSpeed = this.cartesiaVoiceSettings.speed;
+          activePitch = this.cartesiaVoiceSettings.pitchCents;
+        } else if (activeProvider === 'google') {
+          activeSpeed = this.googleVoiceSettings.speed;
+          activePitch = this.googleVoiceSettings.pitchCents;
+        }
+        utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
+        // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
+        const pitchOffset = activePitch / 1000;
+        utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
+      }
 
       // Fix for Chromium garbage-collection bug where synthesis stops early
       (window as any).__lastUtterance = utterance;
 
       const voices = window.speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
-        const preferredVoice = voices.find(
-          (v) =>
-            v.lang.startsWith('en') &&
-            (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
-        ) || voices.find((v) => v.lang.startsWith('en'));
+        if (activeProvider === 'webspeech' && this.webSpeechSettings.voiceURI) {
+          const matched = voices.find(
+            (v) => v.voiceURI === this.webSpeechSettings.voiceURI || v.name === this.webSpeechSettings.voiceURI
+          );
+          if (matched) {
+            utterance.voice = matched;
+          }
+        }
+        if (!utterance.voice) {
+          const preferredVoice = voices.find(
+            (v) =>
+              v.lang.startsWith('en') &&
+              (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
+          ) || voices.find((v) => v.lang.startsWith('en'));
 
-        if (preferredVoice) {
-          utterance.voice = preferredVoice;
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+          }
         }
       }
 
@@ -688,6 +1275,74 @@ class SoundEngine {
     } catch (err) {
       console.warn('Web Speech invocation failed:', err);
     }
+  }
+
+  // Promise-based WebSpeech speaker for announce await and test preview
+  public speakWebSpeechPromise(text: string, overrideVoiceURI?: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) {
+        resolve();
+        return;
+      }
+
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.speed));
+        utterance.pitch = Math.max(0.5, Math.min(2.0, this.webSpeechSettings.pitch));
+
+        const targetURI = overrideVoiceURI || this.webSpeechSettings.voiceURI;
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          if (targetURI) {
+            const matched = voices.find((v) => v.voiceURI === targetURI || v.name === targetURI);
+            if (matched) {
+              utterance.voice = matched;
+            }
+          }
+          if (!utterance.voice) {
+            const preferredVoice = voices.find(
+              (v) =>
+                v.lang.startsWith('en') &&
+                (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha') || v.name.includes('Alex'))
+            ) || voices.find((v) => v.lang.startsWith('en'));
+
+            if (preferredVoice) {
+              utterance.voice = preferredVoice;
+            }
+          }
+        }
+
+        (window as any).__lastUtterance = utterance;
+
+        const maxTimeout = setTimeout(() => {
+          (window as any).__lastUtterance = null;
+          resolve();
+        }, 12000);
+
+        utterance.onend = () => {
+          clearTimeout(maxTimeout);
+          (window as any).__lastUtterance = null;
+          resolve();
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('WebSpeech utterance error:', e);
+          clearTimeout(maxTimeout);
+          (window as any).__lastUtterance = null;
+          resolve();
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn('Web Speech invocation failed:', err);
+        resolve();
+      }
+    });
   }
 }
 

@@ -1,3 +1,34 @@
+import { GoogleGenAI } from "@google/genai";
+import { recordCharactersUsed, flagQuotaExceeded } from "./creditTracker";
+
+function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const dataSize = pcmBuffer.length;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+  const wavBuffer = Buffer.alloc(totalSize);
+
+  wavBuffer.write("RIFF", 0);
+  wavBuffer.writeUInt32LE(totalSize - 8, 4);
+  wavBuffer.write("WAVE", 8);
+
+  wavBuffer.write("fmt ", 12);
+  wavBuffer.writeUInt32LE(16, 16);
+  wavBuffer.writeUInt16LE(1, 20); // PCM
+  wavBuffer.writeUInt16LE(numChannels, 22);
+  wavBuffer.writeUInt32LE(sampleRate, 24);
+  wavBuffer.writeUInt32LE(byteRate, 28);
+  wavBuffer.writeUInt16LE(blockAlign, 32);
+  wavBuffer.writeUInt16LE(bitsPerSample, 34);
+
+  wavBuffer.write("data", 36);
+  wavBuffer.writeUInt32LE(dataSize, 40);
+  pcmBuffer.copy(wavBuffer, 44);
+
+  return wavBuffer;
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -38,6 +69,7 @@ export default async function handler(req: any, res: any) {
       format: reqFormat,
       voiceSettings: customSettings,
       cartesiaSettings,
+      googleSettings,
     } = body;
 
     if (!text || typeof text !== "string") {
@@ -186,12 +218,17 @@ export default async function handler(req: any, res: any) {
       }
 
       if (!successfulAudioBuffer) {
+        const isQuotaErr = lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit");
+        if (isQuotaErr) {
+          flagQuotaExceeded(isAccount2 ? 'cartesia2' : 'cartesia1');
+        }
+
         const accountLabel = isAccount2 ? "Cartesia Account 2" : "Cartesia Account 1";
         let userFriendlyError = `${accountLabel} Sonic speech synthesis failed`;
         if (lastStatus === 401) {
           userFriendlyError = `${accountLabel} API key is unauthorized or invalid (401). Verify ${isAccount2 ? 'CARTESIA_API_KEY_2' : 'CARTESIA_API_KEY'} in environment.`;
-        } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit")) {
-          userFriendlyError = `${accountLabel} credits or quota limit reached on your account. Switch to your other Cartesia account or local voice.`;
+        } else if (isQuotaErr) {
+          userFriendlyError = `${accountLabel} credits or quota limit reached on your account. Auto-switching to next account.`;
         } else if (lastStatus === 404) {
           userFriendlyError = `${accountLabel} voice or model could not be found (404). Falling back to local voice.`;
         } else if (lastErrorDetails) {
@@ -211,9 +248,13 @@ export default async function handler(req: any, res: any) {
           details: lastErrorDetails,
           voiceId: winningVoiceId,
           status: lastStatus,
+          quotaExceeded: isQuotaErr
         });
         return;
       }
+
+      // Record successful Cartesia character credit usage
+      recordCharactersUsed(isAccount2 ? 'cartesia2' : 'cartesia1', text.length);
 
       const buffer = Buffer.from(successfulAudioBuffer);
       const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
@@ -245,7 +286,161 @@ export default async function handler(req: any, res: any) {
     }
 
     // ==========================================
-    // PROVIDER 2: ELEVENLABS TTS (DEFAULT)
+    // PROVIDER 2: GOOGLE NATURAL SPORT COMMENTATOR TTS
+    // ==========================================
+    if (provider === "google") {
+      const googleVoiceSettings = googleSettings || {};
+      const requestedVoice = (googleVoiceSettings.voiceId || reqVoiceId || process.env.GOOGLE_TTS_VOICE_ID || "Puck").trim();
+      const speed = typeof googleVoiceSettings.speed === "number"
+        ? Math.max(0.6, Math.min(1.5, googleVoiceSettings.speed))
+        : 1.05;
+
+      const googleCloudApiKey = (process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_CLOUD_API_KEY)?.trim();
+      const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
+
+      if (!geminiApiKey && !googleCloudApiKey) {
+        res.status(200).json({
+          fallback: true,
+          provider: "google",
+          error: "Neither GEMINI_API_KEY nor GOOGLE_TTS_API_KEY is configured in Environment Variables.",
+          voiceId: requestedVoice,
+        });
+        return;
+      }
+
+      let audioBuffer: Buffer | null = null;
+      let winningVoice = requestedVoice;
+      let mimeType = "audio/wav";
+
+      // Branch A: If Google Cloud TTS key is present and a Journey/Studio/Neural2 cloud voice was requested, try Google Cloud TTS
+      const isCloudVoice = requestedVoice.startsWith("en-US-") || requestedVoice.includes("Journey") || requestedVoice.includes("Studio") || requestedVoice.includes("Neural2");
+
+      if (googleCloudApiKey && isCloudVoice) {
+        try {
+          const cloudResp = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${googleCloudApiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: { text },
+              voice: {
+                languageCode: "en-US",
+                name: requestedVoice
+              },
+              audioConfig: {
+                audioEncoding: "MP3",
+                speakingRate: speed
+              }
+            })
+          });
+
+          if (cloudResp.ok) {
+            const data: any = await cloudResp.json();
+            if (data?.audioContent) {
+              audioBuffer = Buffer.from(data.audioContent, "base64");
+              mimeType = "audio/mpeg";
+              winningVoice = requestedVoice;
+            }
+          }
+        } catch (cloudErr) {
+          console.warn("Google Cloud TTS REST error, falling back to Gemini TTS:", cloudErr);
+        }
+      }
+
+      // Branch B: Gemini Natural AI Commentator (gemini-3.1-flash-tts-preview)
+      if (!audioBuffer && geminiApiKey) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+          // Map voice to supported Gemini TTS voices: Puck (default - lively sports commentator), Charon (analyst), Fenrir, Aoede, Kore
+          const geminiVoiceMap: Record<string, string> = {
+            puck: "Puck",
+            charon: "Charon",
+            fenrir: "Fenrir",
+            aoede: "Aoede",
+            kore: "Kore",
+          };
+          const normalizedVoice = requestedVoice.toLowerCase();
+          const targetVoice = geminiVoiceMap[normalizedVoice] || "Puck";
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.1-flash-tts-preview",
+            contents: text,
+            config: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: targetVoice
+                  }
+                }
+              }
+            }
+          });
+
+          const candidate = response.candidates?.[0];
+          const part = candidate?.content?.parts?.[0];
+          const base64Pcm = part?.inlineData?.data;
+
+          if (base64Pcm) {
+            const rawPcm = Buffer.from(base64Pcm, "base64");
+            audioBuffer = pcmToWav(rawPcm, 24000, 1, 16);
+            mimeType = "audio/wav";
+            winningVoice = targetVoice;
+          } else {
+            throw new Error("No inline audio data in Gemini TTS response");
+          }
+        } catch (geminiErr: any) {
+          console.error("Gemini TTS synthesis error:", geminiErr);
+          res.status(200).json({
+            fallback: true,
+            provider: "google",
+            error: geminiErr?.message || "Google Gemini Natural Voice synthesis failed",
+            voiceId: winningVoice,
+            quotaExceeded: geminiErr?.message?.includes("429") || geminiErr?.message?.includes("RESOURCE_EXHAUSTED") || geminiErr?.message?.includes("Quota exceeded")
+          });
+          return;
+        }
+      }
+
+      if (!audioBuffer) {
+        res.status(200).json({
+          fallback: true,
+          provider: "google",
+          error: "Failed to generate Google TTS audio",
+          voiceId: winningVoice,
+        });
+        return;
+      }
+
+      // Record Google characters used
+      recordCharactersUsed("google", text.length);
+
+      const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
+      if (wantsBase64) {
+        res.status(200).json({
+          success: true,
+          provider: "google",
+          audioBase64: audioBuffer.toString("base64"),
+          mimeType,
+          voiceId: winningVoice,
+          size: audioBuffer.length
+        });
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": mimeType,
+        "Content-Length": audioBuffer.length.toString(),
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Access-Control-Allow-Origin": "*",
+        "X-Google-Voice": winningVoice,
+        "X-TTS-Provider": "google"
+      });
+      res.end(audioBuffer);
+      return;
+    }
+
+    // ==========================================
+    // PROVIDER 3: ELEVENLABS TTS (DEFAULT)
     // ==========================================
     const apiKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
     const envVoiceId = (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID)?.trim();
@@ -352,11 +547,16 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!successfulAudioBuffer) {
+      const isQuotaErr = lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota");
+      if (isQuotaErr) {
+        flagQuotaExceeded('elevenlabs');
+      }
+
       let userFriendlyError = "ElevenLabs speech synthesis failed";
       if (lastStatus === 401) {
         userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in environment.";
-      } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota")) {
-        userFriendlyError = "ElevenLabs character quota exceeded on your account. Switch to Cartesia or local voice.";
+      } else if (isQuotaErr) {
+        userFriendlyError = "ElevenLabs character quota exceeded on your account. Auto-switching to Cartesia.";
       } else if (lastStatus === 404) {
         userFriendlyError = "ElevenLabs voice could not be loaded (404). Falling back to local voice.";
       } else if (lastErrorDetails) {
@@ -374,10 +574,14 @@ export default async function handler(req: any, res: any) {
         error: userFriendlyError,
         details: lastErrorDetails,
         voiceId: winningVoiceId,
-        status: lastStatus
+        status: lastStatus,
+        quotaExceeded: isQuotaErr
       });
       return;
     }
+
+    // Record successful ElevenLabs character credit usage
+    recordCharactersUsed('elevenlabs', text.length);
 
     const buffer = Buffer.from(successfulAudioBuffer);
     const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
