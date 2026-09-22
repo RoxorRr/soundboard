@@ -86,6 +86,7 @@ export interface WebSpeechVoiceSettings {
   voiceURI: string;
   speed: number;
   pitch: number; // 0.5 to 2.0 (standard WebSpeech pitch)
+  preferNaturalMale?: boolean;
 }
 
 export interface AccountCreditInfo {

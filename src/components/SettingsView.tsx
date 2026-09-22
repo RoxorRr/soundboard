@@ -55,6 +55,10 @@ import {
   DEFAULT_CARTESIA_VOICE_SETTINGS,
   DEFAULT_GOOGLE_VOICE_SETTINGS,
   DEFAULT_WEBSPEECH_SETTINGS,
+  POPULAR_NATURAL_MALE_PRESETS,
+  findBestNaturalMaleVoice,
+  isNaturalMaleVoice,
+  NaturalMaleVoicePreset,
   generateWelcomePrompt,
   CREDIT_SWITCH_THRESHOLD,
 } from '../utils/audio';
@@ -235,6 +239,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         const v = window.speechSynthesis.getVoices();
         if (v && v.length > 0) {
           setAvailableBrowserVoices(v);
+          setWebSpeechSettings((prev) => {
+            if (!prev.voiceURI) {
+              const best = findBestNaturalMaleVoice(v);
+              if (best) {
+                const next = { ...prev, voiceURI: best.voiceURI || best.name };
+                soundEngine.setWebSpeechSettings(next);
+                return next;
+              }
+            }
+            return prev;
+          });
         }
       };
       updateVoices();
@@ -369,6 +384,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const fresh = soundEngine.resetWebSpeechSettings();
     setWebSpeechSettings(fresh);
     showSavedNotification('Reset Browser WebSpeech defaults');
+  };
+
+  const handleSelectNaturalMalePreset = (preset: NaturalMaleVoicePreset) => {
+    const target =
+      availableBrowserVoices.find((v) => {
+        const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
+        return preset.keywords.every((k) => combined.includes(k));
+      }) ||
+      availableBrowserVoices.find((v) => {
+        const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
+        return preset.keywords.some((k) => combined.includes(k));
+      });
+
+    if (target) {
+      handleUpdateWebSpeechSetting('voiceURI', target.voiceURI || target.name);
+      showSavedNotification(`Selected Natural Man Voice: ${preset.name}`);
+    } else {
+      const best = findBestNaturalMaleVoice(availableBrowserVoices);
+      if (best) {
+        handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
+        showSavedNotification(`${preset.name} not on this OS. Selected ${best.name} instead.`);
+      } else {
+        showSavedNotification(`Preset voice not found on device.`);
+      }
+    }
+  };
+
+  const handleAutoPickBestNaturalMaleVoice = () => {
+    const best = findBestNaturalMaleVoice(availableBrowserVoices);
+    if (best) {
+      handleUpdateWebSpeechSetting('voiceURI', best.voiceURI || best.name);
+      showSavedNotification(`Auto-selected Natural Man Voice: ${best.name}`);
+    } else {
+      showSavedNotification('No specific natural male voice detected');
+    }
   };
 
   const handleSwitchCartesiaAccount = (acc: AccountChoice) => {
@@ -2923,133 +2973,300 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
 
             {/* Browser WebSpeech (Native) Configuration Panel */}
-            {selectedProvider === 'webspeech' && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-violet-500/30 shadow-xl shadow-violet-950/20 space-y-5">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-inner">
-                      <Volume2 className="w-5 h-5 text-violet-400" />
+            {selectedProvider === 'webspeech' && (() => {
+              const naturalMaleVoices = availableBrowserVoices.filter((v) => isNaturalMaleVoice(v));
+              const otherVoices = availableBrowserVoices.filter((v) => !isNaturalMaleVoice(v));
+              const currentVoice = availableBrowserVoices.find(
+                (v) => v.voiceURI === webSpeechSettings.voiceURI || v.name === webSpeechSettings.voiceURI
+              );
+              const isCurrentVoiceMale = currentVoice ? isNaturalMaleVoice(currentVoice) : true;
+
+              return (
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-violet-500/30 shadow-xl shadow-violet-950/20 space-y-5">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center text-violet-400 shadow-inner">
+                        <Volume2 className="w-5 h-5 text-violet-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black text-white uppercase tracking-wider font-athletic">
+                            Browser WebSpeech (Native Device Voices)
+                          </h3>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
+                            100% Free & Unlimited
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Synthesizes audio entirely inside your browser using your operating system's installed voices. Zero quota, zero costs, and zero API keys.
+                        </p>
+                      </div>
                     </div>
-                    <div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-violet-400" />
+                        <span>Zero Quota Limits • Always Available</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Natural Man Voice Presets Section */}
+                  <div className="space-y-3 bg-violet-950/20 border border-violet-500/30 p-4 rounded-xl">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-violet-400" />
+                            <span>Natural Man Voice Commentator Presets</span>
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            Sports PA Recommended
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Matches the masculine, energetic arena commentator tone of ElevenLabs and Google natural announcers.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAutoPickBestNaturalMaleVoice}
+                        className="px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold text-xs transition-colors flex items-center gap-1.5 shrink-0 shadow-md shadow-violet-500/20"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Auto-Pick Best Natural Man Voice</span>
+                      </button>
+                    </div>
+
+                    {/* Presets Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                      {POPULAR_NATURAL_MALE_PRESETS.map((preset) => {
+                        const isInstalled = availableBrowserVoices.some((v) => {
+                          const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
+                          return preset.keywords.some((k) => combined.includes(k));
+                        });
+
+                        const isCurrentlySelected =
+                          currentVoice &&
+                          preset.keywords.some((k) => `${currentVoice.name} ${currentVoice.voiceURI}`.toLowerCase().includes(k));
+
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => handleSelectNaturalMalePreset(preset)}
+                            className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-1.5 ${
+                              isCurrentlySelected
+                                ? 'bg-violet-500/20 border-violet-500 text-white shadow-md shadow-violet-950/40 ring-1 ring-violet-500/50'
+                                : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-violet-500/40 hover:bg-slate-900'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                                <span>🎙️</span>
+                                <span className="truncate">{preset.name}</span>
+                              </span>
+                              {isCurrentlySelected ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500 text-slate-950 shrink-0">
+                                  ACTIVE
+                                </span>
+                              ) : isInstalled ? (
+                                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                  On Device
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-slate-500 shrink-0">
+                                  {preset.platform}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                              {preset.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Voice Selection Dropdown */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-violet-400" />
+                        <span>Select Installed Device Voice</span>
+                      </label>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-base font-black text-white uppercase tracking-wider font-athletic">
-                          Browser WebSpeech (Native Device Voices)
-                        </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
-                          100% Free & Unlimited
+                        {isCurrentVoiceMale ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <span>✓</span>
+                            <span>Natural Man Voice Active</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">
+                            {availableBrowserVoices.length} voices detected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <select
+                        id="webspeech-voice-select"
+                        value={webSpeechSettings.voiceURI}
+                        onChange={(e) => handleUpdateWebSpeechSetting('voiceURI', e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 font-sans"
+                      >
+                        {naturalMaleVoices.length > 0 && (
+                          <optgroup label="🎙️ Natural Man Commentator Voices (Recommended)">
+                            {naturalMaleVoices.map((v) => (
+                              <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
+                                🎙️ {v.name} ({v.lang}) {v.localService ? '• Local' : '• Online'} [Natural Male]
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label={naturalMaleVoices.length > 0 ? "Other Installed Voices" : "Installed Voices"}>
+                          {otherVoices.map((v) => (
+                            <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
+                              {v.name} ({v.lang}) {v.localService ? '• Local' : '• Online'}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-400">
+                        <span>
+                          {currentVoice ? (
+                            <>
+                              Currently using: <strong className="text-violet-300">{currentVoice.name}</strong> ({currentVoice.lang})
+                            </>
+                          ) : (
+                            'Auto-selecting natural male voice on device.'
+                          )}
+                        </span>
+                        <span className="text-slate-500">
+                          {naturalMaleVoices.length} natural male voice{naturalMaleVoices.length === 1 ? '' : 's'} available
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Synthesizes audio entirely inside your browser using your operating system's installed voices. Zero quota, zero costs, and zero API keys.
-                      </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-violet-400" />
-                      <span>Zero Quota Limits • Always Available</span>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Voice Selection */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                      <Volume2 className="w-3.5 h-3.5 text-violet-400" />
-                      <span>Select Installed Device Voice</span>
-                    </label>
-                    <span className="text-[11px] text-slate-400">
-                      {availableBrowserVoices.length > 0 ? `${availableBrowserVoices.length} voices detected on device` : 'System default voice active'}
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                    <select
-                      id="webspeech-voice-select"
-                      value={webSpeechSettings.voiceURI}
-                      onChange={(e) => handleUpdateWebSpeechSetting('voiceURI', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 font-sans"
-                    >
-                      <option value="">Default Announcer Voice (Auto-selected English)</option>
-                      {availableBrowserVoices.map((v) => (
-                        <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
-                          {v.name} ({v.lang}) {v.localService ? '• Local' : '• Online'}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[11px] text-slate-400 leading-tight">
-                      Tip: Voices named "Natural", "Google", "Daniel", "Samantha", or "Alex" produce crisp and clear announcements in arena settings.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Speed & Pitch Controls */}
-                <div className="space-y-3 pt-2 border-t border-slate-800/60">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-violet-400" />
-                      <span>WebSpeech Pace & Pitch Modulation</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleResetWebSpeechSettings}
-                      className="text-[11px] text-slate-400 hover:text-white transition-colors"
-                    >
-                      Reset WebSpeech Defaults
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Speed / Pace */}
-                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">Speech Rate:</span>
-                        <span className="font-mono font-bold text-violet-400">
-                          {webSpeechSettings.speed.toFixed(2)}x
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.60"
-                        max="1.50"
-                        step="0.05"
-                        value={webSpeechSettings.speed}
-                        onChange={(e) => handleUpdateWebSpeechSetting('speed', parseFloat(e.target.value))}
-                        className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                      />
-                      <p className="text-[10px] text-slate-400 leading-tight">
-                        Hockey pace recommendation: 1.05x to 1.15x for energetic goal shouts.
-                      </p>
+                  {/* Speed & Pitch Controls */}
+                  <div className="space-y-3 pt-2 border-t border-slate-800/60">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Sliders className="w-3.5 h-3.5 text-violet-400" />
+                        <span>WebSpeech Pace & Pitch Modulation</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleResetWebSpeechSettings}
+                        className="text-[11px] text-slate-400 hover:text-white transition-colors"
+                      >
+                        Reset Natural Man Defaults
+                      </button>
                     </div>
 
-                    {/* Pitch */}
-                    <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-slate-300">Voice Pitch:</span>
-                        <span className="font-mono font-bold text-violet-400">
-                          {webSpeechSettings.pitch.toFixed(2)}x
-                        </span>
+                    {/* Quick Pitch Timbre Presets for Hockey PA */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Arena Timbre:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateWebSpeechSetting('pitch', 0.85)}
+                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
+                          Math.abs(webSpeechSettings.pitch - 0.85) < 0.03
+                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
+                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        Deep Baritone (0.85x)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateWebSpeechSetting('pitch', 0.95)}
+                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
+                          Math.abs(webSpeechSettings.pitch - 0.95) < 0.03
+                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
+                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        Natural Sports PA (0.95x)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateWebSpeechSetting('pitch', 1.00)}
+                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
+                          Math.abs(webSpeechSettings.pitch - 1.00) < 0.03
+                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
+                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        Standard Pitch (1.00x)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateWebSpeechSetting('pitch', 1.10)}
+                        className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${
+                          Math.abs(webSpeechSettings.pitch - 1.10) < 0.03
+                            ? 'bg-violet-500 text-slate-950 border-violet-400 font-bold'
+                            : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        Goal Excitement (1.10x)
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Speed / Pace */}
+                      <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-semibold text-slate-300">Speech Rate:</span>
+                          <span className="font-mono font-bold text-violet-400">
+                            {webSpeechSettings.speed.toFixed(2)}x
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.60"
+                          max="1.50"
+                          step="0.05"
+                          value={webSpeechSettings.speed}
+                          onChange={(e) => handleUpdateWebSpeechSetting('speed', parseFloat(e.target.value))}
+                          className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
+                        />
+                        <p className="text-[10px] text-slate-400 leading-tight">
+                          Hockey pace recommendation: 1.05x to 1.15x for energetic goal shouts.
+                        </p>
                       </div>
-                      <input
-                        type="range"
-                        min="0.60"
-                        max="1.50"
-                        step="0.05"
-                        value={webSpeechSettings.pitch}
-                        onChange={(e) => handleUpdateWebSpeechSetting('pitch', parseFloat(e.target.value))}
-                        className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
-                      />
-                      <p className="text-[10px] text-slate-400 leading-tight">
-                        Adjust voice timbre between resonant bass (0.8x) and enthusiastic higher pitch (1.1x).
-                      </p>
+
+                      {/* Pitch */}
+                      <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-semibold text-slate-300">Voice Pitch:</span>
+                          <span className="font-mono font-bold text-violet-400">
+                            {webSpeechSettings.pitch.toFixed(2)}x
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.60"
+                          max="1.50"
+                          step="0.05"
+                          value={webSpeechSettings.pitch}
+                          onChange={(e) => handleUpdateWebSpeechSetting('pitch', parseFloat(e.target.value))}
+                          className="w-full accent-violet-400 bg-slate-800 h-1.5 rounded cursor-pointer"
+                        />
+                        <p className="text-[10px] text-slate-400 leading-tight">
+                          Masculine sport announcer timbre: 0.85x to 0.95x gives an authentic arena baritone resonance.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Test Announcer Bar & Reset Defaults */}
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">

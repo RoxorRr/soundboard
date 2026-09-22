@@ -44,10 +44,138 @@ export const DEFAULT_GOOGLE_VOICE_SETTINGS: GoogleVoiceSettings = {
   commentatorStyle: 'play-by-play',
 };
 
+export interface NaturalMaleVoicePreset {
+  id: string;
+  name: string;
+  platform: string;
+  keywords: string[];
+  description: string;
+}
+
+export const POPULAR_NATURAL_MALE_PRESETS: NaturalMaleVoicePreset[] = [
+  {
+    id: 'edge-guy',
+    name: 'Guy (Natural Online)',
+    platform: 'Edge / Windows',
+    keywords: ['guy', 'natural'],
+    description: 'High-energy, crisp natural American male commentator voice.',
+  },
+  {
+    id: 'mac-daniel',
+    name: 'Daniel (Natural Male PA)',
+    platform: 'macOS / iOS / Safari',
+    keywords: ['daniel'],
+    description: 'Crisp baritone arena sports public address announcer.',
+  },
+  {
+    id: 'mac-alex',
+    name: 'Alex (Natural Male)',
+    platform: 'Apple / macOS',
+    keywords: ['alex'],
+    description: 'Classic resonant natural male voice with athletic clarity.',
+  },
+  {
+    id: 'edge-christopher',
+    name: 'Christopher (Natural Online)',
+    platform: 'Edge / Windows',
+    keywords: ['christopher', 'natural'],
+    description: 'Authoritative play-by-play natural male sports broadcaster.',
+  },
+  {
+    id: 'google-male',
+    name: 'Google US/UK Male',
+    platform: 'Chrome / Android',
+    keywords: ['google', 'male'],
+    description: 'Clear Google-synthesized masculine commentator voice.',
+  },
+  {
+    id: 'win-david',
+    name: 'David (Desktop Male)',
+    platform: 'Windows Desktop',
+    keywords: ['david'],
+    description: 'Reliable built-in Windows desktop male announcer.',
+  },
+];
+
+const FEMALE_VOICE_NAMES = [
+  'jenny', 'aria', 'samantha', 'zira', 'susan', 'victoria', 'karen',
+  'kendra', 'ava', 'allison', 'catherine', 'hazel', 'stephanie', 'elena',
+  'female', 'woman', 'girl', 'lisa', 'kate', 'michelle', 'serena', 'tessa', 'fiona',
+  'steffi', 'laura', 'veena', 'priya', 'monica', 'alice', 'anna', 'helena', 'ioana',
+  'milena', 'zoe', 'chloe', 'claire', 'julie', 'sara', 'sarah', 'emma'
+];
+
+export function isFemaleVoice(nameOrUri: string): boolean {
+  const lower = (nameOrUri || '').toLowerCase();
+  return FEMALE_VOICE_NAMES.some((f) => lower.includes(f));
+}
+
+export function isNaturalMaleVoice(voice: { name: string; voiceURI?: string; lang?: string }): boolean {
+  const name = (voice.name || '').toLowerCase();
+  const uri = (voice.voiceURI || '').toLowerCase();
+  const combined = `${name} ${uri}`;
+
+  if (isFemaleVoice(combined)) return false;
+
+  const maleKeywords = [
+    'guy', 'christopher', 'eric', 'brian', 'steffan', 'davis', 'andrew',
+    'daniel', 'alex', 'evan', 'nathan', 'oliver', 'tom', 'aaron', 'fred',
+    'david', 'mark', 'george', 'ryan', 'male', 'man', 'jack', 'james', 'john'
+  ];
+
+  return maleKeywords.some((m) => combined.includes(m));
+}
+
+export function findBestNaturalMaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!voices || voices.length === 0) return null;
+
+  const englishVoices = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('en'));
+  const pool = englishVoices.length > 0 ? englishVoices : voices;
+
+  // 1. Natural / Enhanced / Online male voices (e.g. "Microsoft Guy Online (Natural)", "Daniel (Enhanced)", "Alex", "Christopher Online (Natural)")
+  const naturalMale = pool.find((v) => {
+    const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
+    const hasNaturalTag = combined.includes('natural') || combined.includes('enhanced') || combined.includes('online');
+    return hasNaturalTag && isNaturalMaleVoice(v);
+  });
+  if (naturalMale) return naturalMale;
+
+  // 2. Prioritized top male voices
+  const prioritized = [
+    'guy',
+    'christopher',
+    'daniel',
+    'alex',
+    'evan',
+    'brian',
+    'eric',
+    'nathan',
+    'oliver',
+    'david',
+    'mark',
+    'male',
+  ];
+
+  for (const key of prioritized) {
+    const match = pool.find((v) => {
+      const combined = `${v.name} ${v.voiceURI}`.toLowerCase();
+      return combined.includes(key) && !isFemaleVoice(combined);
+    });
+    if (match) return match;
+  }
+
+  // 3. Fallback: Any English voice that is not explicitly female
+  const nonFemale = pool.find((v) => !isFemaleVoice(`${v.name} ${v.voiceURI}`));
+  if (nonFemale) return nonFemale;
+
+  return pool[0] || null;
+}
+
 export const DEFAULT_WEBSPEECH_SETTINGS: WebSpeechVoiceSettings = {
   voiceURI: '',
   speed: 1.05,
-  pitch: 1.0,
+  pitch: 0.95, // Athletic natural male commentator pitch
+  preferNaturalMale: true,
 };
 
 class SoundEngine {
@@ -207,6 +335,13 @@ class SoundEngine {
   }
 
   public getWebSpeechSettings(): WebSpeechVoiceSettings {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && !this.webSpeechSettings.voiceURI) {
+      const voices = window.speechSynthesis.getVoices();
+      const best = findBestNaturalMaleVoice(voices);
+      if (best) {
+        this.webSpeechSettings.voiceURI = best.voiceURI || best.name;
+      }
+    }
     return { ...this.webSpeechSettings };
   }
 
@@ -222,6 +357,13 @@ class SoundEngine {
 
   public resetWebSpeechSettings(): WebSpeechVoiceSettings {
     this.webSpeechSettings = { ...DEFAULT_WEBSPEECH_SETTINGS };
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const voices = window.speechSynthesis.getVoices();
+      const best = findBestNaturalMaleVoice(voices);
+      if (best) {
+        this.webSpeechSettings.voiceURI = best.voiceURI || best.name;
+      }
+    }
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('pelham_webspeech_settings');
@@ -1250,11 +1392,11 @@ class SoundEngine {
           }
         }
         if (!utterance.voice) {
-          const preferredVoice = voices.find(
-            (v) =>
-              v.lang.startsWith('en') &&
-              (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
-          ) || voices.find((v) => v.lang.startsWith('en'));
+          const preferredVoice =
+            findBestNaturalMaleVoice(voices) ||
+            voices.find((v) => v.lang.startsWith('en') && !isFemaleVoice(v.name)) ||
+            voices.find((v) => v.lang.startsWith('en')) ||
+            voices[0];
 
           if (preferredVoice) {
             utterance.voice = preferredVoice;
@@ -1305,11 +1447,11 @@ class SoundEngine {
             }
           }
           if (!utterance.voice) {
-            const preferredVoice = voices.find(
-              (v) =>
-                v.lang.startsWith('en') &&
-                (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha') || v.name.includes('Alex'))
-            ) || voices.find((v) => v.lang.startsWith('en'));
+            const preferredVoice =
+              findBestNaturalMaleVoice(voices) ||
+              voices.find((v) => v.lang.startsWith('en') && !isFemaleVoice(v.name)) ||
+              voices.find((v) => v.lang.startsWith('en')) ||
+              voices[0];
 
             if (preferredVoice) {
               utterance.voice = preferredVoice;
