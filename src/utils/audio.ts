@@ -1169,6 +1169,18 @@ class SoundEngine {
           }
         }
 
+        if (!response.ok && !contentType.includes('application/json')) {
+          const errText = await response.text().catch(() => '');
+          console.warn(`Cartesia TTS server error (HTTP ${response.status}):`, errText);
+          this.speakWebSpeech(text, 'cartesia');
+          return {
+            source: 'webspeech',
+            error: response.status === 504
+              ? 'Vercel serverless function timed out (HTTP 504)'
+              : `Cartesia TTS server error (HTTP ${response.status})`
+          };
+        }
+
         this.speakWebSpeech(text, 'cartesia');
         return { source: 'webspeech', error: 'Unexpected voice response format' };
       } catch (err: any) {
@@ -1332,6 +1344,18 @@ class SoundEngine {
           this.fetchCredits().catch(() => {});
           return { source: 'elevenlabs', voiceId: headerVoice };
         }
+      }
+
+      if (!response.ok && !contentType.includes('application/json')) {
+        const errText = await response.text().catch(() => '');
+        console.warn(`ElevenLabs TTS server error (HTTP ${response.status}):`, errText);
+        this.speakWebSpeech(text, 'elevenlabs');
+        return {
+          source: 'webspeech',
+          error: response.status === 504
+            ? 'Vercel serverless function timed out (HTTP 504)'
+            : `ElevenLabs TTS server error (HTTP ${response.status})`
+        };
       }
 
       // If unexpected response

@@ -15,7 +15,13 @@ export default async function handler(req: any, res: any) {
   }
 
   let body = req.body;
-  if (typeof body === 'string') {
+  if (Buffer.isBuffer(body)) {
+    try {
+      body = JSON.parse(body.toString('utf8'));
+    } catch {
+      body = {};
+    }
+  } else if (typeof body === 'string') {
     try {
       body = JSON.parse(body);
     } catch {
@@ -49,7 +55,17 @@ export default async function handler(req: any, res: any) {
   const c2Limit = currentUsage.cartesia2Limit || Number(body.cartesia2_limit || query.cartesia2_limit || 20000);
 
   // 1. ELEVENLABS CREDITS CHECK
-  const elevenKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
+  const elevenKey = (
+    process.env.ELEVENLABS_API_KEY ||
+    process.env.ELEVEN_LABS_API_KEY ||
+    process.env.VITE_ELEVENLABS_API_KEY ||
+    process.env.VITE_ELEVEN_LABS_API_KEY ||
+    process.env.ELEVENLABS_KEY ||
+    process.env.ELEVEN_API_KEY ||
+    process.env.XI_API_KEY ||
+    process.env.VITE_XI_API_KEY ||
+    process.env.ELEVEN_LABS_KEY
+  )?.trim();
   const defaultElevenRemaining = typeof currentUsage.elevenlabsOverrideRemaining === 'number'
     ? currentUsage.elevenlabsOverrideRemaining
     : 130000;
@@ -65,6 +81,7 @@ export default async function handler(req: any, res: any) {
     tier?: string;
     status?: string;
     isLowCredits: boolean;
+    isPayPerRequest?: boolean;
     source: 'api' | 'manual' | 'calibrated' | 'none';
     error?: string;
   } = {
@@ -84,27 +101,38 @@ export default async function handler(req: any, res: any) {
           'xi-api-key': elevenKey,
           'Accept': 'application/json',
         },
+        signal: AbortSignal.timeout(6000),
       });
 
       if (elRes.ok) {
         const elData = await elRes.json();
         const apiLimit = Number(elData.character_limit ?? 0);
         const apiCount = Number(elData.character_count ?? 0);
-        const apiRemaining = Math.max(0, apiLimit - apiCount);
+        const canExtend = Boolean(elData.can_extend_character_limit || elData.allowed_to_extend_character_limit);
+        const tier = elData.tier || 'standard';
+        const isPayPerRequest = canExtend || (tier !== 'free' && tier !== 'starter');
+
+        let rawRemaining = Math.max(0, apiLimit - apiCount);
+        // For pay-per-request / overage accounts, character_count can exceed character_limit without blocking
+        let remainingToUse: number;
+        if (typeof currentUsage.elevenlabsOverrideRemaining === 'number') {
+          remainingToUse = currentUsage.elevenlabsOverrideRemaining;
+        } else if (isPayPerRequest) {
+          remainingToUse = rawRemaining > 0 ? rawRemaining : 100000;
+        } else {
+          remainingToUse = Math.max(rawRemaining, 130000);
+        }
+
+        const limitToUse = typeof currentUsage.elevenlabsLimit === 'number'
+          ? currentUsage.elevenlabsLimit
+          : Math.max(apiLimit, remainingToUse);
+
         let resetDate: string | null = null;
         if (elData.next_character_count_reset_unix) {
           try {
             resetDate = new Date(elData.next_character_count_reset_unix * 1000).toISOString();
           } catch (_) {}
         }
-
-        // If user has calibrated a custom credit balance (e.g. 130k), preserve that remaining balance
-        const remainingToUse = typeof currentUsage.elevenlabsOverrideRemaining === 'number'
-          ? currentUsage.elevenlabsOverrideRemaining
-          : Math.max(apiRemaining, 130000);
-        const limitToUse = typeof currentUsage.elevenlabsLimit === 'number'
-          ? currentUsage.elevenlabsLimit
-          : Math.max(apiLimit, remainingToUse);
 
         elevenStatus = {
           configured: true,
@@ -113,9 +141,10 @@ export default async function handler(req: any, res: any) {
           remainingCredits: remainingToUse,
           resetUnix: elData.next_character_count_reset_unix || null,
           resetDate,
-          tier: elData.tier || 'standard',
+          tier,
           status: elData.status || 'active',
-          isLowCredits: remainingToUse <= 400,
+          isLowCredits: isPayPerRequest ? false : remainingToUse <= 400,
+          isPayPerRequest,
           source: typeof currentUsage.elevenlabsOverrideRemaining === 'number' ? 'calibrated' : 'api',
         };
       } else {
@@ -150,7 +179,15 @@ export default async function handler(req: any, res: any) {
   }
 
   // 2. CARTESIA ACCOUNT 1 CREDITS CHECK
-  const cartesia1Key = (process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim();
+  const cartesia1Key = (
+    process.env.CARTESIA_API_KEY ||
+    process.env.CARTESIA_KEY ||
+    process.env.VITE_CARTESIA_API_KEY ||
+    process.env.CARTESIA_API_KEY_1 ||
+    process.env.CARTESIA_KEY_1 ||
+    process.env.CARTESIA_APIKEY ||
+    process.env.CARTESIA_APIKEY_1
+  )?.trim();
   let cartesia1Status = await checkCartesiaAccount(
     cartesia1Key,
     c1Limit,
@@ -160,7 +197,12 @@ export default async function handler(req: any, res: any) {
   );
 
   // 3. CARTESIA ACCOUNT 2 CREDITS CHECK
-  const cartesia2Key = (process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_KEY_2)?.trim();
+  const cartesia2Key = (
+    process.env.CARTESIA_API_KEY_2 ||
+    process.env.CARTESIA_KEY_2 ||
+    process.env.VITE_CARTESIA_API_KEY_2 ||
+    process.env.CARTESIA_APIKEY_2
+  )?.trim();
   let cartesia2Status = await checkCartesiaAccount(
     cartesia2Key,
     c2Limit,
@@ -232,8 +274,9 @@ async function checkCartesiaAccount(
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${key}`,
-        'Cartesia-Version': '2026-08-14',
+        'Cartesia-Version': '2024-06-10',
       },
+      signal: AbortSignal.timeout(5000),
     });
 
     if (res.ok) {

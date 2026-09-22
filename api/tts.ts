@@ -1,6 +1,99 @@
 import { GoogleGenAI } from "@google/genai";
 import { recordCharactersUsed, flagQuotaExceeded } from "./creditTracker";
 
+function getElevenLabsApiKey(): string {
+  return (
+    process.env.ELEVENLABS_API_KEY ||
+    process.env.ELEVEN_LABS_API_KEY ||
+    process.env.VITE_ELEVENLABS_API_KEY ||
+    process.env.VITE_ELEVEN_LABS_API_KEY ||
+    process.env.ELEVENLABS_KEY ||
+    process.env.ELEVEN_API_KEY ||
+    process.env.XI_API_KEY ||
+    process.env.VITE_XI_API_KEY ||
+    process.env.ELEVEN_LABS_KEY ||
+    ""
+  ).trim();
+}
+
+function getCartesiaApiKey(isAccount2 = false): string {
+  if (isAccount2) {
+    return (
+      process.env.CARTESIA_API_KEY_2 ||
+      process.env.CARTESIA_KEY_2 ||
+      process.env.VITE_CARTESIA_API_KEY_2 ||
+      process.env.CARTESIA_APIKEY_2 ||
+      ""
+    ).trim();
+  }
+  return (
+    process.env.CARTESIA_API_KEY ||
+    process.env.CARTESIA_KEY ||
+    process.env.VITE_CARTESIA_API_KEY ||
+    process.env.CARTESIA_API_KEY_1 ||
+    process.env.CARTESIA_KEY_1 ||
+    process.env.CARTESIA_APIKEY ||
+    process.env.CARTESIA_APIKEY_1 ||
+    ""
+  ).trim();
+}
+
+async function parseRequestBody(req: any): Promise<any> {
+  // 1. Direct object or Buffer (Express json middleware or Vercel pre-parsed body)
+  if (req.body) {
+    if (Buffer.isBuffer(req.body)) {
+      try {
+        const str = req.body.toString("utf8");
+        return JSON.parse(str);
+      } catch {
+        return {};
+      }
+    }
+    if (typeof req.body === "string") {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return {};
+      }
+    }
+    if (typeof req.body === "object" && req.body !== null) {
+      return req.body;
+    }
+  }
+
+  // 2. Unparsed streaming request on Vercel Serverless (with strict 800ms safety timeout so it NEVER hangs)
+  if (typeof req.on === "function" && !req.readableEnded && !req.complete) {
+    try {
+      const raw = await new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        const timer = setTimeout(() => resolve(""), 800);
+
+        req.on("data", (chunk: any) => {
+          chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+        });
+        req.on("end", () => {
+          clearTimeout(timer);
+          resolve(Buffer.concat(chunks).toString("utf8"));
+        });
+        req.on("error", () => {
+          clearTimeout(timer);
+          resolve("");
+        });
+      });
+
+      if (raw) {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+    } catch (_) {}
+  }
+
+  return {};
+}
+
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitsPerSample = 16): Buffer {
   const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
   const blockAlign = (numChannels * bitsPerSample) / 8;
@@ -49,16 +142,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    let body = req.body;
-    if (typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch {
-        res.status(400).json({ error: "Invalid JSON body", fallback: true });
-        return;
-      }
-    }
-    body = body || {};
+    const body = await parseRequestBody(req);
 
     const {
       text,
@@ -84,15 +168,13 @@ export default async function handler(req: any, res: any) {
     // ==========================================
     if (provider === "cartesia") {
       const isAccount2 = reqAccount === "account2";
-      const cartesiaApiKey = isAccount2
-        ? (process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_KEY_2)?.trim()
-        : (process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim();
+      const cartesiaApiKey = getCartesiaApiKey(isAccount2);
       const envCartesiaVoiceId = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE)?.trim();
 
       if (!cartesiaApiKey) {
         const errorMsg = isAccount2
-          ? "CARTESIA_API_KEY_2 (Account 2) is not configured in Environment Variables. Add CARTESIA_API_KEY_2 or switch to Account 1."
-          : "CARTESIA_API_KEY (Account 1) is not configured in Environment Variables. Add CARTESIA_API_KEY.";
+          ? "CARTESIA_API_KEY_2 (Account 2) is not configured in Environment Variables. In Vercel, go to Project Settings -> Environment Variables and add CARTESIA_API_KEY_2."
+          : "CARTESIA_API_KEY (Account 1) is not configured in Environment Variables. In Vercel, go to Project Settings -> Environment Variables and add CARTESIA_API_KEY.";
         res.status(200).json({
           fallback: true,
           provider: "cartesia",
@@ -103,19 +185,20 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      // Build Cartesia voice candidates: user requested -> env configured -> top arena presets
+      // Build Cartesia voice candidates: user requested -> env configured -> custom Pelham -> universal announcer
       const userCartesiaVoice = (cartesiaSettings?.voiceId || reqVoiceId || "").trim();
       const cartesiaCandidates: string[] = [];
       if (userCartesiaVoice && userCartesiaVoice.toLowerCase() !== "nhl") cartesiaCandidates.push(userCartesiaVoice);
-      if (envCartesiaVoiceId) cartesiaCandidates.push(envCartesiaVoiceId);
+      if (envCartesiaVoiceId && envCartesiaVoiceId.toLowerCase() !== "nhl") cartesiaCandidates.push(envCartesiaVoiceId);
+      // Pelham custom voice
+      cartesiaCandidates.push("a27f2ab7-6793-4893-9f40-e50d5e5605ba");
+      // Universal premade announcers available across Cartesia accounts
       cartesiaCandidates.push("694f9389-aac1-45b6-b726-9d9369183238"); // Barbershop Man / Announcer (Male, Deep & Confident)
       cartesiaCandidates.push("47c38ca4-5f35-497b-b1a3-415245fb35e1"); // Daniel (Male, Clear & Natural)
-      cartesiaCandidates.push("a167e0f3-df7e-4d52-a9c3-f949145efdab"); // Commercial / Promo Man
-      cartesiaCandidates.push("db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"); // Skylar (Female, Expressive)
 
-      const uniqueCartesiaVoices = Array.from(new Set(cartesiaCandidates.filter(Boolean)));
+      const uniqueCartesiaVoices = Array.from(new Set(cartesiaCandidates.filter(Boolean))).slice(0, 2);
       const preferredModel = cartesiaSettings?.modelId || reqModel || "sonic-3.5";
-      const modelsToTry = [preferredModel, "sonic-3.6", "sonic-2", "sonic-english", "sonic"].filter((m, i, arr) => arr.indexOf(m) === i);
+      const modelsToTry = [preferredModel, "sonic"].filter((m, i, arr) => arr.indexOf(m) === i);
 
       const speed = typeof cartesiaSettings?.speed === "number"
         ? Math.max(0.6, Math.min(1.5, cartesiaSettings.speed))
@@ -127,11 +210,17 @@ export default async function handler(req: any, res: any) {
       let winningMime = "audio/mpeg";
       let lastStatus = 0;
       let lastErrorDetails = "";
+      const cartesiaStartTime = Date.now();
 
       for (const voiceCandidate of uniqueCartesiaVoices) {
+        // Enforce maximum execution window to prevent Vercel 504 Gateway Timeouts
+        if (Date.now() - cartesiaStartTime > 9000) break;
+
         for (const modelCandidate of modelsToTry) {
+          if (Date.now() - cartesiaStartTime > 9000) break;
+
           try {
-            // Attempt 1: MP3 container
+            // Attempt 1: Standard MP3 container
             const payload: Record<string, any> = {
               model_id: modelCandidate,
               transcript: text,
@@ -141,6 +230,7 @@ export default async function handler(req: any, res: any) {
               },
               output_format: {
                 container: "mp3",
+                bit_rate: 128000,
                 sample_rate: 44100,
               },
               language: "en",
@@ -151,6 +241,8 @@ export default async function handler(req: any, res: any) {
               if (emotion && emotion !== "neutral") {
                 payload.generation_config.emotion = emotion;
               }
+            } else if (emotion && emotion !== "neutral") {
+              payload.generation_config = { emotion };
             }
 
             let response = await fetch("https://api.cartesia.ai/tts/bytes", {
@@ -161,9 +253,10 @@ export default async function handler(req: any, res: any) {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(6000),
             });
 
-            // If container mp3 or generation_config caused 400 error, retry with WAV and stripped generation_config
+            // If container mp3 or generation_config caused 400 error, retry with clean WAV
             if (response.status === 400) {
               const retryPayload = {
                 model_id: modelCandidate,
@@ -187,6 +280,7 @@ export default async function handler(req: any, res: any) {
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify(retryPayload),
+                signal: AbortSignal.timeout(6000),
               });
               if (response.ok) {
                 winningMime = "audio/wav";
@@ -203,6 +297,11 @@ export default async function handler(req: any, res: any) {
 
             lastStatus = response.status;
             lastErrorDetails = await response.text();
+
+            // If 404 (voice not found), skip remaining models for this voice immediately
+            if (response.status === 404) {
+              break;
+            }
 
             if (response.status === 401 || response.status === 402 || response.status === 429) {
               break;
@@ -226,11 +325,11 @@ export default async function handler(req: any, res: any) {
         const accountLabel = isAccount2 ? "Cartesia Account 2" : "Cartesia Account 1";
         let userFriendlyError = `${accountLabel} Sonic speech synthesis failed`;
         if (lastStatus === 401) {
-          userFriendlyError = `${accountLabel} API key is unauthorized or invalid (401). Verify ${isAccount2 ? 'CARTESIA_API_KEY_2' : 'CARTESIA_API_KEY'} in environment.`;
+          userFriendlyError = `${accountLabel} API key is unauthorized or invalid (401). Verify ${isAccount2 ? 'CARTESIA_API_KEY_2' : 'CARTESIA_API_KEY'} in Vercel Environment Variables.`;
         } else if (isQuotaErr) {
-          userFriendlyError = `${accountLabel} credits or quota limit reached on your account. Auto-switching to next account.`;
+          userFriendlyError = `${accountLabel} credits limit reached. Check balance or switch to other voice account.`;
         } else if (lastStatus === 404) {
-          userFriendlyError = `${accountLabel} voice or model could not be found (404). Falling back to local voice.`;
+          userFriendlyError = `${accountLabel} voice or model could not be found (404).`;
         } else if (lastErrorDetails) {
           try {
             const parsed = JSON.parse(lastErrorDetails);
@@ -442,15 +541,15 @@ export default async function handler(req: any, res: any) {
     // ==========================================
     // PROVIDER 3: ELEVENLABS TTS (DEFAULT)
     // ==========================================
-    const apiKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
+    const apiKey = getElevenLabsApiKey();
     const envVoiceId = (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID)?.trim();
 
     if (!apiKey) {
       res.status(200).json({
         fallback: true,
         provider: "elevenlabs",
-        error: "ELEVENLABS_API_KEY is not configured in Environment Variables. Add ELEVENLABS_API_KEY.",
-        voiceId: envVoiceId || "nhl"
+        error: "ELEVENLABS_API_KEY is not configured in Environment Variables. In Vercel, go to Project Settings -> Environment Variables and add ELEVENLABS_API_KEY.",
+        voiceId: envVoiceId || "pNInz6obpgDQGcFmaJgB"
       });
       return;
     }
@@ -462,39 +561,45 @@ export default async function handler(req: any, res: any) {
     const style = typeof customSettings?.style === "number" ? Math.max(0.0, Math.min(1.0, customSettings.style)) : 0.60;
     const useSpeakerBoost = typeof customSettings?.use_speaker_boost === "boolean" ? customSettings.use_speaker_boost : true;
 
-    // Build voice candidates: user requested -> env configured -> custom NHL Pelham -> universal premade voices
+    // Build voice candidates: user requested -> env configured -> custom Pelham NHL voice -> universal premade Adam/Arnold
     const userVoiceId = reqVoiceId && reqVoiceId.toLowerCase() !== "nhl" ? reqVoiceId.trim() : null;
     const candidates: string[] = [];
     if (userVoiceId) candidates.push(userVoiceId);
-    if (envVoiceId) candidates.push(envVoiceId);
+    if (envVoiceId && envVoiceId.toLowerCase() !== "nhl") candidates.push(envVoiceId);
     // Custom Pelham NHL voice
     candidates.push("6j98Cb2txyqvHRXeRQYZ");
     // Universal premade ElevenLabs voices available on all free/paid accounts
     candidates.push("pNInz6obpgDQGcFmaJgB"); // Adam (Deep male narrator / sports voice)
     candidates.push("VR6AewLTigWG4xSOukaG"); // Arnold (Crisp male announcer)
-    candidates.push("ErXwobaYiN019PkySvjV"); // Antoni (Energetic youth announcer)
-    candidates.push("JBFqnCBsd6RMkjVDRZzb"); // George (Classic narrator)
 
-    // Deduplicate
-    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+    // Deduplicate and cap to top 2 to avoid Vercel timeouts
+    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean))).slice(0, 2);
 
     let successfulAudioBuffer: ArrayBuffer | null = null;
     let winningVoiceId = uniqueCandidates[0];
     let lastStatus = 0;
     let lastErrorDetails = "";
+    const elStartTime = Date.now();
 
     for (const candidate of uniqueCandidates) {
+      if (Date.now() - elStartTime > 9500) break;
+
       try {
+        const voiceSettingsPayload: Record<string, any> = {
+          stability,
+          similarity_boost: similarityBoost,
+          style,
+          use_speaker_boost: useSpeakerBoost,
+        };
+        // Only attach speed if explicitly different from default 1.0 to avoid 400 parameter rejection
+        if (speed && speed !== 1.0) {
+          voiceSettingsPayload.speed = speed;
+        }
+
         const payload: Record<string, any> = {
           text,
-          model_id: "eleven_turbo_v2_5",
-          voice_settings: {
-            stability,
-            similarity_boost: similarityBoost,
-            style,
-            use_speaker_boost: useSpeakerBoost,
-            speed
-          }
+          model_id: reqModel || "eleven_turbo_v2_5",
+          voice_settings: voiceSettingsPayload
         };
 
         let response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
@@ -504,7 +609,8 @@ export default async function handler(req: any, res: any) {
             "Content-Type": "application/json",
             "Accept": "audio/mpeg"
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(6000)
         });
 
         // If ElevenLabs model/voice rejects the 'speed' property (400 validation error), retry without speed
@@ -517,7 +623,23 @@ export default async function handler(req: any, res: any) {
               "Content-Type": "application/json",
               "Accept": "audio/mpeg"
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(6000)
+          });
+        }
+
+        // If turbo model rejected, try multilingual v2
+        if ((response.status === 400 || response.status === 422) && payload.model_id !== "eleven_multilingual_v2") {
+          payload.model_id = "eleven_multilingual_v2";
+          response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(candidate)}`, {
+            method: "POST",
+            headers: {
+              "xi-api-key": apiKey,
+              "Content-Type": "application/json",
+              "Accept": "audio/mpeg"
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(6000)
           });
         }
 
@@ -554,15 +676,15 @@ export default async function handler(req: any, res: any) {
 
       let userFriendlyError = "ElevenLabs speech synthesis failed";
       if (lastStatus === 401) {
-        userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in environment.";
+        userFriendlyError = "ElevenLabs API key is unauthorized or invalid (401). Verify ELEVENLABS_API_KEY in Vercel Environment Variables.";
       } else if (isQuotaErr) {
-        userFriendlyError = "ElevenLabs character quota exceeded on your account. Auto-switching to Cartesia.";
+        userFriendlyError = "ElevenLabs character quota or spend limit reached. If using pay-per-request, check your usage limit in ElevenLabs.";
       } else if (lastStatus === 404) {
-        userFriendlyError = "ElevenLabs voice could not be loaded (404). Falling back to local voice.";
+        userFriendlyError = "ElevenLabs voice could not be loaded (404). Falling back to browser voice.";
       } else if (lastErrorDetails) {
         try {
           const parsed = JSON.parse(lastErrorDetails);
-          userFriendlyError = parsed.detail?.message || parsed.message || userFriendlyError;
+          userFriendlyError = parsed.detail?.message || parsed.message || parsed.error || userFriendlyError;
         } catch {
           userFriendlyError = lastErrorDetails.slice(0, 160) || userFriendlyError;
         }

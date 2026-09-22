@@ -12,9 +12,38 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const hasElevenLabs = Boolean((process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim());
-  const hasCartesia1 = Boolean((process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY)?.trim());
-  const hasCartesia2 = Boolean((process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_KEY_2)?.trim());
+  const hasElevenLabs = Boolean(
+    (
+      process.env.ELEVENLABS_API_KEY ||
+      process.env.ELEVEN_LABS_API_KEY ||
+      process.env.VITE_ELEVENLABS_API_KEY ||
+      process.env.VITE_ELEVEN_LABS_API_KEY ||
+      process.env.ELEVENLABS_KEY ||
+      process.env.ELEVEN_API_KEY ||
+      process.env.XI_API_KEY ||
+      process.env.VITE_XI_API_KEY ||
+      process.env.ELEVEN_LABS_KEY
+    )?.trim()
+  );
+  const hasCartesia1 = Boolean(
+    (
+      process.env.CARTESIA_API_KEY ||
+      process.env.CARTESIA_KEY ||
+      process.env.VITE_CARTESIA_API_KEY ||
+      process.env.CARTESIA_API_KEY_1 ||
+      process.env.CARTESIA_KEY_1 ||
+      process.env.CARTESIA_APIKEY ||
+      process.env.CARTESIA_APIKEY_1
+    )?.trim()
+  );
+  const hasCartesia2 = Boolean(
+    (
+      process.env.CARTESIA_API_KEY_2 ||
+      process.env.CARTESIA_KEY_2 ||
+      process.env.VITE_CARTESIA_API_KEY_2 ||
+      process.env.CARTESIA_APIKEY_2
+    )?.trim()
+  );
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
   const hasGoogleCloud = Boolean((process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_CLOUD_API_KEY)?.trim());
   const hasGoogle = hasGemini || hasGoogleCloud;
@@ -35,6 +64,7 @@ export default async function handler(req: any, res: any) {
     googleVoiceId,
     model: "eleven_turbo_v2_5",
     cartesiaModel: "sonic-3.5",
-    team: "Pelham Pelicans"
+    team: "Pelham Pelicans",
+    isVercel: Boolean(process.env.VERCEL)
   });
 }
