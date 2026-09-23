@@ -1,6 +1,6 @@
 {
   "name": "Pelham Pelicans Hockey Tracker",
-  "description": "Screen-fit hockey tracker for Pelham Pelicans and visitor teams with custom team voice announcements, ElevenLabs and dual Cartesia voice switching with monthly credit tracking and auto-switch protection, 20-player rosters, and AI sticker scanner.",
+  "description": "Screen-fit hockey tracker for Pelham Pelicans and visitor teams with custom team voice announcements, 20-player rosters, and AI sticker scanner.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

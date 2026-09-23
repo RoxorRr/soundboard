@@ -1,20 +1,10 @@
 // Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
-import {
-  ElevenLabsVoiceSettings,
-  CartesiaVoiceSettings,
-  TTSProvider,
-  AccountChoice,
-  CreditsStatus,
-  AutoSwitchEvent,
-} from '../types';
-
-export const CREDIT_SWITCH_THRESHOLD = 400;
+import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'webspeech';
   voiceId?: string;
   error?: string;
-  autoSwitched?: boolean;
 }
 
 export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
@@ -46,13 +36,8 @@ class SoundEngine {
   private htmlAudio: HTMLAudioElement | null = null;
   private htmlAudioUnlocked: boolean = false;
   private ttsProvider: TTSProvider = 'elevenlabs';
-  private activeCartesiaAccount: AccountChoice = 'account1';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
-  private creditsStatus: CreditsStatus | null = null;
-  private isAutoSwitchEnabled: boolean = true;
-  private autoSwitchListeners: Set<(event: AutoSwitchEvent) => void> = new Set();
-  private creditsListeners: Set<(status: CreditsStatus) => void> = new Set();
 
   constructor() {
     // Restore persistent voice settings from localStorage if available
@@ -60,20 +45,7 @@ class SoundEngine {
       try {
         const savedProvider = localStorage.getItem('pelham_tts_provider');
         if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
-          this.ttsProvider = savedProvider as TTSProvider;
-        } else if (savedProvider === 'google') {
-          this.ttsProvider = 'elevenlabs';
-          localStorage.setItem('pelham_tts_provider', 'elevenlabs');
-        }
-
-        const savedCartesiaAccount = localStorage.getItem('pelham_active_cartesia_account');
-        if (savedCartesiaAccount === 'account1' || savedCartesiaAccount === 'account2') {
-          this.activeCartesiaAccount = savedCartesiaAccount;
-        }
-
-        const savedAutoSwitch = localStorage.getItem('pelham_credits_auto_switch');
-        if (savedAutoSwitch !== null) {
-          this.isAutoSwitchEnabled = savedAutoSwitch === 'true';
+          this.ttsProvider = savedProvider;
         }
 
         const saved = localStorage.getItem('pelham_voice_settings');
@@ -86,11 +58,6 @@ class SoundEngine {
           this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
         }
       } catch (_) {}
-
-      // Initial credit fetch in background
-      setTimeout(() => {
-        this.fetchCredits().catch(() => {});
-      }, 500);
 
       // Auto-unlock on first user interaction anywhere in the window
       const unlockEvents = ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown'];
@@ -114,20 +81,6 @@ class SoundEngine {
       } catch (_) {}
     }
     return this.ttsProvider;
-  }
-
-  public getCartesiaAccount(): AccountChoice {
-    return this.activeCartesiaAccount;
-  }
-
-  public setCartesiaAccount(account: AccountChoice): AccountChoice {
-    this.activeCartesiaAccount = account;
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pelham_active_cartesia_account', account);
-      } catch (_) {}
-    }
-    return this.activeCartesiaAccount;
   }
 
   public getVoiceSettings(): ElevenLabsVoiceSettings {
@@ -156,298 +109,6 @@ class SoundEngine {
       } catch (_) {}
     }
     return { ...this.cartesiaVoiceSettings };
-  }
-
-  public getAutoSwitchEnabled(): boolean {
-    return this.isAutoSwitchEnabled;
-  }
-
-  public setAutoSwitchEnabled(enabled: boolean): boolean {
-    this.isAutoSwitchEnabled = enabled;
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('pelham_credits_auto_switch', String(enabled));
-      } catch (_) {}
-    }
-    if (enabled && this.creditsStatus) {
-      this.checkAndPerformAutoSwitch('Auto-switch option toggled on');
-    }
-    return this.isAutoSwitchEnabled;
-  }
-
-  public getCreditsStatus(): CreditsStatus | null {
-    return this.creditsStatus;
-  }
-
-  public onAutoSwitch(listener: (event: AutoSwitchEvent) => void): () => void {
-    this.autoSwitchListeners.add(listener);
-    return () => {
-      this.autoSwitchListeners.delete(listener);
-    };
-  }
-
-  public onCreditsUpdate(listener: (status: CreditsStatus) => void): () => void {
-    this.creditsListeners.add(listener);
-    if (this.creditsStatus) {
-      try {
-        listener(this.creditsStatus);
-      } catch (_) {}
-    }
-    return () => {
-      this.creditsListeners.delete(listener);
-    };
-  }
-
-  private notifyAutoSwitch(event: AutoSwitchEvent): void {
-    if (this.creditsStatus) {
-      this.creditsStatus.lastAutoSwitch = {
-        timestamp: event.timestamp,
-        from: `${event.fromProvider}${event.fromAccount ? ` (${event.fromAccount})` : ''}`,
-        to: `${event.toProvider}${event.toAccount ? ` (${event.toAccount})` : ''}`,
-        reason: event.reason,
-      };
-    }
-    this.autoSwitchListeners.forEach((fn) => {
-      try {
-        fn(event);
-      } catch (err) {
-        console.warn('AutoSwitch listener error:', err);
-      }
-    });
-  }
-
-  public async fetchCredits(): Promise<CreditsStatus | null> {
-    try {
-      const res = await fetch('/api/credits');
-      if (!res.ok) return null;
-      const data = await res.json();
-
-      const updatedStatus: CreditsStatus = {
-        threshold: data.threshold || CREDIT_SWITCH_THRESHOLD,
-        currentMonth: data.currentMonth || new Date().toISOString().slice(0, 7),
-        elevenlabs: data.elevenlabs || {
-          configured: false,
-          characterLimit: 0,
-          characterCount: 0,
-          remainingCredits: 0,
-          isLowCredits: true,
-          source: 'none',
-        },
-        cartesiaAccount1: data.cartesiaAccount1 || {
-          configured: false,
-          characterLimit: 20000,
-          characterCount: 0,
-          remainingCredits: 0,
-          isLowCredits: true,
-          source: 'none',
-        },
-        cartesiaAccount2: data.cartesiaAccount2 || {
-          configured: false,
-          characterLimit: 20000,
-          characterCount: 0,
-          remainingCredits: 0,
-          isLowCredits: true,
-          source: 'none',
-        },
-        activeProvider: this.ttsProvider,
-        activeCartesiaAccount: this.activeCartesiaAccount,
-        lastChecked: Date.now(),
-        lastAutoSwitch: this.creditsStatus?.lastAutoSwitch || null,
-      };
-
-      this.creditsStatus = updatedStatus;
-
-      // Broadcast to listeners
-      this.creditsListeners.forEach((fn) => {
-        try {
-          fn(updatedStatus);
-        } catch (_) {}
-      });
-
-      // Check auto-switch whenever credits are updated
-      if (this.isAutoSwitchEnabled) {
-        this.checkAndPerformAutoSwitch('Updated credit balance check');
-      }
-
-      return updatedStatus;
-    } catch (err) {
-      console.warn('Failed to fetch credits:', err);
-      return null;
-    }
-  }
-
-  public async setManualAccountBalance(
-    account: 'elevenlabs' | 'cartesia1' | 'cartesia2',
-    remainingCredits: number,
-    limit?: number
-  ): Promise<void> {
-    try {
-      await fetch('/api/credits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'set_balance',
-          account,
-          remainingCredits: Math.max(0, remainingCredits),
-          limit,
-        }),
-      });
-      await this.fetchCredits();
-    } catch (err) {
-      console.warn('Failed to set manual account balance:', err);
-    }
-  }
-
-  public async setManualCartesiaBalance(
-    account: 'cartesia1' | 'cartesia2',
-    remainingCredits: number
-  ): Promise<void> {
-    return this.setManualAccountBalance(account, remainingCredits);
-  }
-
-  public async syncAllActualBalances(
-    elevenlabs = 130000,
-    cartesia1 = 120000,
-    cartesia2 = 19000
-  ): Promise<void> {
-    try {
-      await fetch('/api/credits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'sync_all_balances',
-          balances: {
-            elevenlabs,
-            cartesia1,
-            cartesia2,
-          },
-        }),
-      });
-      await this.fetchCredits();
-    } catch (err) {
-      console.warn('Failed to sync all balances:', err);
-    }
-  }
-
-  // Core auto-switching engine: If active account has <= 400 credits, switch to next account
-  public checkAndPerformAutoSwitch(triggerReason?: string): AutoSwitchEvent | null {
-    if (!this.isAutoSwitchEnabled || !this.creditsStatus) return null;
-
-    const threshold = CREDIT_SWITCH_THRESHOLD; // 400
-    const el = this.creditsStatus.elevenlabs;
-    const c1 = this.creditsStatus.cartesiaAccount1;
-    const c2 = this.creditsStatus.cartesiaAccount2;
-
-    const currentProvider = this.ttsProvider;
-    const currentCartesiaAccount = this.activeCartesiaAccount;
-
-    // SCENARIO 1: Current provider is Cartesia
-    if (currentProvider === 'cartesia') {
-      if (currentCartesiaAccount === 'account1') {
-        const remaining = c1.remainingCredits;
-        if (c1.configured && remaining <= threshold) {
-          // Switch to Cartesia Account 2 if it has > 400 credits
-          if (c2.configured && c2.remainingCredits > threshold) {
-            this.setCartesiaAccount('account2');
-            const event: AutoSwitchEvent = {
-              timestamp: Date.now(),
-              fromProvider: 'cartesia',
-              fromAccount: 'account1',
-              toProvider: 'cartesia',
-              toAccount: 'account2',
-              reason: triggerReason || `Cartesia Account 1 reached ${remaining.toLocaleString()} credits (≤ 400 limit)`,
-              remainingCredits: remaining,
-            };
-            this.notifyAutoSwitch(event);
-            return event;
-          }
-          // Else if ElevenLabs has > 400 credits, switch to ElevenLabs
-          if (el.configured && el.remainingCredits > threshold) {
-            this.setTTSProvider('elevenlabs');
-            const event: AutoSwitchEvent = {
-              timestamp: Date.now(),
-              fromProvider: 'cartesia',
-              fromAccount: 'account1',
-              toProvider: 'elevenlabs',
-              reason: triggerReason || `Cartesia Account 1 at ${remaining.toLocaleString()} credits (≤ 400 limit); switched to ElevenLabs`,
-              remainingCredits: remaining,
-            };
-            this.notifyAutoSwitch(event);
-            return event;
-          }
-        }
-      } else if (currentCartesiaAccount === 'account2') {
-        const remaining = c2.remainingCredits;
-        if (c2.configured && remaining <= threshold) {
-          // Switch to Cartesia Account 1 if it has > 400 credits
-          if (c1.configured && c1.remainingCredits > threshold) {
-            this.setCartesiaAccount('account1');
-            const event: AutoSwitchEvent = {
-              timestamp: Date.now(),
-              fromProvider: 'cartesia',
-              fromAccount: 'account2',
-              toProvider: 'cartesia',
-              toAccount: 'account1',
-              reason: triggerReason || `Cartesia Account 2 reached ${remaining.toLocaleString()} credits (≤ 400 limit)`,
-              remainingCredits: remaining,
-            };
-            this.notifyAutoSwitch(event);
-            return event;
-          }
-          // Else if ElevenLabs has > 400 credits, switch to ElevenLabs
-          if (el.configured && el.remainingCredits > threshold) {
-            this.setTTSProvider('elevenlabs');
-            const event: AutoSwitchEvent = {
-              timestamp: Date.now(),
-              fromProvider: 'cartesia',
-              fromAccount: 'account2',
-              toProvider: 'elevenlabs',
-              reason: triggerReason || `Cartesia Account 2 at ${remaining.toLocaleString()} credits (≤ 400 limit); switched to ElevenLabs`,
-              remainingCredits: remaining,
-            };
-            this.notifyAutoSwitch(event);
-            return event;
-          }
-        }
-      }
-    }
-
-    // SCENARIO 2: Current provider is ElevenLabs
-    if (currentProvider === 'elevenlabs') {
-      const remaining = el.remainingCredits;
-      if (el.configured && remaining <= threshold) {
-        // Switch to Cartesia: check Account 1 first, then Account 2
-        if (c1.configured && c1.remainingCredits > threshold) {
-          this.setTTSProvider('cartesia');
-          this.setCartesiaAccount('account1');
-          const event: AutoSwitchEvent = {
-            timestamp: Date.now(),
-            fromProvider: 'elevenlabs',
-            toProvider: 'cartesia',
-            toAccount: 'account1',
-            reason: triggerReason || `ElevenLabs reached ${remaining.toLocaleString()} credits (≤ 400 limit); switched to Cartesia Account 1`,
-            remainingCredits: remaining,
-          };
-          this.notifyAutoSwitch(event);
-          return event;
-        } else if (c2.configured && c2.remainingCredits > threshold) {
-          this.setTTSProvider('cartesia');
-          this.setCartesiaAccount('account2');
-          const event: AutoSwitchEvent = {
-            timestamp: Date.now(),
-            fromProvider: 'elevenlabs',
-            toProvider: 'cartesia',
-            toAccount: 'account2',
-            reason: triggerReason || `ElevenLabs reached ${remaining.toLocaleString()} credits (≤ 400 limit); switched to Cartesia Account 2`,
-            remainingCredits: remaining,
-          };
-          this.notifyAutoSwitch(event);
-          return event;
-        }
-      }
-    }
-
-    return null;
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -794,8 +455,7 @@ class SoundEngine {
   public async announce(
     text: string,
     overrideVoiceId?: string,
-    overrideSettings?: Partial<ElevenLabsVoiceSettings>,
-    retryCount = 0
+    overrideSettings?: Partial<ElevenLabsVoiceSettings>
   ): Promise<AnnounceResult> {
     if (this.isMuted) {
       return { source: 'webspeech' };
@@ -804,14 +464,9 @@ class SoundEngine {
     this.unlock();
     this.stopAll();
 
-    // Auto-switch check before announcement
-    if (retryCount === 0) {
-      this.checkAndPerformAutoSwitch('Pre-announcement credit check');
-    }
-
     const provider = this.ttsProvider;
 
-    // 1. CARTESIA TTS ROUTE
+    // CARTESIA TTS ROUTE
     if (provider === 'cartesia') {
       const cSettings = { ...this.cartesiaVoiceSettings };
       const effectiveCartesiaVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
@@ -828,7 +483,6 @@ class SoundEngine {
           body: JSON.stringify({
             text,
             provider: 'cartesia',
-            account: this.activeCartesiaAccount,
             voiceId: effectiveCartesiaVoice,
             cartesiaSettings: {
               voiceId: effectiveCartesiaVoice,
@@ -849,33 +503,13 @@ class SoundEngine {
           if (data.success && data.audioBase64) {
             const played = await this.playBase64Audio(data.audioBase64, cSettings.pitchCents, data.mimeType || 'audio/mpeg');
             if (played) {
-              this.fetchCredits().catch(() => {});
               return { source: 'cartesia', voiceId: data.voiceId };
-            }
-          }
-
-          // Handle quota exhaustion auto-switch
-          if (data.quotaExceeded || (data.error && (data.error.includes('credit') || data.error.includes('quota')))) {
-            if (this.creditsStatus) {
-              if (this.activeCartesiaAccount === 'account1') {
-                this.creditsStatus.cartesiaAccount1.remainingCredits = 0;
-                this.creditsStatus.cartesiaAccount1.isLowCredits = true;
-              } else {
-                this.creditsStatus.cartesiaAccount2.remainingCredits = 0;
-                this.creditsStatus.cartesiaAccount2.isLowCredits = true;
-              }
-            }
-            if (retryCount < 1) {
-              const switched = this.checkAndPerformAutoSwitch('Active Cartesia quota exhausted during speech');
-              if (switched) {
-                return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
-              }
             }
           }
 
           const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Cartesia synthesis failed');
           console.warn('Cartesia TTS server fallback active:', errorMsg, data);
-          this.speakWebSpeech(text, 'cartesia');
+          this.speakWebSpeech(text);
           return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
         }
 
@@ -886,21 +520,20 @@ class SoundEngine {
 
           const played = await this.playArrayBuffer(arrayBuffer, cSettings.pitchCents, mime);
           if (played) {
-            this.fetchCredits().catch(() => {});
             return { source: 'cartesia', voiceId: headerVoice };
           }
         }
 
-        this.speakWebSpeech(text, 'cartesia');
+        this.speakWebSpeech(text);
         return { source: 'webspeech', error: 'Unexpected voice response format' };
       } catch (err: any) {
         console.warn('Cartesia API request failed, falling back to Web Speech API:', err);
-        this.speakWebSpeech(text, 'cartesia');
+        this.speakWebSpeech(text);
         return { source: 'webspeech', error: err?.message || 'Network error during Cartesia voice playback' };
       }
     }
 
-    // 2. ELEVENLABS TTS ROUTE (DEFAULT)
+    // ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
       ...(overrideSettings || {})
@@ -943,29 +576,14 @@ class SoundEngine {
         if (data.success && data.audioBase64) {
           const played = await this.playBase64Audio(data.audioBase64, settings.pitchCents);
           if (played) {
-            this.fetchCredits().catch(() => {});
             return { source: 'elevenlabs', voiceId: data.voiceId };
-          }
-        }
-
-        // Handle quota exhaustion auto-switch
-        if (data.quotaExceeded || (data.error && (data.error.includes('credit') || data.error.includes('quota')))) {
-          if (this.creditsStatus) {
-            this.creditsStatus.elevenlabs.remainingCredits = 0;
-            this.creditsStatus.elevenlabs.isLowCredits = true;
-          }
-          if (retryCount < 1) {
-            const switched = this.checkAndPerformAutoSwitch('ElevenLabs character quota exhausted during speech');
-            if (switched) {
-              return this.announce(text, overrideVoiceId, overrideSettings, retryCount + 1);
-            }
           }
         }
 
         // Server returned fallback or error info
         const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Voice synthesis failed');
         console.warn('ElevenLabs TTS server fallback active:', errorMsg, data);
-        this.speakWebSpeech(text, 'elevenlabs');
+        this.speakWebSpeech(text);
         return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
       }
 
@@ -976,24 +594,23 @@ class SoundEngine {
 
         const played = await this.playArrayBuffer(arrayBuffer, settings.pitchCents);
         if (played) {
-          this.fetchCredits().catch(() => {});
           return { source: 'elevenlabs', voiceId: headerVoice };
         }
       }
 
       // If unexpected response
       console.warn('Unexpected TTS response format:', contentType);
-      this.speakWebSpeech(text, 'elevenlabs');
+      this.speakWebSpeech(text);
       return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('ElevenLabs API request failed, falling back to Web Speech API:', err);
-      this.speakWebSpeech(text, 'elevenlabs');
+      this.speakWebSpeech(text);
       return { source: 'webspeech', error: err?.message || 'Network error during voice playback' };
     }
   }
 
   // Web Speech API with rate and pitch controls matching active provider settings
-  private speakWebSpeech(text: string, forceProvider?: TTSProvider) {
+  private speakWebSpeech(text: string) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
 
     try {
@@ -1002,14 +619,8 @@ class SoundEngine {
         window.speechSynthesis.resume();
       }
 
-      const activeProvider = forceProvider || this.ttsProvider;
-      let activeSpeed = this.voiceSettings.speed;
-      let activePitch = this.voiceSettings.pitchCents;
-
-      if (activeProvider === 'cartesia') {
-        activeSpeed = this.cartesiaVoiceSettings.speed;
-        activePitch = this.cartesiaVoiceSettings.pitchCents;
-      }
+      const activeSpeed = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.speed : this.voiceSettings.speed;
+      const activePitch = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents;
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));

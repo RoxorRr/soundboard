@@ -9,7 +9,6 @@ import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt } from './utils/audio';
-import { getSavedGamePenaltyDuration } from './utils/penaltyTime';
 import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
@@ -215,15 +214,6 @@ export default function App() {
   const [scannerTargetPlayerId, setScannerTargetPlayerId] = useState<string | null>(null);
   const [isQuickGoalModalOpen, setIsQuickGoalModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
-  // Active game penalty duration label
-  const [gamePenaltyLabel, setGamePenaltyLabel] = useState<string>(() => getSavedGamePenaltyDuration().label);
-
-  // Refresh penalty label when opening/closing modal or switching tabs
-  useEffect(() => {
-    if (!isPenaltyModalOpen) {
-      setGamePenaltyLabel(getSavedGamePenaltyDuration().label);
-    }
-  }, [isPenaltyModalOpen, currentTab]);
 
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
@@ -278,17 +268,6 @@ export default function App() {
         if (data) setVoiceStatus(data);
       })
       .catch((err) => console.warn('Could not fetch server voice status:', err));
-  }, []);
-
-  // Listen for automatic TTS provider/account switches when credits hit <= 400
-  useEffect(() => {
-    const unsub = soundEngine.onAutoSwitch((event) => {
-      setVoiceFeedback({
-        message: `🔄 Auto-switched to ${event.toProvider === 'cartesia' ? `Cartesia (${event.toAccount === 'account2' ? 'Account 2' : 'Account 1'})` : 'ElevenLabs'}: ${event.reason}`,
-        type: 'info',
-      });
-    });
-    return unsub;
   }, []);
 
   // Auto-sort existing saved rosters from smallest to largest by player number on mount
@@ -967,11 +946,11 @@ export default function App() {
               type="button"
               onClick={() => setIsPenaltyModalOpen(true)}
               className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
-              title={`Announce penalty (Current default: ${gamePenaltyLabel})`}
+              title="Announce a penalty: 'Number [X], [Team] two minutes for [foul]'"
             >
               <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-              <span className="hidden sm:inline">Penalty ({gamePenaltyLabel})</span>
-              <span className="sm:hidden">Pen {gamePenaltyLabel}</span>
+              <span className="hidden sm:inline">Penalty</span>
+              <span className="sm:hidden">Pen</span>
             </button>
           )}
 
@@ -1239,10 +1218,10 @@ export default function App() {
                 id="roster-penalty-btn"
                 onClick={() => setIsPenaltyModalOpen(true)}
                 className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-white border border-rose-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
-                title={`Announce penalty (Current default: ${gamePenaltyLabel})`}
+                title="Announce penalty with template: Number [X], [Team] two minutes for [foul]"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                <span className="font-athletic uppercase tracking-wider">Penalty ({gamePenaltyLabel})</span>
+                <span className="font-athletic uppercase tracking-wider">Penalty</span>
               </button>
 
               <button
