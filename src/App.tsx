@@ -330,7 +330,7 @@ export default function App() {
     try {
       const res = await soundEngine.announce(prompt, 'nhl');
       if (res.source) {
-        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
       }
       if (res.error) {
         setVoiceFeedback({
@@ -397,7 +397,7 @@ export default function App() {
     try {
       const res = await soundEngine.announce(prompt, 'nhl');
       if (res.source) {
-        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
       }
       if (res.error) {
         setVoiceFeedback({
@@ -438,6 +438,9 @@ export default function App() {
     setActiveAnnouncePlayerId(currentAnnouncement.playerId);
     try {
       const res = await soundEngine.announce(currentAnnouncement.text, 'nhl');
+      if (res.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
+      }
       if (res.error) {
         setVoiceFeedback({
           message: `Voice notice: ${res.error}`,
@@ -480,7 +483,7 @@ export default function App() {
     try {
       const res = await soundEngine.announce(prompt, 'nhl');
       if (res.source) {
-        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
       }
       if (res.error) {
         setVoiceFeedback({
@@ -488,8 +491,9 @@ export default function App() {
           type: 'warning'
         });
       } else if (res.source === 'cartesia') {
+        const accountStr = res.cartesiaAccount === 'account2' ? 'Account 2' : res.cartesiaAccount === 'account1' ? 'Account 1' : '';
         setVoiceFeedback({
-          message: `Cartesia Sonic voice playing (${res.voiceId || 'announcer'})`,
+          message: `Cartesia Sonic ${accountStr ? `(${accountStr}) ` : ''}voice playing (${res.voiceId || 'announcer'})`,
           type: 'success'
         });
       } else if (res.source === 'elevenlabs') {
@@ -726,7 +730,7 @@ export default function App() {
       try {
         const res = await soundEngine.announce(prompt, 'nhl');
         if (res.source) {
-          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
         }
         if (res.error) {
           setVoiceFeedback({
@@ -787,7 +791,7 @@ export default function App() {
       try {
         const res = await soundEngine.announce(promptText, 'nhl');
         if (res.source) {
-          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
         }
         if (res.error) {
           setVoiceFeedback({

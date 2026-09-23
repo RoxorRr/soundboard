@@ -17,6 +17,7 @@ export interface Announcement {
   text: string;
   timestamp: number;
   source: 'elevenlabs' | 'cartesia' | 'webspeech';
+  cartesiaAccount?: 'account1' | 'account2';
   team?: string;
   penaltyInfraction?: string;
   penaltyDuration?: string;
@@ -27,10 +28,14 @@ export interface VoiceStatus {
   configured: boolean;
   elevenLabsConfigured?: boolean;
   cartesiaConfigured?: boolean;
+  cartesiaAccount1Configured?: boolean;
+  cartesiaAccount2Configured?: boolean;
+  cartesiaAccountsCount?: number;
   activeProvider?: TTSProvider;
   geminiConfigured?: boolean;
   voiceId: string;
   cartesiaVoiceId?: string;
+  cartesiaVoiceId2?: string;
   model: string;
   cartesiaModel?: string;
   team: string;
@@ -62,9 +67,12 @@ export interface ElevenLabsVoiceSettings {
 
 export interface CartesiaVoiceSettings {
   voiceId: string;
+  voiceIdAccount1?: string;
+  voiceIdAccount2?: string;
   modelId: string;
   speed: number;
   pitchCents: number;
   emotion?: 'neutral' | 'excited' | 'optimistic' | 'authoritative';
+  accountMode?: 'auto' | 'account1' | 'account2';
 }
 

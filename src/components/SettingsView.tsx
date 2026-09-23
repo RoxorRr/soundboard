@@ -23,6 +23,13 @@ import {
   Minimize,
   Cpu,
   Key,
+  Copy,
+  Layers,
+  ShieldCheck,
+  CheckCircle2,
+  ExternalLink,
+  ArrowRightLeft,
+  Play,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
 import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
@@ -105,6 +112,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return soundEngine.getCartesiaSettings();
   });
   const [cartesiaPreset, setCartesiaPreset] = useState<string>('arena');
+  const [customVoiceIdAccount1Input, setCustomVoiceIdAccount1Input] = useState<string>(() => {
+    const s = soundEngine.getCartesiaSettings();
+    return s.voiceIdAccount1 || (s.voiceId !== '694f9389-aac1-45b6-b726-9d9369183238' ? s.voiceId : '') || '';
+  });
+  const [customVoiceIdAccount2Input, setCustomVoiceIdAccount2Input] = useState<string>(() => {
+    const s = soundEngine.getCartesiaSettings();
+    return s.voiceIdAccount2 || '';
+  });
+  const [accountVoiceTarget, setAccountVoiceTarget] = useState<'both' | 'account1' | 'account2'>('both');
+  const [isTestingAccount1, setIsTestingAccount1] = useState<boolean>(false);
+  const [isTestingAccount2, setIsTestingAccount2] = useState<boolean>(false);
   const [customCartesiaVoiceIdInput, setCustomCartesiaVoiceIdInput] = useState<string>(
     cartesiaSettings.voiceId || '694f9389-aac1-45b6-b726-9d9369183238'
   );
@@ -114,9 +132,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     )
   );
 
+  // Sync server configured env voice IDs when loaded if state is empty
+  useEffect(() => {
+    if (voiceStatus?.cartesiaVoiceId && !customVoiceIdAccount1Input) {
+      setCustomVoiceIdAccount1Input(voiceStatus.cartesiaVoiceId);
+    }
+    if (voiceStatus?.cartesiaVoiceId2 && !customVoiceIdAccount2Input) {
+      setCustomVoiceIdAccount2Input(voiceStatus.cartesiaVoiceId2);
+    }
+  }, [voiceStatus?.cartesiaVoiceId, voiceStatus?.cartesiaVoiceId2]);
+
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
   const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
+  const [copiedEnvVar, setCopiedEnvVar] = useState<string | null>(null);
+  const [showAccount2Guide, setShowAccount2Guide] = useState<boolean>(false);
+
+  const handleCopyVar = (varName: string) => {
+    try {
+      navigator.clipboard.writeText(varName);
+      setCopiedEnvVar(varName);
+      setTimeout(() => setCopiedEnvVar(null), 2200);
+      showSavedNotification(`Copied "${varName}" to clipboard`);
+    } catch {
+      showSavedNotification(`Key name: ${varName}`);
+    }
+  };
 
   const PRESET_VOICES = [
     { id: '6j98Cb2txyqvHRXeRQYZ', name: 'Pelham Custom NHL', desc: 'Arena Play-by-Play' },
@@ -251,6 +292,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       const freshCartesia = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
       setCartesiaSettings(freshCartesia);
       soundEngine.setCartesiaSettings(freshCartesia);
+      setCustomVoiceIdAccount1Input(freshCartesia.voiceId);
+      setCustomVoiceIdAccount2Input('');
       setCustomCartesiaVoiceIdInput(freshCartesia.voiceId);
       setIsCustomCartesiaVoiceSelected(false);
       setCartesiaPreset('arena');
@@ -282,19 +325,105 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleApplyAccount1Voice = (customId?: string) => {
+    const val = (customId !== undefined ? customId : customVoiceIdAccount1Input).trim();
+    setCustomVoiceIdAccount1Input(val);
+    const updated = {
+      ...cartesiaSettings,
+      voiceIdAccount1: val,
+      voiceId: val || cartesiaSettings.voiceId,
+    };
+    setCartesiaSettings(updated);
+    soundEngine.setCartesiaSettings(updated);
+    showSavedNotification(val ? `Saved Account 1 Voice UUID (${val.slice(0, 8)}...)` : 'Cleared Account 1 Voice UUID');
+  };
+
+  const handleApplyAccount2Voice = (customId?: string) => {
+    const val = (customId !== undefined ? customId : customVoiceIdAccount2Input).trim();
+    setCustomVoiceIdAccount2Input(val);
+    const updated = {
+      ...cartesiaSettings,
+      voiceIdAccount2: val,
+    };
+    setCartesiaSettings(updated);
+    soundEngine.setCartesiaSettings(updated);
+    showSavedNotification(val ? `Saved Account 2 Voice UUID (${val.slice(0, 8)}...)` : 'Cleared Account 2 Voice UUID');
+  };
+
+  const handleCopyAccount1ToAccount2 = () => {
+    const val = customVoiceIdAccount1Input.trim() || cartesiaSettings.voiceIdAccount1 || cartesiaSettings.voiceId || '';
+    if (val) {
+      setCustomVoiceIdAccount2Input(val);
+      handleApplyAccount2Voice(val);
+      showSavedNotification('Copied Account 1 Voice UUID to Account 2');
+    } else {
+      showSavedNotification('Account 1 Voice UUID is empty');
+    }
+  };
+
   const handleSelectCartesiaVoiceId = (id: string) => {
     if (id === 'custom') {
       setIsCustomCartesiaVoiceSelected(true);
       return;
     }
     setIsCustomCartesiaVoiceSelected(false);
+    if (accountVoiceTarget === 'account1') {
+      handleApplyAccount1Voice(id);
+    } else if (accountVoiceTarget === 'account2') {
+      handleApplyAccount2Voice(id);
+    } else {
+      handleApplyAccount1Voice(id);
+      handleApplyAccount2Voice(id);
+    }
     handleUpdateCartesiaSetting('voiceId', id);
   };
 
   const handleApplyCustomCartesiaVoiceId = () => {
     if (customCartesiaVoiceIdInput.trim()) {
-      handleUpdateCartesiaSetting('voiceId', customCartesiaVoiceIdInput.trim());
+      handleSelectCartesiaVoiceId(customCartesiaVoiceIdInput.trim());
       showSavedNotification('Custom Cartesia Voice ID applied');
+    }
+  };
+
+  const handleTestCartesiaAccount = async (account: 'account1' | 'account2') => {
+    soundEngine.unlock();
+    if (account === 'account1') {
+      setIsTestingAccount1(true);
+    } else {
+      setIsTestingAccount2(true);
+    }
+
+    let testText = generateWelcomePrompt(visitorTeamName);
+    if (testSampleType === 'pelhamGoal') {
+      testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
+    } else if (testSampleType === 'visitorGoal') {
+      testText = `${visitorTeamName} goal! Scored by number 88, Patrick Kane!`;
+    } else if (testSampleType === 'assist') {
+      testText = 'Assisted by number 29, Leon Draisaitl!';
+    }
+
+    try {
+      const voiceToUse = account === 'account1'
+        ? (customVoiceIdAccount1Input.trim() || cartesiaSettings.voiceIdAccount1 || cartesiaSettings.voiceId)
+        : (customVoiceIdAccount2Input.trim() || cartesiaSettings.voiceIdAccount2 || cartesiaSettings.voiceId);
+
+      const res = await soundEngine.announce(testText, voiceToUse, {
+        accountMode: account,
+        voiceIdAccount1: customVoiceIdAccount1Input.trim(),
+        voiceIdAccount2: customVoiceIdAccount2Input.trim(),
+      });
+
+      if (res.source === 'cartesia') {
+        const accLabel = res.cartesiaAccount === 'account2' ? 'Account 2' : 'Account 1';
+        showSavedNotification(`Tested ${accLabel} (Voice: ${res.voiceId ? res.voiceId.slice(0, 8) + '...' : 'default'})`);
+      } else {
+        showSavedNotification(`Test call played via ${res.source || 'vocal engine'}`);
+      }
+    } catch (err: any) {
+      showSavedNotification(err?.message || 'Error testing Cartesia account voice');
+    } finally {
+      setIsTestingAccount1(false);
+      setIsTestingAccount2(false);
     }
   };
 
@@ -313,7 +442,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     try {
       if (selectedProvider === 'cartesia') {
-        await soundEngine.announce(testText, cartesiaSettings.voiceId);
+        const res = await soundEngine.announce(testText, cartesiaSettings.voiceId);
+        if (res.source === 'cartesia') {
+          const accStr = res.cartesiaAccount === 'account2' ? 'Account 2' : 'Account 1';
+          showSavedNotification(`Test voice generated via Cartesia Sonic (${accStr})`);
+        }
       } else {
         await soundEngine.announce(testText, voiceSettings.voiceId, voiceSettings);
       }
@@ -734,42 +867,447 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* CONDITIONAL PANEL: CARTESIA SONIC SETTINGS */}
             {selectedProvider === 'cartesia' ? (
               <div className="space-y-4">
-                {/* Vercel Setup Notice when not configured */}
-                {!voiceStatus?.cartesiaConfigured && (
-                  <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-bold text-cyan-300">
-                        <Key className="w-4 h-4 text-cyan-400" />
-                        <span>Vercel Configuration: CARTESIA_API_KEY Required</span>
+                {/* CARTESIA DUAL-ACCOUNT & FAILOVER MANAGER */}
+                <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/30 shadow-lg space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-cyan-950/80 border border-cyan-700/50 text-cyan-400">
+                        <Layers className="w-4 h-4" />
                       </div>
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-900/60 text-cyan-300 border border-cyan-700/50">
-                        Vercel Env Var
-                      </span>
-                    </div>
-                    <p className="text-slate-300 text-[11px] leading-relaxed">
-                      To activate Cartesia Sonic ultra-realistic voices on your Vercel deployment:
-                    </p>
-                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px]">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-slate-400">1. Variable Name:</span>
-                        <code className="text-cyan-300 font-bold bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60 selection:bg-cyan-600">
-                          CARTESIA_API_KEY
-                        </code>
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-slate-400">2. Location:</span>
-                        <span className="text-slate-300 font-sans">Vercel Dashboard &rarr; Project Settings &rarr; Environment Variables</span>
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-slate-400">3. Next Step:</span>
-                        <span className="text-amber-300 font-sans">Save &amp; trigger a <strong>Redeploy</strong> to apply</span>
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-2">
+                          <span>Cartesia Multi-Account Manager</span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60 lowercase">
+                            dual-account ready
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          Configure primary and secondary Cartesia accounts with seamless automatic failover
+                        </p>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-400">
-                      Until configured, game and test announcements seamlessly use your browser's built-in vocal engine.
-                    </p>
+
+                    {/* Overall Account Status Pill */}
+                    <div className="self-start sm:self-center">
+                      {(voiceStatus?.cartesiaAccountsCount || 0) >= 2 ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          2 Accounts Active (Dual Pool)
+                        </span>
+                      ) : voiceStatus?.cartesiaAccount1Configured ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                          Account 1 Active • Account 2 Ready
+                        </span>
+                      ) : voiceStatus?.cartesiaAccount2Configured ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                          Account 2 Active • Account 1 Ready
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40">
+                          <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          Browser Fallback Active
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
+
+                  {/* Dual Account Cards (Account 1 and Account 2) with Custom Voice UUIDs */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                    {/* Account 1 Card */}
+                    <div
+                      className={`p-3.5 rounded-lg border transition-all space-y-2.5 ${
+                        cartesiaSettings.accountMode === 'account1' || (!cartesiaSettings.accountMode && voiceStatus?.cartesiaAccount1Configured)
+                          ? 'bg-slate-950/90 border-cyan-500/60 ring-1 ring-cyan-500/30'
+                          : 'bg-slate-950/60 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-200">1️⃣ Account 1 (Primary)</span>
+                        </div>
+                        {voiceStatus?.cartesiaAccount1Configured ? (
+                          <span className="text-[10px] font-medium text-emerald-400 flex items-center gap-1 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800/40">
+                            <CheckCircle2 className="w-3 h-3" /> Configured
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-amber-400 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-800/40">
+                            Awaiting Key
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-slate-400">
+                        Primary announcer account for stadium play-by-play.
+                      </div>
+
+                      {/* API Key Row */}
+                      <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1 text-[11px] font-mono">
+                        <span className="text-slate-400 truncate">CARTESIA_API_KEY</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyVar('CARTESIA_API_KEY')}
+                          className="ml-2 text-cyan-400 hover:text-cyan-300 text-[10px] flex items-center gap-1 shrink-0 font-sans"
+                          title="Copy CARTESIA_API_KEY"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedEnvVar === 'CARTESIA_API_KEY' ? 'Copied!' : 'Copy Key'}</span>
+                        </button>
+                      </div>
+
+                      {/* Account 1 Custom Voice UUID */}
+                      <div className="pt-2 border-t border-slate-800/70 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                            <Mic className="w-3 h-3 text-cyan-400" />
+                            <span>Account 1 Voice UUID</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyVar('CARTESIA_VOICE_ID')}
+                            className="text-[10px] text-slate-400 hover:text-slate-300 flex items-center gap-1 font-mono"
+                            title="Copy CARTESIA_VOICE_ID env name"
+                          >
+                            <span className="text-[9px] text-slate-500">Env:</span>
+                            <span className="text-cyan-400 underline">CARTESIA_VOICE_ID</span>
+                          </button>
+                        </div>
+
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={customVoiceIdAccount1Input}
+                            onChange={(e) => setCustomVoiceIdAccount1Input(e.target.value)}
+                            placeholder="e.g. a27f2ab7-6793-4893-9f40-e50d5e5605ba"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount1Voice()}
+                            className="px-2.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold shrink-0 transition-colors shadow"
+                            title="Save Account 1 Custom Voice UUID"
+                          >
+                            Save
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-0.5">
+                          <button
+                            type="button"
+                            disabled={isTestingAccount1}
+                            onClick={() => handleTestCartesiaAccount('account1')}
+                            className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyan-950/70 border border-cyan-800/60 hover:bg-cyan-900/60 disabled:opacity-50 transition-colors"
+                          >
+                            {isTestingAccount1 ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
+                                <span>Testing Account 1...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3 text-cyan-400 fill-cyan-400" />
+                                <span>Test Voice (Acc 1)</span>
+                              </>
+                            )}
+                          </button>
+
+                          {customVoiceIdAccount1Input ? (
+                            <span className="text-[10px] text-emerald-400 font-mono truncate max-w-[130px]" title={customVoiceIdAccount1Input}>
+                              Active: {customVoiceIdAccount1Input.slice(0, 8)}...
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-sans">
+                              Using arena default
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Account 2 Card */}
+                    <div
+                      className={`p-3.5 rounded-lg border transition-all space-y-2.5 ${
+                        cartesiaSettings.accountMode === 'account2'
+                          ? 'bg-slate-950/90 border-cyan-500/60 ring-1 ring-cyan-500/30'
+                          : 'bg-slate-950/60 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-200">2️⃣ Account 2 (Secondary / Failover)</span>
+                        </div>
+                        {voiceStatus?.cartesiaAccount2Configured ? (
+                          <span className="text-[10px] font-medium text-emerald-400 flex items-center gap-1 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800/40">
+                            <CheckCircle2 className="w-3 h-3" /> Configured
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                            Ready to Add
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] text-slate-400">
+                        Backup account for credit failover &amp; extra quota.
+                      </div>
+
+                      {/* API Key Row */}
+                      <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1 text-[11px] font-mono">
+                        <span className="text-slate-400 truncate">CARTESIA_API_KEY_2</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyVar('CARTESIA_API_KEY_2')}
+                          className="ml-2 text-cyan-400 hover:text-cyan-300 text-[10px] flex items-center gap-1 shrink-0 font-sans"
+                          title="Copy CARTESIA_API_KEY_2"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedEnvVar === 'CARTESIA_API_KEY_2' ? 'Copied!' : 'Copy Key'}</span>
+                        </button>
+                      </div>
+
+                      {/* Account 2 Custom Voice UUID */}
+                      <div className="pt-2 border-t border-slate-800/70 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                            <Mic className="w-3 h-3 text-cyan-400" />
+                            <span>Account 2 Voice UUID</span>
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={handleCopyAccount1ToAccount2}
+                              className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-800/50 font-sans"
+                              title="Copy Account 1 UUID into Account 2"
+                            >
+                              <ArrowRightLeft className="w-2.5 h-2.5" />
+                              <span>Copy Acc 1</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyVar('CARTESIA_VOICE_ID_2')}
+                              className="text-[10px] text-slate-400 hover:text-slate-300 flex items-center gap-1 font-mono"
+                              title="Copy CARTESIA_VOICE_ID_2 env name"
+                            >
+                              <span className="text-cyan-400 underline">CARTESIA_VOICE_ID_2</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={customVoiceIdAccount2Input}
+                            onChange={(e) => setCustomVoiceIdAccount2Input(e.target.value)}
+                            placeholder="e.g. 694f9389-aac1-45b6-b726-9d9369183238"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount2Voice()}
+                            className="px-2.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold shrink-0 transition-colors shadow"
+                            title="Save Account 2 Custom Voice UUID"
+                          >
+                            Save
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-0.5">
+                          <button
+                            type="button"
+                            disabled={isTestingAccount2}
+                            onClick={() => handleTestCartesiaAccount('account2')}
+                            className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 px-2.5 py-1 rounded bg-cyan-950/70 border border-cyan-800/60 hover:bg-cyan-900/60 disabled:opacity-50 transition-colors"
+                          >
+                            {isTestingAccount2 ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
+                                <span>Testing Account 2...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3 text-cyan-400 fill-cyan-400" />
+                                <span>Test Voice (Acc 2)</span>
+                              </>
+                            )}
+                          </button>
+
+                          {customVoiceIdAccount2Input ? (
+                            <span className="text-[10px] text-emerald-400 font-mono truncate max-w-[130px]" title={customVoiceIdAccount2Input}>
+                              Active: {customVoiceIdAccount2Input.slice(0, 8)}...
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-sans">
+                              Falls back to Acc 1 or arena
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Routing Strategy Selector */}
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Account Routing &amp; Failover Strategy</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400">Controls which key generates voice</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Option 1: Auto Failover Pool */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCartesiaSetting('accountMode', 'auto')}
+                        className={`p-2.5 rounded-lg border text-left transition-all ${
+                          !cartesiaSettings.accountMode || cartesiaSettings.accountMode === 'auto'
+                            ? 'bg-cyan-950/60 border-cyan-500/80 text-cyan-200 ring-1 ring-cyan-500/40'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-white flex items-center gap-1">
+                            ⚡ Auto-Failover Pool
+                          </span>
+                          {(!cartesiaSettings.accountMode || cartesiaSettings.accountMode === 'auto') && (
+                            <span className="text-[9px] uppercase font-bold text-cyan-300 bg-cyan-900/60 px-1.5 py-0.2 rounded">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] leading-tight text-slate-400">
+                          Recommended. Uses Account 1; seamlessly switches to Account 2 if limits or quota are reached.
+                        </p>
+                      </button>
+
+                      {/* Option 2: Account 1 Only */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCartesiaSetting('accountMode', 'account1')}
+                        className={`p-2.5 rounded-lg border text-left transition-all ${
+                          cartesiaSettings.accountMode === 'account1'
+                            ? 'bg-cyan-950/60 border-cyan-500/80 text-cyan-200 ring-1 ring-cyan-500/40'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-white flex items-center gap-1">
+                            1️⃣ Account 1 Only
+                          </span>
+                          {cartesiaSettings.accountMode === 'account1' && (
+                            <span className="text-[9px] uppercase font-bold text-cyan-300 bg-cyan-900/60 px-1.5 py-0.2 rounded">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] leading-tight text-slate-400">
+                          Always routes requests through primary Cartesia key (<code>CARTESIA_API_KEY</code>).
+                        </p>
+                      </button>
+
+                      {/* Option 3: Account 2 Only */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCartesiaSetting('accountMode', 'account2')}
+                        className={`p-2.5 rounded-lg border text-left transition-all ${
+                          cartesiaSettings.accountMode === 'account2'
+                            ? 'bg-cyan-950/60 border-cyan-500/80 text-cyan-200 ring-1 ring-cyan-500/40'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-white flex items-center gap-1">
+                            2️⃣ Account 2 Only
+                          </span>
+                          {cartesiaSettings.accountMode === 'account2' && (
+                            <span className="text-[9px] uppercase font-bold text-cyan-300 bg-cyan-900/60 px-1.5 py-0.2 rounded">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] leading-tight text-slate-400">
+                          Routes requests directly through second account (<code>CARTESIA_API_KEY_2</code>). Perfect for testing!
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Toggleable Setup Guide for Account 2 */}
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={() => setShowAccount2Guide((prev) => !prev)}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                      <span>
+                        {showAccount2Guide
+                          ? 'Hide second account setup guide'
+                          : 'How to connect your second Cartesia account in Vercel &rarr;'}
+                      </span>
+                    </button>
+
+                    {showAccount2Guide && (
+                      <div className="mt-2.5 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2 text-[11px]">
+                        <p className="text-slate-300 leading-relaxed">
+                          To connect your second Cartesia account for redundancy or higher quotas:
+                        </p>
+                        <div className="space-y-1.5 font-mono text-[11px]">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-1.5 bg-slate-900 rounded border border-slate-800">
+                            <span className="text-slate-400 font-sans">1. Account 2 Key:</span>
+                            <div className="flex items-center gap-1.5">
+                              <code className="text-cyan-300 font-bold bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                                CARTESIA_API_KEY_2
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyVar('CARTESIA_API_KEY_2')}
+                                className="text-cyan-400 hover:text-cyan-300 text-[10px] font-sans px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-1.5 bg-slate-900 rounded border border-slate-800">
+                            <span className="text-slate-400 font-sans">2. Optional Voice ID:</span>
+                            <div className="flex items-center gap-1.5">
+                              <code className="text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                                CARTESIA_VOICE_ID_2
+                              </code>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyVar('CARTESIA_VOICE_ID_2')}
+                                className="text-cyan-400 hover:text-cyan-300 text-[10px] font-sans px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-1.5 bg-slate-900 rounded border border-slate-800 font-sans">
+                            <span className="text-slate-400">3. Where to paste:</span>
+                            <span className="text-slate-300 text-right">
+                              Vercel Dashboard &rarr; Settings &rarr; Environment Variables
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-1.5 bg-slate-900 rounded border border-slate-800 font-sans">
+                            <span className="text-slate-400">4. Activation:</span>
+                            <span className="text-amber-300 text-right font-bold">
+                              Save &amp; trigger a quick Redeploy
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 pt-1">
+                          Also accepts alias variable names <code>CARTESIA_SECOND_API_KEY</code> and <code>CARTESIA_KEY_2</code>.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 {/* Cartesia Presets */}
                 <div className="space-y-2">
@@ -845,71 +1383,228 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 {/* Cartesia Voice Selection */}
-                <div className="space-y-2 pt-2 border-t border-slate-800/60">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                    <Mic className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Cartesia Voice Persona / Voice ID</span>
-                  </label>
+                <div className="space-y-3 pt-2 border-t border-slate-800/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Cartesia Arena Presets & Voice Library</span>
+                    </label>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {/* Account Target Selector for Presets */}
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] self-start sm:self-auto">
+                      <span className="text-[10px] text-slate-400 px-1.5 font-medium">Apply presets to:</span>
+                      <button
+                        type="button"
+                        onClick={() => setAccountVoiceTarget('both')}
+                        className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                          accountVoiceTarget === 'both'
+                            ? 'bg-cyan-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        ⚡ Both Accounts
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAccountVoiceTarget('account1')}
+                        className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                          accountVoiceTarget === 'account1'
+                            ? 'bg-cyan-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        1️⃣ Account 1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAccountVoiceTarget('account2')}
+                        className={`px-2 py-0.5 rounded font-bold transition-colors ${
+                          accountVoiceTarget === 'account2'
+                            ? 'bg-cyan-600 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        2️⃣ Account 2
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                     {CARTESIA_PRESET_VOICES.map((v) => {
-                      const isSelected = !isCustomCartesiaVoiceSelected && cartesiaSettings.voiceId === v.id;
+                      const isAcc1 = (customVoiceIdAccount1Input || cartesiaSettings.voiceIdAccount1 || cartesiaSettings.voiceId) === v.id;
+                      const isAcc2 = (customVoiceIdAccount2Input || cartesiaSettings.voiceIdAccount2) === v.id;
+                      const isSelected = isAcc1 || isAcc2;
+
                       return (
                         <button
                           key={v.id}
                           type="button"
                           onClick={() => handleSelectCartesiaVoiceId(v.id)}
-                          className={`p-2.5 rounded-lg border text-left transition-all ${
+                          className={`p-2.5 rounded-lg border text-left transition-all relative ${
                             isSelected
                               ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200 ring-1 ring-cyan-500/40'
                               : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
                           }`}
                         >
-                          <div className="text-xs font-bold text-white truncate">{v.name}</div>
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <span className="text-xs font-bold text-white truncate">{v.name}</span>
+                            {isAcc1 && isAcc2 ? (
+                              <span className="text-[9px] bg-cyan-900/80 text-cyan-300 px-1 py-0.2 rounded font-mono shrink-0">
+                                Acc 1 &amp; 2
+                              </span>
+                            ) : isAcc1 ? (
+                              <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-800/60 px-1 py-0.2 rounded font-mono shrink-0">
+                                Acc 1
+                              </span>
+                            ) : isAcc2 ? (
+                              <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-800/60 px-1 py-0.2 rounded font-mono shrink-0">
+                                Acc 2
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="text-[10px] text-slate-400 truncate">{v.desc}</div>
                         </button>
                       );
                     })}
-
-                    {/* Custom Cartesia Voice Option */}
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomCartesiaVoiceSelected(true)}
-                      className={`p-2.5 rounded-lg border text-left transition-all ${
-                        isCustomCartesiaVoiceSelected
-                          ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-200 ring-1 ring-cyan-500/40'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold text-white">⚙️ Custom Voice UUID</div>
-                      <div className="text-[10px] text-slate-400 truncate">Enter any Cartesia Voice ID</div>
-                    </button>
                   </div>
 
-                  {/* Custom Cartesia Voice Input */}
-                  {isCustomCartesiaVoiceSelected && (
-                    <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                      <div className="text-xs font-semibold text-slate-300">
-                        Paste your Cartesia Voice ID (UUID from play.cartesia.ai):
+                  {/* Dual-Account Custom Voice UUID Editor Panel */}
+                  <div className="mt-3 p-3.5 rounded-xl bg-slate-950/90 border border-cyan-500/30 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                          <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Custom Voice UUIDs by Account</span>
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          (play.cartesia.ai custom models &amp; clones)
+                        </span>
                       </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={customCartesiaVoiceIdInput}
-                          onChange={(e) => setCustomCartesiaVoiceIdInput(e.target.value)}
-                          placeholder="e.g. 694f9389-aac1-45b6-b726-9d9369183238"
-                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleApplyCustomCartesiaVoiceId}
-                          className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
-                        >
-                          Apply Voice ID
-                        </button>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        Saved in Browser &amp; Synced with API
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Account 1 UUID Field */}
+                      <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <span>1️⃣ Account 1 Voice UUID</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {voiceStatus?.cartesiaVoiceId ? `Env: ${voiceStatus.cartesiaVoiceId.slice(0, 8)}...` : 'Primary'}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={customVoiceIdAccount1Input}
+                            onChange={(e) => setCustomVoiceIdAccount1Input(e.target.value)}
+                            placeholder="e.g. a27f2ab7-6793-4893-9f40-e50d5e5605ba"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount1Voice()}
+                            className="px-2.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors shadow shrink-0"
+                          >
+                            Save
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <button
+                            type="button"
+                            disabled={isTestingAccount1}
+                            onClick={() => handleTestCartesiaAccount('account1')}
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 disabled:opacity-50"
+                          >
+                            {isTestingAccount1 ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
+                            ) : (
+                              <Play className="w-3 h-3 fill-cyan-400 text-cyan-400" />
+                            )}
+                            <span>Test on Account 1</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount1Voice('694f9389-aac1-45b6-b726-9d9369183238')}
+                            className="text-slate-500 hover:text-slate-300 underline font-sans"
+                          >
+                            Reset to Barbershop
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Account 2 UUID Field */}
+                      <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <span>2️⃣ Account 2 Voice UUID</span>
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={handleCopyAccount1ToAccount2}
+                              className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/50"
+                              title="Copy Account 1 UUID into Account 2"
+                            >
+                              <ArrowRightLeft className="w-2.5 h-2.5" />
+                              <span>Copy Acc 1</span>
+                            </button>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {voiceStatus?.cartesiaVoiceId2 ? `Env: ${voiceStatus.cartesiaVoiceId2.slice(0, 8)}...` : 'Secondary'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={customVoiceIdAccount2Input}
+                            onChange={(e) => setCustomVoiceIdAccount2Input(e.target.value)}
+                            placeholder="e.g. 694f9389-aac1-45b6-b726-9d9369183238"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount2Voice()}
+                            className="px-2.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors shadow shrink-0"
+                          >
+                            Save
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <button
+                            type="button"
+                            disabled={isTestingAccount2}
+                            onClick={() => handleTestCartesiaAccount('account2')}
+                            className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 disabled:opacity-50"
+                          >
+                            {isTestingAccount2 ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-cyan-300" />
+                            ) : (
+                              <Play className="w-3 h-3 fill-cyan-400 text-cyan-400" />
+                            )}
+                            <span>Test on Account 2</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyAccount2Voice('')}
+                            className="text-slate-500 hover:text-slate-300 underline font-sans"
+                          >
+                            Clear / Use Failover
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  )}
+
+                    <div className="p-2 rounded bg-cyan-950/30 border border-cyan-900/40 text-[11px] text-slate-400 flex items-start gap-2">
+                      <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                      <span>
+                        <strong className="text-cyan-300 font-medium">Why dual voice UUIDs?</strong> In Cartesia (play.cartesia.ai), cloned voices have unique UUIDs tied to the account where they were created. Providing custom UUIDs for both accounts guarantees your arena announcements sound consistent whether Account 1 or Account 2 is serving the request.
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Cartesia Emotion & Delivery Style */}
@@ -1508,6 +2203,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : '🏒 ASSIST CALL:'}
                     </span>
                     &ldquo;{currentAnnouncement.text}&rdquo;
+                    {currentAnnouncement.source && (
+                      <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-400">
+                        <span className="inline-flex items-center gap-1 font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
+                          {currentAnnouncement.source === 'cartesia' ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                              <span className="text-cyan-300">
+                                Cartesia Sonic {currentAnnouncement.cartesiaAccount === 'account2' ? '(Account 2)' : currentAnnouncement.cartesiaAccount === 'account1' ? '(Account 1)' : ''}
+                              </span>
+                            </>
+                          ) : currentAnnouncement.source === 'elevenlabs' ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span className="text-amber-300">ElevenLabs Turbo</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                              <span className="text-slate-300">Browser Vocal Engine</span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <span>No announcement recorded yet. Tap + on any player or test the announcer above.</span>

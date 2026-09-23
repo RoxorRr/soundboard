@@ -4,6 +4,7 @@ import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'webspeech';
   voiceId?: string;
+  cartesiaAccount?: 'account1' | 'account2';
   error?: string;
 }
 
@@ -19,10 +20,13 @@ export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
 
 export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
   voiceId: '694f9389-aac1-45b6-b726-9d9369183238', // Barbershop Man / Announcer
+  voiceIdAccount1: '',
+  voiceIdAccount2: '',
   modelId: 'sonic-3.5',
   speed: 1.05,
   pitchCents: 0,
-  emotion: 'excited'
+  emotion: 'excited',
+  accountMode: 'auto',
 };
 
 class SoundEngine {
@@ -455,7 +459,7 @@ class SoundEngine {
   public async announce(
     text: string,
     overrideVoiceId?: string,
-    overrideSettings?: Partial<ElevenLabsVoiceSettings>
+    overrideSettings?: Partial<ElevenLabsVoiceSettings & CartesiaVoiceSettings>
   ): Promise<AnnounceResult> {
     if (this.isMuted) {
       return { source: 'webspeech' };
@@ -468,7 +472,10 @@ class SoundEngine {
 
     // CARTESIA TTS ROUTE
     if (provider === 'cartesia') {
-      const cSettings = { ...this.cartesiaVoiceSettings };
+      const cSettings: CartesiaVoiceSettings = {
+        ...this.cartesiaVoiceSettings,
+        ...((overrideSettings as Partial<CartesiaVoiceSettings>) || {})
+      };
       const effectiveCartesiaVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
         ? overrideVoiceId
         : cSettings.voiceId;
@@ -486,10 +493,13 @@ class SoundEngine {
             voiceId: effectiveCartesiaVoice,
             cartesiaSettings: {
               voiceId: effectiveCartesiaVoice,
+              voiceIdAccount1: cSettings.voiceIdAccount1 || '',
+              voiceIdAccount2: cSettings.voiceIdAccount2 || '',
               modelId: cSettings.modelId,
               speed: cSettings.speed,
               pitchCents: cSettings.pitchCents,
-              emotion: cSettings.emotion
+              emotion: cSettings.emotion,
+              accountMode: cSettings.accountMode || 'auto',
             },
             format: 'base64'
           })
@@ -503,7 +513,7 @@ class SoundEngine {
           if (data.success && data.audioBase64) {
             const played = await this.playBase64Audio(data.audioBase64, cSettings.pitchCents, data.mimeType || 'audio/mpeg');
             if (played) {
-              return { source: 'cartesia', voiceId: data.voiceId };
+              return { source: 'cartesia', voiceId: data.voiceId, cartesiaAccount: data.cartesiaAccount };
             }
           }
 
@@ -516,11 +526,12 @@ class SoundEngine {
         if (contentType.includes('audio/')) {
           const arrayBuffer = await response.arrayBuffer();
           const headerVoice = response.headers.get('x-cartesia-voice') || effectiveCartesiaVoice;
+          const headerAccount = response.headers.get('x-cartesia-account') as 'account1' | 'account2' | undefined;
           const mime = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
 
           const played = await this.playArrayBuffer(arrayBuffer, cSettings.pitchCents, mime);
           if (played) {
-            return { source: 'cartesia', voiceId: headerVoice };
+            return { source: 'cartesia', voiceId: headerVoice, cartesiaAccount: headerAccount };
           }
         }
 
