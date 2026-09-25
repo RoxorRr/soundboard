@@ -27,7 +27,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   homePlayers,
   visitorPlayers,
   onSwitchTeamTab,
-  visitorTeamName = 'Visitor Team',
+  visitorTeamName = 'Visiting Team',
   onScoreGoalWithAssist,
 }) => {
   // CRITICAL: Do NOT pre-select team. User must choose manually to prevent scoring mistakes during the game.
@@ -67,7 +67,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
   const teamName =
     selectedTeam === 'visitor'
-      ? visitorTeamName.trim() || 'Visitor Team'
+      ? visitorTeamName.trim() || 'Visiting Team'
       : selectedTeam === 'home'
       ? 'Pelham Pelicans'
       : 'Unselected Team';

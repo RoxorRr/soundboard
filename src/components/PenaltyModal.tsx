@@ -60,7 +60,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   homePlayers,
   visitorPlayers,
   onSwitchTeamTab,
-  visitorTeamName = 'Visitor Team',
+  visitorTeamName = 'Visiting Team',
   onAnnouncePenalty,
 }) => {
   // CRITICAL: Do NOT pre-select team. User must choose explicitly to avoid game-time mistakes.
@@ -150,7 +150,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
   const teamName =
     selectedTeam === 'visitor'
-      ? visitorTeamName.trim() || 'Visitor Team'
+      ? visitorTeamName.trim() || 'Visiting Team'
       : selectedTeam === 'home'
       ? 'Pelham Pelicans'
       : 'Unselected Team';

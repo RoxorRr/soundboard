@@ -12,7 +12,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
-  visitorTeamName = 'Visitor Team',
+  visitorTeamName = 'Visiting Team',
 }) => {
   if (!isOpen) return null;
 

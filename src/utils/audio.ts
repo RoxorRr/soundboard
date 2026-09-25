@@ -755,9 +755,12 @@ export function generatePenaltyPrompt(
   return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.${clockPart}`;
 }
 
-export function generateWelcomePrompt(opponentTeam: string = 'Visitor Team'): string {
-  const safeOpponent = opponentTeam?.trim() || 'Visitor Team';
-  return `Welcome, everyone, and thank you for joining us for today’s hockey game. Pelham Pelicans are excited to host ${safeOpponent} and look forward to a competitive, respectful, and fun matchup. Enjoy the game and best of luck to both teams.`;
+export function generateWelcomePrompt(opponentTeam: string = 'visiting team'): string {
+  const cleanTeam = opponentTeam?.trim() || 'visiting team';
+  // If cleanTeam is generic ('visiting team', 'visitor team', 'opponent team', etc.), ensure natural phrasing "the visiting team"
+  const isGenericVisitor = /^(the\s+)?(visiting\s+team|visitor\s+team|opponent\s+team)$/i.test(cleanTeam);
+  const teamPhrase = isGenericVisitor ? 'the visiting team' : cleanTeam;
+  return `Welcome, everyone, and thank you for joining us for today’s hockey game. The Pelham Pelicans are excited to host ${teamPhrase} and look forward to a competitive, respectful, and fun matchup. Enjoy the game, and best of luck to both teams. At this time, I’d like to ask both teams to please line up for our national anthem.`;
 }
 
 
