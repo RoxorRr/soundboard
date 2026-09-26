@@ -37,6 +37,7 @@ export default async function handler(req: any, res: any) {
       format: reqFormat,
       voiceSettings: customSettings,
       cartesiaSettings,
+      speechifySettings,
     } = body;
 
     if (!text || typeof text !== "string") {
@@ -336,7 +337,172 @@ export default async function handler(req: any, res: any) {
     }
 
     // ==========================================
-    // PROVIDER 2: ELEVENLABS TTS (DEFAULT)
+    // PROVIDER 2: SPEECHIFY / SPEECHITY TTS
+    // ==========================================
+    if (provider === "speechify" || provider === "speechity") {
+      const speechifyApiKey = (
+        process.env.SPEECHIFY_API_KEY ||
+        process.env.SPEECHITY_API_KEY ||
+        process.env.SPEECHIFY_KEY ||
+        speechifySettings?.apiKey
+      )?.trim();
+
+      const envVoice = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "").trim();
+      const userVoice = (speechifySettings?.voiceId || reqVoiceId || "").trim();
+      const defaultVoice = "geffen_32";
+
+      if (!speechifyApiKey) {
+        res.status(200).json({
+          fallback: true,
+          provider: "speechify",
+          error: "Speechify (Speechity) API Key is not configured in environment variables. Add SPEECHIFY_API_KEY in Project Settings > Environment Variables.",
+          voiceId: userVoice || envVoice || defaultVoice,
+        });
+        return;
+      }
+
+      const requestedModel = (speechifySettings?.model || reqModel || process.env.SPEECHIFY_MODEL || "simba-3.2").trim();
+      const modelsToTry = [requestedModel, "simba-3.2", "simba-3.0", "simba-english"].filter((m, i, arr) => arr.indexOf(m) === i);
+
+      const voiceCandidates: string[] = [];
+      if (userVoice && userVoice.toLowerCase() !== "nhl") voiceCandidates.push(userVoice);
+      if (envVoice && envVoice.toLowerCase() !== "nhl") voiceCandidates.push(envVoice);
+      voiceCandidates.push("geffen_32"); // Simba 3.2 High-energy announcer
+      voiceCandidates.push("dominic_32"); // Simba 3.2 Deep resonant play-by-play
+      voiceCandidates.push("beatrice_32"); // Simba 3.2 Professional clear announcer
+      voiceCandidates.push("kristy"); // Energetic presenter
+      voiceCandidates.push("cliff"); // Classic announcer
+
+      const uniqueVoices = Array.from(new Set(voiceCandidates.filter(Boolean)));
+
+      let successfulAudioBuffer: ArrayBuffer | null = null;
+      let winningVoiceId = uniqueVoices[0] || defaultVoice;
+      let winningMime = "audio/mpeg";
+      let lastStatus = 0;
+      let lastErrorDetails = "";
+
+      const endpoints = [
+        "https://api.speechify.ai/v1/audio/speech",
+        "https://api.sws.speechify.com/v1/audio/speech",
+      ];
+
+      for (const endpoint of endpoints) {
+        for (const voiceCandidate of uniqueVoices) {
+          for (const modelCandidate of modelsToTry) {
+            try {
+              const payload = {
+                input: text,
+                voice_id: voiceCandidate,
+                audio_format: "mp3",
+                model: modelCandidate,
+              };
+
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${speechifyApiKey}`,
+                  "Content-Type": "application/json",
+                  "Accept": "application/json, audio/mpeg",
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (response.ok) {
+                const respContentType = response.headers.get("content-type") || "";
+                if (respContentType.includes("application/json")) {
+                  const data: any = await response.json();
+                  const base64Str = data.audio_data || data.audioContent || data.audio_content || data.audio;
+                  if (base64Str) {
+                    const buf = Buffer.from(base64Str, "base64");
+                    successfulAudioBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+                    winningVoiceId = voiceCandidate;
+                    winningMime = "audio/mpeg";
+                    break;
+                  }
+                } else {
+                  successfulAudioBuffer = await response.arrayBuffer();
+                  winningVoiceId = voiceCandidate;
+                  winningMime = respContentType.includes("wav") ? "audio/wav" : "audio/mpeg";
+                  break;
+                }
+              }
+
+              lastStatus = response.status;
+              lastErrorDetails = await response.text();
+
+              if (response.status === 401 || response.status === 402 || response.status === 429) {
+                break;
+              }
+            } catch (err: any) {
+              lastErrorDetails = err?.message || String(err);
+            }
+          }
+          if (successfulAudioBuffer || lastStatus === 401 || lastStatus === 402 || lastStatus === 429) {
+            break;
+          }
+        }
+        if (successfulAudioBuffer || lastStatus === 401 || lastStatus === 402 || lastStatus === 429) {
+          break;
+        }
+      }
+
+      if (!successfulAudioBuffer) {
+        let userFriendlyError = "Speechify (Speechity) speech synthesis failed";
+        if (lastStatus === 401) {
+          userFriendlyError = "Speechify API key is unauthorized or invalid (401). Verify SPEECHIFY_API_KEY in Project Settings.";
+        } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit")) {
+          userFriendlyError = "Speechify character quota or credit limit reached. Falling back to local voice.";
+        } else if (lastStatus === 404) {
+          userFriendlyError = "Speechify voice or model was not found (404). Falling back to local voice.";
+        } else if (lastErrorDetails) {
+          try {
+            const parsed = JSON.parse(lastErrorDetails);
+            userFriendlyError = parsed.message || parsed.error || userFriendlyError;
+          } catch {
+            userFriendlyError = lastErrorDetails.slice(0, 160) || userFriendlyError;
+          }
+        }
+
+        res.status(200).json({
+          fallback: true,
+          provider: "speechify",
+          error: userFriendlyError,
+          details: lastErrorDetails,
+          voiceId: winningVoiceId,
+          status: lastStatus,
+        });
+        return;
+      }
+
+      const buffer = Buffer.from(successfulAudioBuffer);
+      const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
+
+      if (wantsBase64) {
+        res.status(200).json({
+          success: true,
+          provider: "speechify",
+          audioBase64: buffer.toString("base64"),
+          mimeType: winningMime,
+          voiceId: winningVoiceId,
+          size: buffer.length,
+        });
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": winningMime,
+        "Content-Length": buffer.length.toString(),
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Access-Control-Allow-Origin": "*",
+        "X-Speechify-Voice": winningVoiceId,
+        "X-TTS-Provider": "speechify",
+      });
+      res.end(buffer);
+      return;
+    }
+
+    // ==========================================
+    // PROVIDER 3: ELEVENLABS TTS (DEFAULT)
     // ==========================================
     const apiKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
     const envVoiceId = (process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID)?.trim();

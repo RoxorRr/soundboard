@@ -6,7 +6,7 @@ export interface Player {
   assists: number;
 }
 
-export type TTSProvider = 'elevenlabs' | 'cartesia';
+export type TTSProvider = 'elevenlabs' | 'cartesia' | 'speechify';
 
 export interface Announcement {
   id: string;
@@ -16,7 +16,7 @@ export interface Announcement {
   playerName: string;
   text: string;
   timestamp: number;
-  source: 'elevenlabs' | 'cartesia' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
   cartesiaAccount?: 'account1' | 'account2';
   team?: string;
   penaltyInfraction?: string;
@@ -31,13 +31,16 @@ export interface VoiceStatus {
   cartesiaAccount1Configured?: boolean;
   cartesiaAccount2Configured?: boolean;
   cartesiaAccountsCount?: number;
+  speechifyConfigured?: boolean;
   activeProvider?: TTSProvider;
   geminiConfigured?: boolean;
   voiceId: string;
   cartesiaVoiceId?: string;
   cartesiaVoiceId2?: string;
+  speechifyVoiceId?: string;
   model: string;
   cartesiaModel?: string;
+  speechifyModel?: string;
   team: string;
 }
 
@@ -74,5 +77,12 @@ export interface CartesiaVoiceSettings {
   pitchCents: number;
   emotion?: 'neutral' | 'excited' | 'optimistic' | 'authoritative';
   accountMode?: 'auto' | 'account1' | 'account2';
+}
+
+export interface SpeechifyVoiceSettings {
+  voiceId: string;
+  model: string;
+  speed: number;
+  pitchCents: number;
 }
 

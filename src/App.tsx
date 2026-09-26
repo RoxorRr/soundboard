@@ -496,6 +496,11 @@ export default function App() {
           message: `Cartesia Sonic ${accountStr ? `(${accountStr}) ` : ''}voice playing (${res.voiceId || 'announcer'})`,
           type: 'success'
         });
+      } else if (res.source === 'speechify') {
+        setVoiceFeedback({
+          message: `Speechify Simba 3.2 voice playing (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
       } else if (res.source === 'elevenlabs') {
         setVoiceFeedback({
           message: `ElevenLabs voice playing (${res.voiceId || 'announcer'})`,

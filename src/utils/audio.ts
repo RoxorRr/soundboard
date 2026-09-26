@@ -1,8 +1,8 @@
-// Professional Web Audio Arena sound engine, ElevenLabs & Cartesia TTS player
-import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
+// Professional Web Audio Arena sound engine, ElevenLabs, Cartesia & Speechify TTS player
+import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, SpeechifyVoiceSettings, TTSProvider } from '../types';
 
 export interface AnnounceResult {
-  source: 'elevenlabs' | 'cartesia' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
   voiceId?: string;
   cartesiaAccount?: 'account1' | 'account2';
   error?: string;
@@ -29,6 +29,13 @@ export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
   accountMode: 'auto',
 };
 
+export const DEFAULT_SPEECHIFY_VOICE_SETTINGS: SpeechifyVoiceSettings = {
+  voiceId: 'geffen_32', // Simba 3.2 High-energy sports announcer
+  model: 'simba-3.2',
+  speed: 1.05,
+  pitchCents: 0,
+};
+
 class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
@@ -42,13 +49,14 @@ class SoundEngine {
   private ttsProvider: TTSProvider = 'elevenlabs';
   private voiceSettings: ElevenLabsVoiceSettings = { ...DEFAULT_VOICE_SETTINGS };
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
+  private speechifyVoiceSettings: SpeechifyVoiceSettings = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS };
 
   constructor() {
     // Restore persistent voice settings from localStorage if available
     if (typeof window !== 'undefined') {
       try {
         const savedProvider = localStorage.getItem('pelham_tts_provider');
-        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia') {
+        if (savedProvider === 'elevenlabs' || savedProvider === 'cartesia' || savedProvider === 'speechify') {
           this.ttsProvider = savedProvider;
         }
 
@@ -60,6 +68,11 @@ class SoundEngine {
         const savedCartesia = localStorage.getItem('pelham_cartesia_voice_settings');
         if (savedCartesia) {
           this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
+        }
+
+        const savedSpeechify = localStorage.getItem('pelham_speechify_voice_settings');
+        if (savedSpeechify) {
+          this.speechifyVoiceSettings = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS, ...JSON.parse(savedSpeechify) };
         }
       } catch (_) {}
 
@@ -113,6 +126,20 @@ class SoundEngine {
       } catch (_) {}
     }
     return { ...this.cartesiaVoiceSettings };
+  }
+
+  public getSpeechifySettings(): SpeechifyVoiceSettings {
+    return { ...this.speechifyVoiceSettings };
+  }
+
+  public setSpeechifySettings(newSettings: Partial<SpeechifyVoiceSettings>): SpeechifyVoiceSettings {
+    this.speechifyVoiceSettings = { ...this.speechifyVoiceSettings, ...newSettings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_speechify_voice_settings', JSON.stringify(this.speechifyVoiceSettings));
+      } catch (_) {}
+    }
+    return { ...this.speechifyVoiceSettings };
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -284,7 +311,11 @@ class SoundEngine {
   // Play audio from base64 string using HTML5 Audio or Web Audio for pitch tuning
   private async playBase64Audio(
     base64: string,
-    pitchCents = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents,
+    pitchCents = this.ttsProvider === 'cartesia'
+      ? this.cartesiaVoiceSettings.pitchCents
+      : this.ttsProvider === 'speechify'
+      ? this.speechifyVoiceSettings.pitchCents
+      : this.voiceSettings.pitchCents,
     mimeType = 'audio/mpeg'
   ): Promise<boolean> {
     // If pitch shifting is requested, Web Audio API provides hardware-accelerated detune
@@ -357,7 +388,11 @@ class SoundEngine {
   // Play audio from binary ArrayBuffer
   private async playArrayBuffer(
     arrayBuffer: ArrayBuffer,
-    pitchCents = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents,
+    pitchCents = this.ttsProvider === 'cartesia'
+      ? this.cartesiaVoiceSettings.pitchCents
+      : this.ttsProvider === 'speechify'
+      ? this.speechifyVoiceSettings.pitchCents
+      : this.voiceSettings.pitchCents,
     mimeType = 'audio/mpeg'
   ): Promise<boolean> {
     if (typeof pitchCents === 'number' && pitchCents !== 0) {
@@ -544,6 +579,75 @@ class SoundEngine {
       }
     }
 
+    // SPEECHIFY / SPEECHITY TTS ROUTE
+    if (provider === 'speechify') {
+      const sSettings: SpeechifyVoiceSettings = {
+        ...this.speechifyVoiceSettings,
+        ...((overrideSettings as Partial<SpeechifyVoiceSettings>) || {})
+      };
+      const effectiveSpeechifyVoice = overrideVoiceId && overrideVoiceId !== 'nhl'
+        ? overrideVoiceId
+        : sSettings.voiceId;
+
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, audio/mpeg, audio/wav, */*'
+          },
+          body: JSON.stringify({
+            text,
+            provider: 'speechify',
+            voiceId: effectiveSpeechifyVoice,
+            speechifySettings: {
+              voiceId: effectiveSpeechifyVoice,
+              model: sSettings.model,
+              speed: sSettings.speed,
+              pitchCents: sSettings.pitchCents,
+            },
+            format: 'base64'
+          })
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+
+          if (data.success && data.audioBase64) {
+            const played = await this.playBase64Audio(data.audioBase64, sSettings.pitchCents, data.mimeType || 'audio/mpeg');
+            if (played) {
+              return { source: 'speechify', voiceId: data.voiceId };
+            }
+          }
+
+          const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Speechify synthesis failed');
+          console.warn('Speechify TTS server fallback active:', errorMsg, data);
+          this.speakWebSpeech(text);
+          return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
+        }
+
+        if (contentType.includes('audio/')) {
+          const arrayBuffer = await response.arrayBuffer();
+          const headerVoice = response.headers.get('x-speechify-voice') || effectiveSpeechifyVoice;
+          const mime = contentType.includes('wav') ? 'audio/wav' : 'audio/mpeg';
+
+          const played = await this.playArrayBuffer(arrayBuffer, sSettings.pitchCents, mime);
+          if (played) {
+            return { source: 'speechify', voiceId: headerVoice };
+          }
+        }
+
+        this.speakWebSpeech(text);
+        return { source: 'webspeech', error: 'Unexpected voice response format' };
+      } catch (err: any) {
+        console.warn('Speechify API request failed, falling back to Web Speech API:', err);
+        this.speakWebSpeech(text);
+        return { source: 'webspeech', error: err?.message || 'Network error during Speechify voice playback' };
+      }
+    }
+
     // ELEVENLABS TTS ROUTE (DEFAULT)
     const settings: ElevenLabsVoiceSettings = {
       ...this.voiceSettings,
@@ -630,8 +734,16 @@ class SoundEngine {
         window.speechSynthesis.resume();
       }
 
-      const activeSpeed = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.speed : this.voiceSettings.speed;
-      const activePitch = this.ttsProvider === 'cartesia' ? this.cartesiaVoiceSettings.pitchCents : this.voiceSettings.pitchCents;
+      const activeSpeed = this.ttsProvider === 'cartesia'
+        ? this.cartesiaVoiceSettings.speed
+        : this.ttsProvider === 'speechify'
+        ? this.speechifyVoiceSettings.speed
+        : this.voiceSettings.speed;
+      const activePitch = this.ttsProvider === 'cartesia'
+        ? this.cartesiaVoiceSettings.pitchCents
+        : this.ttsProvider === 'speechify'
+        ? this.speechifyVoiceSettings.pitchCents
+        : this.voiceSettings.pitchCents;
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));

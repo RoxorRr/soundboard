@@ -31,8 +31,8 @@ import {
   ArrowRightLeft,
   Play,
 } from 'lucide-react';
-import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, TTSProvider } from '../types';
-import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
+import { Announcement, VoiceStatus, Player, ElevenLabsVoiceSettings, CartesiaVoiceSettings, SpeechifyVoiceSettings, TTSProvider } from '../types';
+import { soundEngine, DEFAULT_VOICE_SETTINGS, DEFAULT_CARTESIA_VOICE_SETTINGS, DEFAULT_SPEECHIFY_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
 
 interface SettingsViewProps {
   homePlayers: Player[];
@@ -132,6 +132,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     )
   );
 
+  // Speechify / Speechity Voice Customization State
+  const [speechifySettings, setSpeechifySettings] = useState<SpeechifyVoiceSettings>(() => {
+    return soundEngine.getSpeechifySettings();
+  });
+  const [speechifyPreset, setSpeechifyPreset] = useState<string>('arena');
+  const [customSpeechifyVoiceIdInput, setCustomSpeechifyVoiceIdInput] = useState<string>(
+    speechifySettings.voiceId || 'geffen_32'
+  );
+  const [isCustomSpeechifyVoiceSelected, setIsCustomSpeechifyVoiceSelected] = useState<boolean>(
+    !['geffen_32', 'dominic_32', 'beatrice_32', 'kristy', 'cliff'].includes(
+      speechifySettings.voiceId || ''
+    )
+  );
+
   // Sync server configured env voice IDs when loaded if state is empty
   useEffect(() => {
     if (voiceStatus?.cartesiaVoiceId && !customVoiceIdAccount1Input) {
@@ -140,7 +154,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (voiceStatus?.cartesiaVoiceId2 && !customVoiceIdAccount2Input) {
       setCustomVoiceIdAccount2Input(voiceStatus.cartesiaVoiceId2);
     }
-  }, [voiceStatus?.cartesiaVoiceId, voiceStatus?.cartesiaVoiceId2]);
+    if (voiceStatus?.speechifyVoiceId && !customSpeechifyVoiceIdInput) {
+      setCustomSpeechifyVoiceIdInput(voiceStatus.speechifyVoiceId);
+    }
+  }, [voiceStatus?.cartesiaVoiceId, voiceStatus?.cartesiaVoiceId2, voiceStatus?.speechifyVoiceId]);
 
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
@@ -174,6 +191,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     { id: 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4', name: 'Skylar (Expressive)', desc: 'Energetic Female Announcer' },
   ];
 
+  const SPEECHIFY_PRESET_VOICES = [
+    { id: 'geffen_32', name: 'Geffen 3.2', desc: 'Simba 3.2 • High-Energy Arena Play-by-Play' },
+    { id: 'dominic_32', name: 'Dominic 3.2', desc: 'Simba 3.2 • Deep Stadium Resonant Announcer' },
+    { id: 'beatrice_32', name: 'Beatrice 3.2', desc: 'Simba 3.2 • Crystal-Clear Broadcast Host' },
+    { id: 'kristy', name: 'Kristy', desc: 'Dynamic Live Presenter' },
+    { id: 'cliff', name: 'Cliff', desc: 'Classic Hockey Arena Announcer' },
+  ];
+
   const showSavedNotification = (msg = 'Settings saved') => {
     setSaveBadgeText(msg);
     setTimeout(() => setSaveBadgeText(null), 2500);
@@ -182,7 +207,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSwitchProvider = (provider: TTSProvider) => {
     setSelectedProvider(provider);
     soundEngine.setTTSProvider(provider);
-    showSavedNotification(`Switched to ${provider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} TTS`);
+    const label =
+      provider === 'cartesia'
+        ? 'Cartesia Sonic'
+        : provider === 'speechify'
+        ? 'Speechify (Speechity)'
+        : 'ElevenLabs';
+    showSavedNotification(`Switched to ${label} TTS`);
   };
 
   const handleUpdateSetting = <K extends keyof ElevenLabsVoiceSettings>(
@@ -287,6 +318,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showSavedNotification(`Applied Cartesia "${presetName}" preset`);
   };
 
+  const handleUpdateSpeechifySetting = <K extends keyof SpeechifyVoiceSettings>(
+    key: K,
+    val: SpeechifyVoiceSettings[K]
+  ) => {
+    const updated = { ...speechifySettings, [key]: val };
+    setSpeechifySettings(updated);
+    soundEngine.setSpeechifySettings(updated);
+    setSpeechifyPreset('custom');
+    showSavedNotification();
+  };
+
+  const handleApplySpeechifyPreset = (presetName: string) => {
+    let updates: Partial<SpeechifyVoiceSettings> = {};
+    if (presetName === 'arena') {
+      updates = { voiceId: 'geffen_32', speed: 1.05, pitchCents: 30 };
+    } else if (presetName === 'deep') {
+      updates = { voiceId: 'dominic_32', speed: 0.95, pitchCents: -100 };
+    } else if (presetName === 'clarity') {
+      updates = { voiceId: 'beatrice_32', speed: 1.0, pitchCents: 0 };
+    } else if (presetName === 'power') {
+      updates = { voiceId: 'kristy', speed: 1.10, pitchCents: 40 };
+    }
+    const merged = { ...speechifySettings, ...updates };
+    setSpeechifySettings(merged);
+    soundEngine.setSpeechifySettings(merged);
+    setSpeechifyPreset(presetName);
+    if (updates.voiceId) {
+      setCustomSpeechifyVoiceIdInput(updates.voiceId);
+      setIsCustomSpeechifyVoiceSelected(false);
+    }
+    showSavedNotification(`Applied Speechify "${presetName}" profile`);
+  };
+
+  const handleSelectSpeechifyVoiceId = (id: string) => {
+    if (id === 'custom') {
+      setIsCustomSpeechifyVoiceSelected(true);
+      return;
+    }
+    setIsCustomSpeechifyVoiceSelected(false);
+    handleUpdateSpeechifySetting('voiceId', id);
+  };
+
+  const handleApplyCustomSpeechifyVoiceId = () => {
+    if (customSpeechifyVoiceIdInput.trim()) {
+      handleUpdateSpeechifySetting('voiceId', customSpeechifyVoiceIdInput.trim());
+      showSavedNotification('Speechify voice applied');
+    }
+  };
+
   const handleResetToDefaults = () => {
     if (selectedProvider === 'cartesia') {
       const freshCartesia = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
@@ -298,6 +378,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setIsCustomCartesiaVoiceSelected(false);
       setCartesiaPreset('arena');
       showSavedNotification('Reset Cartesia to optimal arena defaults');
+    } else if (selectedProvider === 'speechify') {
+      const freshSpeechify = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS };
+      setSpeechifySettings(freshSpeechify);
+      soundEngine.setSpeechifySettings(freshSpeechify);
+      setCustomSpeechifyVoiceIdInput(freshSpeechify.voiceId);
+      setIsCustomSpeechifyVoiceSelected(false);
+      setSpeechifyPreset('arena');
+      showSavedNotification('Reset Speechify to optimal arena defaults');
     } else {
       const fresh = { ...DEFAULT_VOICE_SETTINGS };
       setVoiceSettings(fresh);
@@ -446,6 +534,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (res.source === 'cartesia') {
           const accStr = res.cartesiaAccount === 'account2' ? 'Account 2' : 'Account 1';
           showSavedNotification(`Test voice generated via Cartesia Sonic (${accStr})`);
+        }
+      } else if (selectedProvider === 'speechify') {
+        const res = await soundEngine.announce(testText, speechifySettings.voiceId);
+        if (res.source === 'speechify') {
+          showSavedNotification(`Test voice generated via Speechify Simba 3.2 (${res.voiceId || speechifySettings.voiceId})`);
+        } else {
+          showSavedNotification(`Test announcement played via ${res.source || 'vocal engine'}`);
         }
       } else {
         await soundEngine.announce(testText, voiceSettings.voiceId, voiceSettings);
@@ -774,7 +869,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span className="text-[11px] text-slate-400">Switch anytime between providers</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* Provider 1: ElevenLabs */}
                 <button
                   type="button"
@@ -859,6 +954,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                     Ultra-low latency real-time voice with high-energy emotional delivery for goal calls and official rules.
+                  </p>
+                </button>
+
+                {/* Provider 3: Speechify / Speechity */}
+                <button
+                  type="button"
+                  id="select-provider-speechify"
+                  onClick={() => handleSwitchProvider('speechify')}
+                  className={`p-3 rounded-xl border text-left transition-all relative ${
+                    selectedProvider === 'speechify'
+                      ? 'bg-purple-500/15 border-purple-500/70 text-white shadow-lg shadow-purple-500/10 ring-1 ring-purple-500/40'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                          selectedProvider === 'speechify'
+                            ? 'border-purple-400 bg-purple-400'
+                            : 'border-slate-600 bg-slate-800'
+                        }`}
+                      >
+                        {selectedProvider === 'speechify' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950"></div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-white">Speechify TTS</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-400/20 text-purple-300 border border-purple-400/30">
+                          Simba 3.2
+                        </span>
+                      </div>
+                    </div>
+                    {voiceStatus?.speechifyConfigured ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                        Browser Fallback
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                    Expressive natural speech with Simba 3.2, custom voice cloning, and high-fidelity arena narration.
                   </p>
                 </button>
               </div>
@@ -1716,6 +1857,296 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
               </div>
+            ) : selectedProvider === 'speechify' ? (
+              /* CONDITIONAL PANEL: SPEECHIFY SETTINGS */
+              <div className="space-y-4">
+                {/* Vercel / Cloud Setup Notice when not configured */}
+                {!voiceStatus?.speechifyConfigured && (
+                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-purple-300">
+                        <Key className="w-4 h-4 text-purple-400" />
+                        <span>Speechify Configuration: SPEECHIFY_API_KEY Required</span>
+                      </div>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                        Env Var
+                      </span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">
+                      To activate Speechify (Speechity) AI announcer voices on your deployment:
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">1. Variable Name:</span>
+                        <code className="text-purple-300 font-bold bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800/60 selection:bg-purple-600">
+                          SPEECHIFY_API_KEY
+                        </code>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">2. Also Accepted:</span>
+                        <code className="text-purple-300 font-mono">SPEECHITY_API_KEY</code>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span className="text-slate-400">3. Portal:</span>
+                        <span className="text-slate-300 font-sans">platform.speechify.ai &rarr; API Keys</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Until configured, game announcements automatically use your browser's local vocal engine.
+                    </p>
+                  </div>
+                )}
+
+                {/* Voice Tuning Presets */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Speechify Announcer Presets</span>
+                    </label>
+                    <span className="text-[11px] text-slate-500">Quickly apply Simba voice profiles</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpeechifyPreset('arena')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        speechifyPreset === 'arena'
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 ring-1 ring-purple-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>⚡ Arena Simba 3.2</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Geffen • 1.05x • +30 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpeechifyPreset('deep')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        speechifyPreset === 'deep'
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 ring-1 ring-purple-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🎙️ Deep Stadium</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Dominic • 0.95x • -100 Pitch</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpeechifyPreset('clarity')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        speechifyPreset === 'clarity'
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 ring-1 ring-purple-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>📢 High Clarity</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Beatrice • 1.00x • Natural</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplySpeechifyPreset('power')}
+                      className={`px-3 py-2 rounded-lg border text-left transition-all ${
+                        speechifyPreset === 'power'
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 ring-1 ring-purple-500/40'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold flex items-center gap-1">
+                        <span>🏆 Power Play</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Kristy • 1.10x • +40 Pitch</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Voice Selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Speechify Announcer Voices</span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {SPEECHIFY_PRESET_VOICES.map((v) => {
+                      const isSelected = !isCustomSpeechifyVoiceSelected && speechifySettings.voiceId === v.id;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => handleSelectSpeechifyVoiceId(v.id)}
+                          className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-purple-500/20 border-purple-500/60 text-white shadow-sm ring-1 ring-purple-500/30'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div>
+                            <div className="text-xs font-bold flex items-center gap-1.5">
+                              <span>{v.name}</span>
+                              <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
+                                {v.id}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{v.desc}</div>
+                          </div>
+                          {isSelected && (
+                            <span className="w-2 h-2 rounded-full bg-purple-400 shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom Voice ID Input */}
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                        <span>Custom Voice ID / Cloned Voice</span>
+                        <span className="text-slate-500 text-[10px]">(from platform.speechify.ai)</span>
+                      </span>
+                      {voiceStatus?.speechifyVoiceId && (
+                        <span className="text-[10px] font-mono text-purple-300 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-800/40">
+                          Env: {voiceStatus.speechifyVoiceId}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customSpeechifyVoiceIdInput}
+                        onChange={(e) => {
+                          setCustomSpeechifyVoiceIdInput(e.target.value);
+                          setIsCustomSpeechifyVoiceSelected(true);
+                        }}
+                        placeholder="e.g. geffen_32, cliff, or custom cloned voice ID"
+                        className="flex-1 bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCustomSpeechifyVoiceId}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors shrink-0"
+                      >
+                        Apply Voice
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Model Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Speechify Model</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'simba-3.2', label: 'Simba 3.2', desc: 'Recommended English' },
+                      { id: 'simba-3.0', label: 'Simba 3.0', desc: 'Multilingual' },
+                      { id: 'simba-english', label: 'Simba English', desc: 'Legacy Simba 1.6' },
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => handleUpdateSpeechifySetting('model', m.id)}
+                        className={`p-2 rounded-lg border text-left transition-all ${
+                          speechifySettings.model === m.id
+                            ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 ring-1 ring-purple-500/30'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">{m.label}</div>
+                        <div className="text-[10px] text-slate-400">{m.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Speed & Pitch Controls */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* SPEED SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Gauge className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Speech Rate</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        {speechifySettings.speed.toFixed(2)}x
+                      </span>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="0.75"
+                      max="1.30"
+                      step="0.05"
+                      value={speechifySettings.speed}
+                      onChange={(e) => handleUpdateSpeechifySetting('speed', parseFloat(e.target.value))}
+                      className="w-full accent-purple-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>0.75x (Deliberate)</span>
+                      <span>1.05x (Optimal Arena)</span>
+                      <span>1.30x (Fast Play)</span>
+                    </div>
+                  </div>
+
+                  {/* PITCH SLIDER */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <Music className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Pitch Tuning (Detune)</span>
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          {speechifySettings.pitchCents === 0
+                            ? '0 cents (Standard)'
+                            : `${speechifySettings.pitchCents > 0 ? '+' : ''}${speechifySettings.pitchCents} cents`}
+                        </span>
+                        {speechifySettings.pitchCents !== 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSpeechifySetting('pitchCents', 0)}
+                            className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700"
+                            title="Reset pitch to 0"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="-300"
+                      max="300"
+                      step="25"
+                      value={speechifySettings.pitchCents}
+                      onChange={(e) => handleUpdateSpeechifySetting('pitchCents', parseInt(e.target.value, 10))}
+                      className="w-full accent-purple-400 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>-300 cents (Deeper)</span>
+                      <span>0 (Standard)</span>
+                      <span>+300 cents (Higher)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               /* CONDITIONAL PANEL: ELEVENLABS SETTINGS */
               <div className="space-y-4">
@@ -2149,6 +2580,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md disabled:opacity-50 ${
                     selectedProvider === 'cartesia'
                       ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/20'
+                      : selectedProvider === 'speechify'
+                      ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-500/20'
                       : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
                   }`}
                 >
@@ -2156,7 +2589,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <span>
                     {isTestingVoiceCustom || isAnnouncing
                       ? 'Announcing...'
-                      : `Test ${selectedProvider === 'cartesia' ? 'Cartesia Sonic' : 'ElevenLabs'} Voice`}
+                      : `Test ${
+                          selectedProvider === 'cartesia'
+                            ? 'Cartesia Sonic'
+                            : selectedProvider === 'speechify'
+                            ? 'Speechify Simba'
+                            : 'ElevenLabs'
+                        } Voice`}
                   </span>
                 </button>
               </div>
@@ -2212,6 +2651,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <span className="text-cyan-300">
                                 Cartesia Sonic {currentAnnouncement.cartesiaAccount === 'account2' ? '(Account 2)' : currentAnnouncement.cartesiaAccount === 'account1' ? '(Account 1)' : ''}
                               </span>
+                            </>
+                          ) : currentAnnouncement.source === 'speechify' ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                              <span className="text-purple-300">Speechify Simba 3.2</span>
                             </>
                           ) : currentAnnouncement.source === 'elevenlabs' ? (
                             <>
