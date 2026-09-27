@@ -115,7 +115,50 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
     return teamPlayers.find((p) => p.number === num) || null;
   }, [selectedTeam, assist2Input, teamPlayers]);
 
-  // Validation function: Check if candidate number is valid on the roster for the target field
+  // Effective players: match from roster if available, otherwise dynamically create unlisted player
+  const effectiveScorer: Player | null = useMemo(() => {
+    if (!selectedTeam || !scorerInput) return null;
+    const num = parseInt(scorerInput, 10);
+    if (isNaN(num) || num < 0 || num > 99) return null;
+    if (matchedScorer) return matchedScorer;
+    return {
+      id: `${selectedTeam}_manual_${num}`,
+      number: num,
+      name: `Player #${num}`,
+      goals: 0,
+      assists: 0,
+    };
+  }, [selectedTeam, scorerInput, matchedScorer]);
+
+  const effectiveAssist1: Player | null = useMemo(() => {
+    if (!selectedTeam || !assist1Input) return null;
+    const num = parseInt(assist1Input, 10);
+    if (isNaN(num) || num < 0 || num > 99) return null;
+    if (matchedAssist1) return matchedAssist1;
+    return {
+      id: `${selectedTeam}_manual_${num}`,
+      number: num,
+      name: `Player #${num}`,
+      goals: 0,
+      assists: 0,
+    };
+  }, [selectedTeam, assist1Input, matchedAssist1]);
+
+  const effectiveAssist2: Player | null = useMemo(() => {
+    if (!selectedTeam || !assist2Input) return null;
+    const num = parseInt(assist2Input, 10);
+    if (isNaN(num) || num < 0 || num > 99) return null;
+    if (matchedAssist2) return matchedAssist2;
+    return {
+      id: `${selectedTeam}_manual_${num}`,
+      number: num,
+      name: `Player #${num}`,
+      goals: 0,
+      assists: 0,
+    };
+  }, [selectedTeam, assist2Input, matchedAssist2]);
+
+  // Validation function: Check if candidate number is valid (any 0-99 allowed, no sticker scan required)
   const isNumberValidForField = useCallback(
     (candidate: string, field: ActiveFieldType): { valid: boolean; reason?: string } => {
       if (!selectedTeam) {
@@ -124,52 +167,32 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       if (!candidate) return { valid: true };
 
       const num = parseInt(candidate, 10);
-      if (isNaN(num)) {
-        return { valid: false, reason: 'Only numbers are allowed' };
+      if (isNaN(num) || num < 0 || num > 99) {
+        return { valid: false, reason: 'Only jersey numbers 0–99 allowed' };
       }
 
       // Conflict checks
       if (field === 'assist1') {
-        if (matchedScorer && candidate === String(matchedScorer.number)) {
+        if (scorerInput && candidate === scorerInput) {
           return { valid: false, reason: `Player #${candidate} scored the goal and cannot assist their own goal` };
         }
-        if (matchedAssist2 && candidate === String(matchedAssist2.number)) {
+        if (assist2Input && candidate === assist2Input) {
           return { valid: false, reason: `Player #${candidate} is already selected as secondary assist` };
         }
       }
 
       if (field === 'assist2') {
-        if (matchedScorer && candidate === String(matchedScorer.number)) {
+        if (scorerInput && candidate === scorerInput) {
           return { valid: false, reason: `Player #${candidate} scored the goal and cannot assist their own goal` };
         }
-        if (matchedAssist1 && candidate === String(matchedAssist1.number)) {
+        if (assist1Input && candidate === assist1Input) {
           return { valid: false, reason: `Player #${candidate} is already selected as primary assist` };
         }
       }
 
-      // Check against roster prefix
-      const eligiblePlayers = teamPlayers.filter((p) => {
-        if (field === 'assist1') {
-          if (matchedScorer && p.number === matchedScorer.number) return false;
-          if (matchedAssist2 && p.number === matchedAssist2.number) return false;
-        }
-        if (field === 'assist2') {
-          if (matchedScorer && p.number === matchedScorer.number) return false;
-          if (matchedAssist1 && p.number === matchedAssist1.number) return false;
-        }
-        return String(p.number).startsWith(candidate);
-      });
-
-      if (eligiblePlayers.length === 0) {
-        return {
-          valid: false,
-          reason: `No player on ${teamName} has jersey #${candidate}`,
-        };
-      }
-
       return { valid: true };
     },
-    [selectedTeam, teamPlayers, matchedScorer, matchedAssist1, matchedAssist2, teamName, visitorTeamName]
+    [selectedTeam, scorerInput, assist1Input, assist2Input, visitorTeamName]
   );
 
   // Live Announcement Preview Text
@@ -178,22 +201,22 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       return `Please choose Pelham Pelicans or ${visitorTeamName} above to begin...`;
     }
     if (!scorerInput) {
-      return `Waiting for ${teamName} goal scorer jersey number...`;
+      return `Waiting for ${teamName} goal scorer jersey number (enter any # 0–99)...`;
     }
-    if (!matchedScorer) {
-      return `Scorer jersey #${scorerInput} not matched to a player on ${teamName}.`;
+    if (!effectiveScorer) {
+      return `Enter valid jersey number for goal scorer...`;
     }
 
     return generateGoalWithAssistPrompt(
-      matchedScorer.number,
-      matchedScorer.name,
-      matchedAssist1?.number,
-      matchedAssist1?.name,
-      matchedAssist2?.number,
-      matchedAssist2?.name,
+      effectiveScorer.number,
+      effectiveScorer.name,
+      effectiveAssist1?.number,
+      effectiveAssist1?.name,
+      effectiveAssist2?.number,
+      effectiveAssist2?.name,
       teamName
     );
-  }, [selectedTeam, scorerInput, matchedScorer, matchedAssist1, matchedAssist2, teamName, visitorTeamName]);
+  }, [selectedTeam, scorerInput, effectiveScorer, effectiveAssist1, effectiveAssist2, teamName, visitorTeamName]);
 
   // Handle direct text input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: ActiveFieldType) => {
@@ -210,17 +233,14 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
     const validation = isNumberValidForField(digits, field);
     if (!validation.valid) {
-      triggerValidationError(validation.reason || `Player #${digits} does not exist`, field);
+      triggerValidationError(validation.reason || `Invalid number #${digits}`, field);
       return;
     }
 
     setValidationError(null);
     if (field === 'scorer') {
       setScorerInput(digits);
-      const hasFurtherPrefix = teamPlayers.some(
-        (p) => String(p.number).length > digits.length && String(p.number).startsWith(digits)
-      );
-      if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === digits)) {
+      if (digits.length === 2) {
         setTimeout(() => {
           setActiveField('assist1');
           assist1InputRef.current?.focus();
@@ -228,10 +248,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       }
     } else if (field === 'assist1') {
       setAssist1Input(digits);
-      const hasFurtherPrefix = teamPlayers.some(
-        (p) => String(p.number).length > digits.length && String(p.number).startsWith(digits)
-      );
-      if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === digits)) {
+      if (digits.length === 2) {
         setTimeout(() => {
           setActiveField('assist2');
           assist2InputRef.current?.focus();
@@ -245,6 +262,11 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   // Keypad button click handler
   const handleKeypadPress = useCallback(
     (digit: string) => {
+      if (!selectedTeam) {
+        triggerValidationError(`Please choose a scoring team first`, activeField);
+        return;
+      }
+
       let current = '';
       if (activeField === 'scorer') current = scorerInput;
       else if (activeField === 'assist1') current = assist1Input;
@@ -256,17 +278,18 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       const validation = isNumberValidForField(candidate, activeField);
 
       if (!validation.valid) {
-        triggerValidationError(validation.reason || `Player #${candidate} does not exist`, activeField);
+        triggerValidationError(validation.reason || `Invalid number #${candidate}`, activeField);
         return;
       }
 
       setValidationError(null);
       if (activeField === 'scorer') {
         setScorerInput(candidate);
+        // Auto-advance to assist1 if two digits or matches single-digit roster player with no multi-digit extension
         const hasFurtherPrefix = teamPlayers.some(
           (p) => String(p.number).length > candidate.length && String(p.number).startsWith(candidate)
         );
-        if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === candidate)) {
+        if (candidate.length === 2 || (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === candidate))) {
           setTimeout(() => {
             setActiveField('assist1');
             assist1InputRef.current?.focus();
@@ -277,7 +300,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
         const hasFurtherPrefix = teamPlayers.some(
           (p) => String(p.number).length > candidate.length && String(p.number).startsWith(candidate)
         );
-        if (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === candidate)) {
+        if (candidate.length === 2 || (!hasFurtherPrefix && teamPlayers.some((p) => String(p.number) === candidate))) {
           setTimeout(() => {
             setActiveField('assist2');
             assist2InputRef.current?.focus();
@@ -287,7 +310,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
         setAssist2Input(candidate);
       }
     },
-    [activeField, scorerInput, assist1Input, assist2Input, isNumberValidForField, triggerValidationError, teamPlayers]
+    [activeField, scorerInput, assist1Input, assist2Input, isNumberValidForField, triggerValidationError, teamPlayers, selectedTeam]
   );
 
   const handleBackspace = useCallback(() => {
@@ -325,17 +348,17 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   }, []);
 
   const isKeypadDigitAllowed = useCallback(
-    (digit: string) => {
+    (_digit: string) => {
+      if (!selectedTeam) return false;
       let current = '';
       if (activeField === 'scorer') current = scorerInput;
       else if (activeField === 'assist1') current = assist1Input;
       else current = assist2Input;
 
       if (current.length >= 2) return false;
-      const candidate = current + digit;
-      return isNumberValidForField(candidate, activeField).valid;
+      return true;
     },
-    [activeField, scorerInput, assist1Input, assist2Input, isNumberValidForField]
+    [selectedTeam, activeField, scorerInput, assist1Input, assist2Input]
   );
 
   // Keyboard navigation support
@@ -352,13 +375,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
           onClose();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          if (activeField === 'scorer' && matchedScorer && !assist1Input) {
+          if (activeField === 'scorer' && effectiveScorer && !assist1Input) {
             setActiveField('assist1');
             assist1InputRef.current?.focus();
-          } else if (activeField === 'assist1' && matchedAssist1 && !assist2Input) {
+          } else if (activeField === 'assist1' && effectiveAssist1 && !assist2Input) {
             setActiveField('assist2');
             assist2InputRef.current?.focus();
-          } else if (matchedScorer) {
+          } else if (effectiveScorer) {
             handleSubmit();
           }
         }
@@ -384,13 +407,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
         else if (next === 'assist1') assist1InputRef.current?.focus();
         else assist2InputRef.current?.focus();
       } else if (e.key === 'Enter') {
-        if (activeField === 'scorer' && matchedScorer && !assist1Input) {
+        if (activeField === 'scorer' && effectiveScorer && !assist1Input) {
           setActiveField('assist1');
           assist1InputRef.current?.focus();
-        } else if (activeField === 'assist1' && matchedAssist1 && !assist2Input) {
+        } else if (activeField === 'assist1' && effectiveAssist1 && !assist2Input) {
           setActiveField('assist2');
           assist2InputRef.current?.focus();
-        } else if (matchedScorer) {
+        } else if (effectiveScorer) {
           handleSubmit();
         }
       }
@@ -398,7 +421,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleKeypadPress, handleBackspace, activeField, matchedScorer, matchedAssist1, assist1Input, assist2Input, onClose]);
+  }, [isOpen, handleKeypadPress, handleBackspace, activeField, effectiveScorer, effectiveAssist1, assist1Input, assist2Input, onClose]);
 
   // Submit Goal with Primary and/or Secondary Assist
   const handleSubmit = async () => {
@@ -407,36 +430,26 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       return;
     }
 
-    if (!matchedScorer || isSubmitting) return;
+    if (!effectiveScorer || isSubmitting) return;
 
-    if (assist1Input && !matchedAssist1) {
-      triggerValidationError(`Primary assist player #${assist1Input} does not exist on roster`, 'assist1');
-      return;
-    }
-
-    if (assist2Input && !matchedAssist2) {
-      triggerValidationError(`Secondary assist player #${assist2Input} does not exist on roster`, 'assist2');
-      return;
-    }
-
-    if (matchedAssist1 && matchedAssist1.number === matchedScorer.number) {
+    if (effectiveAssist1 && effectiveAssist1.number === effectiveScorer.number) {
       triggerValidationError('Goal scorer cannot assist their own goal', 'assist1');
       return;
     }
 
-    if (matchedAssist2 && matchedAssist2.number === matchedScorer.number) {
+    if (effectiveAssist2 && effectiveAssist2.number === effectiveScorer.number) {
       triggerValidationError('Goal scorer cannot assist their own goal', 'assist2');
       return;
     }
 
-    if (matchedAssist1 && matchedAssist2 && matchedAssist1.number === matchedAssist2.number) {
+    if (effectiveAssist1 && effectiveAssist2 && effectiveAssist1.number === effectiveAssist2.number) {
       triggerValidationError('Primary and secondary assist cannot be the same player', 'assist2');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onScoreGoalWithAssist(selectedTeam, matchedScorer, matchedAssist1, matchedAssist2);
+      await onScoreGoalWithAssist(selectedTeam, effectiveScorer, effectiveAssist1, effectiveAssist2);
       if (keepOpenAfterScore) {
         setScorerInput('');
         setAssist1Input('');
@@ -453,10 +466,10 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   };
 
   const canSubmit = Boolean(
-    matchedScorer &&
-    (!assist1Input || (matchedAssist1 && matchedAssist1.number !== matchedScorer.number)) &&
-    (!assist2Input || (matchedAssist2 && matchedAssist2.number !== matchedScorer.number)) &&
-    (!matchedAssist1 || !matchedAssist2 || matchedAssist1.number !== matchedAssist2.number) &&
+    effectiveScorer &&
+    (!assist1Input || (effectiveAssist1 && effectiveAssist1.number !== effectiveScorer.number)) &&
+    (!assist2Input || (effectiveAssist2 && effectiveAssist2.number !== effectiveScorer.number)) &&
+    (!effectiveAssist1 || !effectiveAssist2 || effectiveAssist1.number !== effectiveAssist2.number) &&
     !isSubmitting
   );
 
@@ -479,7 +492,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Only active roster numbers can be entered for both teams
+                Enter any jersey number (0–99) with or without sticker sheet • Auto-matches names
               </p>
             </div>
           </div>
@@ -642,10 +655,20 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                         {matchedScorer.goals} G • {matchedScorer.assists} A
                       </p>
                     </div>
+                  ) : effectiveScorer ? (
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-amber-300 truncate">Player #{effectiveScorer.number}</p>
+                        <span className="text-[8px] uppercase tracking-wider font-extrabold bg-amber-500/25 text-amber-300 border border-amber-500/40 px-1 py-0.2 rounded">
+                          Direct #
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Will record & track on {teamName}</p>
+                    </div>
                   ) : scorerInput ? (
                     <p className="text-xs font-medium text-amber-400 truncate">#{scorerInput}...</p>
                   ) : (
-                    <p className="text-[11px] text-slate-400">Jersey #</p>
+                    <p className="text-[11px] text-slate-400">Jersey # (0–99)</p>
                   )}
                 </div>
               </div>
@@ -680,7 +703,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-sky-400 text-slate-950">
                     Active
                   </span>
-                ) : matchedAssist1 ? (
+                ) : effectiveAssist1 ? (
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
                     <Check className="w-2.5 h-2.5" /> Ready
                   </span>
@@ -718,10 +741,20 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                         {matchedAssist1.assists} A • {matchedAssist1.goals} G
                       </p>
                     </div>
+                  ) : effectiveAssist1 ? (
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-sky-300 truncate">Player #{effectiveAssist1.number}</p>
+                        <span className="text-[8px] uppercase tracking-wider font-extrabold bg-sky-500/25 text-sky-300 border border-sky-500/40 px-1 py-0.2 rounded">
+                          Direct #
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Will record & track on {teamName}</p>
+                    </div>
                   ) : assist1Input ? (
                     <p className="text-xs font-medium text-sky-400 truncate">#{assist1Input}...</p>
                   ) : (
-                    <p className="text-[11px] text-slate-400">1st Assist #</p>
+                    <p className="text-[11px] text-slate-400">1st Assist # (0–99)</p>
                   )}
                 </div>
               </div>
@@ -756,7 +789,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-400 text-slate-950">
                     Active
                   </span>
-                ) : matchedAssist2 ? (
+                ) : effectiveAssist2 ? (
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
                     <Check className="w-2.5 h-2.5" /> Ready
                   </span>
@@ -794,10 +827,20 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                         {matchedAssist2.assists} A • {matchedAssist2.goals} G
                       </p>
                     </div>
+                  ) : effectiveAssist2 ? (
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-indigo-300 truncate">Player #{effectiveAssist2.number}</p>
+                        <span className="text-[8px] uppercase tracking-wider font-extrabold bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 px-1 py-0.2 rounded">
+                          Direct #
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Will record & track on {teamName}</p>
+                    </div>
                   ) : assist2Input ? (
                     <p className="text-xs font-medium text-indigo-400 truncate">#{assist2Input}...</p>
                   ) : (
-                    <p className="text-[11px] text-slate-400">2nd Assist #</p>
+                    <p className="text-[11px] text-slate-400">2nd Assist # (0–99)</p>
                   )}
                 </div>
               </div>
@@ -1074,7 +1117,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   ? 'Announcing...'
                   : !selectedTeam
                   ? '1. Select Team First'
-                  : !matchedScorer
+                  : !effectiveScorer
                   ? '2. Enter Scorer #'
                   : 'Announce Goal & Assists!'}
               </span>

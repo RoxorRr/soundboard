@@ -786,12 +786,35 @@ class SoundEngine {
 
 export const soundEngine = new SoundEngine();
 
+function isGenericPlayerName(name?: string | null, playerNum?: number | null): boolean {
+  if (!name) return true;
+  const clean = name.trim().toLowerCase();
+  if (!clean) return true;
+  if (
+    clean === `player #${playerNum}` ||
+    clean === `player ${playerNum}` ||
+    clean === `#${playerNum}` ||
+    clean === 'player' ||
+    clean === 'unlisted' ||
+    clean === 'unlisted player'
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function generateGoalPrompt(playerNumber: number, playerName: string, teamName: string = 'Pelham Pelicans'): string {
   const safeTeam = teamName?.trim() || 'Pelham Pelicans';
+  if (isGenericPlayerName(playerName, playerNumber)) {
+    return `${safeTeam} goal! Scored by number ${playerNumber}!`;
+  }
   return `${safeTeam} goal! Scored by number ${playerNumber}, ${playerName}!`;
 }
 
 export function generateAssistPrompt(playerNumber: number, playerName: string): string {
+  if (isGenericPlayerName(playerName, playerNumber)) {
+    return `Assisted by number ${playerNumber}!`;
+  }
   return `Assisted by number ${playerNumber}, ${playerName}!`;
 }
 
@@ -805,28 +828,35 @@ export function generateGoalWithAssistPrompt(
   teamName: string = 'Pelham Pelicans'
 ): string {
   const safeTeam = teamName?.trim() || 'Pelham Pelicans';
-  const scorerPart = `Scored by number ${scorerNumber}, ${scorerName}!`;
+  const scorerPart = isGenericPlayerName(scorerName, scorerNumber)
+    ? `Scored by number ${scorerNumber}!`
+    : `Scored by number ${scorerNumber}, ${scorerName}!`;
 
   const hasPrimary =
     primaryAssistNumber !== undefined &&
     primaryAssistNumber !== null &&
-    primaryAssistName &&
-    primaryAssistName.trim().length > 0;
+    !isNaN(primaryAssistNumber);
 
   const hasSecondary =
     secondaryAssistNumber !== undefined &&
     secondaryAssistNumber !== null &&
-    secondaryAssistName &&
-    secondaryAssistName.trim().length > 0;
+    !isNaN(secondaryAssistNumber);
+
+  const formatAssist = (num: number, name?: string | null) => {
+    if (isGenericPlayerName(name, num)) {
+      return `number ${num}`;
+    }
+    return `number ${num}, ${name}`;
+  };
 
   if (hasPrimary && hasSecondary) {
-    return `${safeTeam} goal! ${scorerPart} Assisted by number ${primaryAssistNumber}, ${primaryAssistName}, and number ${secondaryAssistNumber}, ${secondaryAssistName}!`;
+    return `${safeTeam} goal! ${scorerPart} Assisted by ${formatAssist(primaryAssistNumber!, primaryAssistName)}, and ${formatAssist(secondaryAssistNumber!, secondaryAssistName)}!`;
   }
   if (hasPrimary) {
-    return `${safeTeam} goal! ${scorerPart} Assisted by number ${primaryAssistNumber}, ${primaryAssistName}!`;
+    return `${safeTeam} goal! ${scorerPart} Assisted by ${formatAssist(primaryAssistNumber!, primaryAssistName)}!`;
   }
   if (hasSecondary) {
-    return `${safeTeam} goal! ${scorerPart} Assisted by number ${secondaryAssistNumber}, ${secondaryAssistName}!`;
+    return `${safeTeam} goal! ${scorerPart} Assisted by ${formatAssist(secondaryAssistNumber!, secondaryAssistName)}!`;
   }
   return `${safeTeam} goal! ${scorerPart} Unassisted!`;
 }
@@ -858,7 +888,7 @@ export function generatePenaltyPrompt(
   const timePart = hasTime ? ` ${cleanDuration}` : '';
   const clockPart = cleanClock ? ` Time of the penalty, ${cleanClock}.` : '';
 
-  if (includePlayerName && playerName && playerName.trim().length > 0) {
+  if (includePlayerName && playerName && !isGenericPlayerName(playerName, playerNumber)) {
     return `Number ${playerNumber}, ${playerName.trim()}, ${safeTeam}${timePart} for ${cleanInfraction}.${clockPart}`;
   }
 

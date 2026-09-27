@@ -458,7 +458,7 @@ export default function App() {
     }
   }, [currentAnnouncement, isAnnouncing]);
 
-  // Sound Test with welcome announcement hosting opponent team
+  // Welcome Message announcement hosting opponent team & national anthem call
   const handleTestVoice = useCallback(async () => {
     soundEngine.unlock();
     const opponentTeam = visitorTeamName.trim() || 'Visiting Team';
@@ -472,7 +472,7 @@ export default function App() {
       playerName: 'Pelham Arena PA',
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
       team: 'Pelham Pelicans',
     };
 
@@ -522,6 +522,70 @@ export default function App() {
       setActiveAnnouncePlayerId(null);
     }
   }, [visitorTeamName, voiceStatus?.configured]);
+
+  // Pre-game Speaker Check with a short test message
+  const handleTestSpeaker = useCallback(async () => {
+    soundEngine.unlock();
+    const prompt = 'Speaker check: One, two, three. Testing arena sound system. Audio is loud and clear.';
+
+    const announcement: Announcement = {
+      id: `speaker-test-${Date.now()}`,
+      type: 'welcome',
+      playerId: 'system',
+      playerNumber: 0,
+      playerName: 'Speaker Test',
+      text: prompt,
+      timestamp: Date.now(),
+      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      team: 'Pelham Pelicans',
+    };
+
+    setCurrentAnnouncement(announcement);
+    setIsAnnouncing(true);
+    setActiveAnnouncePlayerId(null);
+
+    try {
+      const res = await soundEngine.announce(prompt, 'nhl');
+      if (res.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
+      }
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Speaker Test Notice: ${res.error}`,
+          type: 'warning'
+        });
+      } else if (res.source === 'cartesia') {
+        const accountStr = res.cartesiaAccount === 'account2' ? 'Account 2' : res.cartesiaAccount === 'account1' ? 'Account 1' : '';
+        setVoiceFeedback({
+          message: `Cartesia Sonic ${accountStr ? `(${accountStr}) ` : ''}speaker test audio played (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
+      } else if (res.source === 'speechify') {
+        setVoiceFeedback({
+          message: `Speechify Simba 3.2 speaker test audio played (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
+      } else if (res.source === 'elevenlabs') {
+        setVoiceFeedback({
+          message: `ElevenLabs speaker test audio played (${res.voiceId || 'announcer'})`,
+          type: 'success'
+        });
+      } else {
+        setVoiceFeedback({
+          message: 'Local vocal engine speaker test audio played',
+          type: 'info'
+        });
+      }
+    } catch (err: any) {
+      setVoiceFeedback({
+        message: err?.message || 'Speaker test failed',
+        type: 'warning'
+      });
+    } finally {
+      setIsAnnouncing(false);
+      setActiveAnnouncePlayerId(null);
+    }
+  }, [voiceStatus?.configured]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => {
@@ -774,6 +838,23 @@ export default function App() {
         ? (visitorTeamName.trim() || 'Visiting Team')
         : 'Pelham Pelicans';
 
+      // Ensure penalized player is included in team roster if not present yet
+      if (isCurrentVisitor) {
+        setVisitorPlayers((prev) => {
+          if (!prev.some((p) => p.number === player.number)) {
+            return sortPlayersByNumber([...prev, { ...player, id: player.id || `visitor_${player.number}`, goals: 0, assists: 0 }]);
+          }
+          return prev;
+        });
+      } else {
+        setHomePlayers((prev) => {
+          if (!prev.some((p) => p.number === player.number)) {
+            return sortPlayersByNumber([...prev, { ...player, id: player.id || `home_${player.number}`, goals: 0, assists: 0 }]);
+          }
+          return prev;
+        });
+      }
+
       const announcement: Announcement = {
         id: `penalty-${Date.now()}-${player.number}`,
         type: 'penalty',
@@ -824,13 +905,13 @@ export default function App() {
       id="app-root"
       className="h-full h-[100dvh] max-h-[100dvh] w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none overscroll-none pb-[env(safe-area-inset-bottom,0px)]"
     >
-      {/* Clean & Compact Navigation Bar with Team Tabs and Settings */}
+      {/* Clean, Compact & Scalable Navigation Bar */}
       <nav
         aria-label="Main Navigation"
-        className="bg-slate-900 border-b border-slate-800 px-2.5 sm:px-3 py-1.5 flex items-center justify-between gap-2 shrink-0 select-none shadow-sm"
+        className="bg-slate-900 border-b border-slate-800 px-1 sm:px-2 py-0.5 sm:py-1 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-1.5 gap-y-1 shrink-0 select-none shadow-sm"
       >
         {/* Left: Team Tabs & Settings Tab */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           {/* TAB 1: Pelham Pelicans */}
           <button
             id="tab-home-pelham"
@@ -838,23 +919,24 @@ export default function App() {
               setActiveTeamTab('home');
               setCurrentTab('home');
             }}
-            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
               currentTab === 'home'
-                ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-md shadow-amber-500/20 ring-1 ring-amber-300'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-sm shadow-amber-500/20 ring-1 ring-amber-300'
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
             }`}
+            title="Pelham Pelicans Home Roster"
           >
             <span
-              className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
+              className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
                 currentTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
               }`}
             >
               PP
             </span>
-            <span className="hidden xs:inline sm:inline">Pelham Pelicans</span>
-            <span className="xs:hidden sm:hidden inline">Pelham</span>
+            <span className="hidden xl:inline">Pelham Pelicans</span>
+            <span className="xl:hidden inline">Pelham</span>
             <span
-              className={`ml-0.5 sm:ml-1 px-1.5 sm:px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
+              className={`px-1 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
                 currentTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-950/60 text-slate-300'
               }`}
             >
@@ -869,24 +951,25 @@ export default function App() {
               setActiveTeamTab('visitor');
               setCurrentTab('visitor');
             }}
-            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
               currentTab === 'visitor'
-                ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-500/20 ring-1 ring-rose-300'
+                ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-sm shadow-rose-500/20 ring-1 ring-rose-300'
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
             }`}
+            title={`${visitorTeamName} Visitor Roster`}
           >
             <span
-              className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
+              className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
                 currentTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
               }`}
             >
               VT
             </span>
-            <span className="truncate max-w-[90px] sm:max-w-[170px]">
+            <span className="truncate max-w-[60px] sm:max-w-[85px] xl:max-w-[120px]">
               {visitorTeamName}
             </span>
             <span
-              className={`ml-0.5 sm:ml-1 px-1.5 sm:px-2 py-0.5 rounded-md text-xs font-mono font-bold ${
+              className={`px-1 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
                 currentTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-950/60 text-slate-300'
               }`}
             >
@@ -898,37 +981,85 @@ export default function App() {
           <button
             id="tab-settings"
             onClick={() => setCurrentTab('settings')}
-            className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-athletic uppercase tracking-wider font-black flex items-center gap-1.5 sm:gap-2 transition-all ${
+            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
               currentTab === 'settings'
-                ? 'bg-slate-100 text-slate-950 shadow-md shadow-white/10 ring-1 ring-slate-200'
+                ? 'bg-slate-100 text-slate-950 shadow-sm shadow-white/10 ring-1 ring-slate-200'
                 : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
             }`}
+            title="Configure announcer voices, rosters, and match options"
           >
-            <Settings className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${currentTab === 'settings' ? 'text-slate-950' : 'text-amber-400'}`} />
-            <span>Settings</span>
+            <Settings className={`w-3.5 h-3.5 ${currentTab === 'settings' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span className="hidden sm:inline">Settings</span>
           </button>
         </div>
 
-        {/* Right: Quick Controls on Nav */}
-        <div className="flex items-center gap-2">
-          {/* Announcement Snippet Pill (shown when not in settings and announcement exists) */}
+        {/* Right utility items: Score, Mute, Fullscreen (Pinned top-right on mobile/tablet) */}
+        <div className="flex items-center gap-1 ml-auto lg:ml-0 order-2 lg:order-3 shrink-0">
+          {/* Live Match Scoreboard Pill */}
+          <div className="hidden sm:flex lg:hidden 2xl:flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] shrink-0 font-mono">
+            <span className="font-bold text-amber-400">PEL {homeGoals}</span>
+            <span className="text-slate-600">-</span>
+            <span className="font-bold text-rose-400">{visitorGoals} VIS</span>
+          </div>
+
+          {/* Quick Mute/Unmute toggle */}
+          <button
+            id="nav-mute-toggle-btn"
+            onClick={handleToggleMute}
+            className={`p-1 sm:p-1.5 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+              isMuted
+                ? 'bg-red-500/20 text-red-300 border-red-500/40 hover:bg-red-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isMuted ? 'Audio Muted - Click to Unmute' : 'Audio Active - Click to Mute'}
+          >
+            {isMuted ? (
+              <VolumeX className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            )}
+          </button>
+
+          {/* Fullscreen Toggle Button */}
+          <button
+            id="nav-fullscreen-toggle-btn"
+            type="button"
+            onClick={handleToggleFullscreen}
+            className={`p-1 sm:p-1.5 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+              isFullscreen
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isFullscreen ? 'Exit Full Screen mode (Esc)' : 'Switch to Full Screen mode'}
+          >
+            {isFullscreen ? (
+              <Minimize className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            ) : (
+              <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
+            )}
+          </button>
+        </div>
+
+        {/* Action Controls: Goal Keypad, Penalty, Test Speaker, Welcome message */}
+        <div className="flex items-center gap-1 sm:gap-1.5 w-full lg:w-auto justify-start sm:justify-end order-3 lg:order-2 shrink-0">
+          {/* Announcement Snippet Pill (shown on extra-wide screens only) */}
           {currentAnnouncement && currentTab !== 'settings' && (
             <div
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs max-w-[240px] xl:max-w-xs truncate transition-all ${
+              className={`hidden 2xl:flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9.5px] max-w-[150px] truncate transition-all ${
                 isAnnouncing
                   ? 'bg-amber-950/50 border-amber-500/60 text-amber-300 shadow-sm shadow-amber-500/20'
                   : 'bg-slate-950/90 border-slate-800 text-slate-300'
               }`}
             >
               <Radio className={`w-3 h-3 shrink-0 ${isAnnouncing ? 'text-amber-400 animate-pulse' : 'text-slate-500'}`} />
-              <span className="truncate text-[11px] font-medium">&ldquo;{currentAnnouncement.text}&rdquo;</span>
+              <span className="truncate">&ldquo;{currentAnnouncement.text}&rdquo;</span>
               <button
                 onClick={handleReplayAnnouncement}
                 disabled={isAnnouncing}
-                className="ml-1 p-0.5 rounded hover:bg-slate-800 hover:text-white text-slate-400 shrink-0 transition-colors"
+                className="ml-0.5 p-0.5 rounded hover:bg-slate-800 hover:text-white text-slate-400 shrink-0 transition-colors"
                 title="Replay Announcement"
               >
-                <RefreshCw className={`w-3 h-3 ${isAnnouncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-2.5 h-2.5 ${isAnnouncing ? 'animate-spin' : ''}`} />
               </button>
             </div>
           )}
@@ -939,10 +1070,10 @@ export default function App() {
               id="nav-quick-goal-btn"
               type="button"
               onClick={() => setIsQuickGoalModalOpen(true)}
-              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm shadow-amber-500/20"
+              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shadow-amber-500/20 shrink-0"
               title="Input jersey numbers of scorer and assist maker with numeric keypad"
             >
-              <Hash className="w-3.5 h-3.5" />
+              <Hash className="w-3 h-3 shrink-0" />
               <span className="hidden sm:inline">Keypad Goal</span>
               <span className="sm:hidden">Keypad</span>
             </button>
@@ -954,85 +1085,42 @@ export default function App() {
               id="nav-penalty-btn"
               type="button"
               onClick={() => setIsPenaltyModalOpen(true)}
-              className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
+              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
               title="Announce a penalty: 'Number [X], [Team] two minutes for [foul]'"
             >
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+              <ShieldAlert className="w-3 h-3 text-rose-400 shrink-0" />
               <span className="hidden sm:inline">Penalty</span>
               <span className="sm:hidden">Pen</span>
             </button>
           )}
 
-          {/* Sound Test Welcome Announcement Button */}
+          {/* Test Speaker Button (Short pre-game sound check) */}
           <button
-            id="nav-sound-test-btn"
+            id="nav-test-speaker-btn"
+            type="button"
+            onClick={handleTestSpeaker}
+            disabled={isAnnouncing}
+            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-cyan-500/20 active:scale-95 text-cyan-300 hover:text-white border border-cyan-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
+            title="Test Speaker: Short pre-game sound check before game"
+          >
+            <Volume2 className={`w-3 h-3 text-cyan-400 shrink-0 ${isAnnouncing ? 'animate-pulse' : ''}`} />
+            <span className="hidden sm:inline">Test Speaker</span>
+            <span className="sm:hidden">Speaker</span>
+          </button>
+
+          {/* Welcome Message Button (Renamed from Test Sound) */}
+          <button
+            id="nav-welcome-msg-btn"
             type="button"
             onClick={handleTestVoice}
             disabled={isAnnouncing}
-            className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-amber-500/20 active:scale-95 text-amber-300 hover:text-white border border-amber-500/30 font-athletic font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
-            title={`Sound Test: Welcome announcement hosting ${visitorTeamName}`}
+            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-amber-500/20 active:scale-95 text-amber-300 hover:text-white border border-amber-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
+            title={`Welcome message: Pre-game welcome announcement hosting ${visitorTeamName} and national anthem lineup`}
           >
-            <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isAnnouncing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Sound Test</span>
-            <span className="sm:hidden">Test</span>
+            <Sparkles className={`w-3 h-3 text-amber-400 shrink-0 ${isAnnouncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Welcome message</span>
+            <span className="sm:hidden">Welcome</span>
           </button>
-
-          {/* Quick Mute/Unmute toggle */}
-          <button
-            id="nav-mute-toggle-btn"
-            onClick={handleToggleMute}
-            className={`p-1.5 sm:px-2 sm:py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              isMuted
-                ? 'bg-red-500/20 text-red-300 border-red-500/40 hover:bg-red-500/30'
-                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
-            }`}
-            title={isMuted ? 'Audio Muted - Click to Unmute' : 'Audio Active - Click to Mute'}
-          >
-            {isMuted ? (
-              <>
-                <VolumeX className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                <span className="hidden xl:inline text-[11px]">Muted</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="hidden xl:inline text-[11px]">Sound On</span>
-              </>
-            )}
-          </button>
-
-          {/* Fullscreen Toggle Button */}
-          <button
-            id="nav-fullscreen-toggle-btn"
-            type="button"
-            onClick={handleToggleFullscreen}
-            className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              isFullscreen
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
-            }`}
-            title={isFullscreen ? 'Exit Full Screen mode (Esc)' : 'Switch to Full Screen mode'}
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="hidden xl:inline text-[11px]">Exit Full</span>
-              </>
-            ) : (
-              <>
-                <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
-                <span className="hidden xl:inline text-[11px]">Full Screen</span>
-              </>
-            )}
-          </button>
-
-          {/* Live Match Scoreboard Pill */}
-          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs shrink-0">
-            <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Score:</span>
-            <span className="font-athletic font-bold text-amber-400">PELHAM {homeGoals}</span>
-            <span className="text-slate-600 font-bold">-</span>
-            <span className="font-athletic font-bold text-rose-400">{visitorGoals} {visitorTeamName.toUpperCase()}</span>
-          </div>
         </div>
       </nav>
 
@@ -1241,6 +1329,39 @@ export default function App() {
               >
                 <Edit2 className="w-3.5 h-3.5 text-amber-400" />
                 <span>Manage Lineup & Roster</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const existingNumbers = new Set(activePlayers.map((p) => p.number));
+                  let nextNum = 1;
+                  while (existingNumbers.has(nextNum) && nextNum <= 99) {
+                    nextNum++;
+                  }
+                  const newNum = nextNum > 99 ? 0 : nextNum;
+                  const newP: Player = {
+                    id: `${activeTeamTab}_manual_${Date.now()}_${newNum}`,
+                    number: newNum,
+                    name: `Player #${newNum}`,
+                    goals: 0,
+                    assists: 0,
+                  };
+                  if (activeTeamTab === 'visitor') {
+                    setVisitorPlayers((prev) => sortPlayersByNumber([...prev, newP]));
+                  } else {
+                    setHomePlayers((prev) => sortPlayersByNumber([...prev, newP]));
+                  }
+                  setVoiceFeedback({
+                    message: `Added #${newNum} to ${activeTeamName} roster`,
+                    type: 'success',
+                  });
+                }}
+                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors"
+                title="Add a new player number to the lineup without a sticker"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>+ Add #</span>
               </button>
 
               <button

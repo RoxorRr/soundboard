@@ -66,6 +66,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   // CRITICAL: Do NOT pre-select team. User must choose explicitly to avoid game-time mistakes.
   const [selectedTeam, setSelectedTeam] = useState<'home' | 'visitor' | null>(null);
   const [playerInput, setPlayerInput] = useState<string>('');
+  const [activeKeypadTarget, setActiveKeypadTarget] = useState<'player' | 'minutes'>('player');
 
   // Duration state: initializes from saved game default (or 2:00 if none saved)
   const [durationText, setDurationText] = useState<string>(() => getSavedGamePenaltyDuration().value);
@@ -100,6 +101,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
     if (isOpen) {
       setSelectedTeam(null); // Explicit manual selection required
       setPlayerInput('');
+      setActiveKeypadTarget('player');
       const savedDur = getSavedGamePenaltyDuration();
       setDurationText(savedDur.value);
       setDurationLabel(savedDur.label);
@@ -173,7 +175,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
     }, 3000);
   };
 
-  // Matched player
+  // Matched player from roster if available
   const matchedPlayer = useMemo(() => {
     if (!selectedTeam) return null;
     const num = parseInt(playerInput, 10);
@@ -181,7 +183,22 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
     return teamPlayers.find((p) => p.number === num) || null;
   }, [selectedTeam, playerInput, teamPlayers]);
 
-  // Check if a candidate number is valid on the roster
+  // Effective player: matched roster player OR dynamic manual player (0-99 without sticker)
+  const effectivePlayer = useMemo(() => {
+    if (!selectedTeam || !playerInput) return null;
+    const num = parseInt(playerInput, 10);
+    if (isNaN(num) || num < 0 || num > 99) return null;
+    if (matchedPlayer) return matchedPlayer;
+    return {
+      id: `${selectedTeam}_manual_${num}`,
+      number: num,
+      name: `Player #${num}`,
+      goals: 0,
+      assists: 0,
+    };
+  }, [selectedTeam, playerInput, matchedPlayer]);
+
+  // Check if a candidate number is valid (allows all 0-99 numbers with or without sticker)
   const isCandidateValid = useCallback(
     (candidate: string): { valid: boolean; reason?: string } => {
       if (!selectedTeam) {
@@ -189,15 +206,12 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
       }
       if (!candidate) return { valid: true };
       const num = parseInt(candidate, 10);
-      if (isNaN(num)) return { valid: false, reason: 'Only numbers allowed' };
-
-      const existsPrefix = teamPlayers.some((p) => String(p.number).startsWith(candidate));
-      if (!existsPrefix) {
-        return { valid: false, reason: `No player on ${teamName} has jersey #${candidate}` };
+      if (isNaN(num) || num < 0 || num > 99) {
+        return { valid: false, reason: 'Only jersey numbers 0–99 allowed' };
       }
       return { valid: true };
     },
-    [selectedTeam, teamPlayers, teamName, visitorTeamName]
+    [selectedTeam, visitorTeamName]
   );
 
   const activeInfraction = selectedInfraction.trim() || 'penalty';
@@ -222,8 +236,8 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   // Real-time speech preview text matching requested template:
   // 'Number 12, Pelham Pelicans two minutes for [hooking]'
   const previewAnnouncementText = useMemo(() => {
-    const pNum = matchedPlayer ? matchedPlayer.number : (playerInput ? parseInt(playerInput, 10) : 12);
-    const pName = matchedPlayer ? matchedPlayer.name : undefined;
+    const pNum = effectivePlayer ? effectivePlayer.number : (playerInput ? parseInt(playerInput, 10) : 12);
+    const pName = effectivePlayer && matchedPlayer ? effectivePlayer.name : undefined;
 
     return generatePenaltyPrompt(
       isNaN(pNum) ? 12 : pNum,
@@ -234,7 +248,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
       includePlayerName,
       effectiveClockString
     );
-  }, [matchedPlayer, playerInput, teamName, durationText, activeInfraction, includePlayerName, effectiveClockString]);
+  }, [effectivePlayer, matchedPlayer, playerInput, teamName, durationText, activeInfraction, includePlayerName, effectiveClockString]);
 
   // Duration selection helpers
   const handleSelectPresetDuration = (opt: { label: string; value: string }) => {
@@ -281,7 +295,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
     const val = isCandidateValid(digits);
     if (!val.valid) {
-      triggerValidationError(val.reason || `Player #${digits} does not exist`);
+      triggerValidationError(val.reason || `Invalid player #${digits}`);
       return;
     }
 
@@ -289,46 +303,81 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
     setPlayerInput(digits);
   };
 
-  // Handle keypad digit press
+  // Handle keypad digit press for both player numbers and penalty minutes
   const handleKeypadPress = useCallback(
     (digit: string) => {
       if (!selectedTeam) {
         triggerValidationError(`Please choose a team (Pelham Pelicans or ${visitorTeamName}) first`);
         return;
       }
+
+      // If active target is penalty minutes, enter numeric minutes directly
+      if (activeKeypadTarget === 'minutes') {
+        const curStr = customMinutes > 0 ? String(customMinutes) : '';
+        const newStr = curStr.length >= 2 ? digit : curStr + digit;
+        const newMins = parseInt(newStr, 10) || 0;
+        const cappedMins = Math.min(60, newMins);
+        setCustomMinutes(cappedMins);
+        const spoken = formatMinutesAndSecondsToSpoken(cappedMins, customSeconds);
+        const display = formatDurationDisplay(cappedMins, customSeconds);
+        setDurationText(spoken);
+        setDurationLabel(display);
+        return;
+      }
+
       if (playerInput.length >= 2) return;
       const candidate = playerInput + digit;
       const val = isCandidateValid(candidate);
       if (!val.valid) {
-        triggerValidationError(val.reason || `Player #${candidate} does not exist`);
+        triggerValidationError(val.reason || `Invalid player #${candidate}`);
         return;
       }
       setValidationError(null);
       setPlayerInput(candidate);
     },
-    [selectedTeam, visitorTeamName, playerInput, isCandidateValid, triggerValidationError]
+    [selectedTeam, visitorTeamName, activeKeypadTarget, customMinutes, customSeconds, playerInput, isCandidateValid, triggerValidationError]
   );
 
   const handleBackspace = useCallback(() => {
     setValidationError(null);
+    if (activeKeypadTarget === 'minutes') {
+      const curStr = String(customMinutes);
+      const newStr = curStr.slice(0, -1);
+      const newMins = parseInt(newStr, 10) || 0;
+      setCustomMinutes(newMins);
+      const spoken = formatMinutesAndSecondsToSpoken(newMins, customSeconds);
+      const display = formatDurationDisplay(newMins, customSeconds);
+      setDurationText(spoken);
+      setDurationLabel(display);
+      return;
+    }
     setPlayerInput((prev) => prev.slice(0, -1));
-  }, []);
+  }, [activeKeypadTarget, customMinutes, customSeconds]);
 
   const handleClear = useCallback(() => {
     setValidationError(null);
+    if (activeKeypadTarget === 'minutes') {
+      setCustomMinutes(2);
+      const spoken = formatMinutesAndSecondsToSpoken(2, customSeconds);
+      const display = formatDurationDisplay(2, customSeconds);
+      setDurationText(spoken);
+      setDurationLabel(display);
+      return;
+    }
     setPlayerInput('');
     playerInputRef.current?.focus();
-  }, []);
+  }, [activeKeypadTarget, customSeconds]);
 
   // Determine if a keypad digit can be pressed
   const isDigitAllowed = useCallback(
-    (digit: string) => {
+    (_digit: string) => {
       if (!selectedTeam) return false;
-      if (playerInput.length >= 2) return false;
-      const candidate = playerInput + digit;
-      return isCandidateValid(candidate).valid;
+      if (activeKeypadTarget === 'player') {
+        return playerInput.length < 2;
+      }
+      return true;
     },
-    [selectedTeam, playerInput, isCandidateValid]
+    [selectedTeam, activeKeypadTarget, playerInput]
   );
 
   // Handle saving and selecting a custom penalty category
@@ -380,13 +429,13 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
       triggerValidationError(`Please select which team is penalized first`);
       return;
     }
-    if (!matchedPlayer || isSubmitting) return;
+    if (!effectivePlayer || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
       await onAnnouncePenalty(
         selectedTeam,
-        matchedPlayer,
+        effectivePlayer,
         durationText,
         activeInfraction,
         previewAnnouncementText,
@@ -414,7 +463,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                 <span>Penalty Announcement</span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Template: &quot;Number [X], [Team] [time] for [foul]&quot; (or without time)
+                Enter any jersey # (0–99) & penalty minutes with or without sticker sheet • Auto-voice
               </p>
             </div>
           </div>
@@ -519,7 +568,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             className={`p-3 rounded-xl border transition-all ${
               shakeInput
                 ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/40'
-                : matchedPlayer
+                : effectivePlayer
                 ? 'bg-amber-500/10 border-amber-400/80 shadow-md shadow-amber-500/10'
                 : !selectedTeam
                 ? 'bg-slate-950/40 border-slate-800/60 opacity-80'
@@ -531,11 +580,15 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                 <Hash className="w-3.5 h-3.5" />
                 <span>2. Penalized Player Number</span>
               </span>
-              {matchedPlayer && (
+              {matchedPlayer ? (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                   <Check className="w-3 h-3" /> Valid Roster Player
                 </span>
-              )}
+              ) : effectivePlayer ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Direct Number #{effectivePlayer.number}
+                </span>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-3">
@@ -550,6 +603,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                   disabled={!selectedTeam}
                   value={playerInput}
                   onChange={handleInputChange}
+                  onFocus={() => setActiveKeypadTarget('player')}
                   placeholder="--"
                   className="w-full h-full text-center rounded-lg bg-slate-900 border border-slate-700 text-2xl font-athletic font-black text-amber-300 placeholder:text-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 />
@@ -569,6 +623,18 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                       {teamName} • {matchedPlayer.goals} G, {matchedPlayer.assists} A
                     </p>
                   </div>
+                ) : effectivePlayer ? (
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-bold text-amber-300 truncate">Player #{effectivePlayer.number}</p>
+                      <span className="text-[9px] uppercase tracking-wider font-extrabold bg-amber-500/25 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded">
+                        Direct #
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Valid penalty entry without sticker sheet
+                    </p>
+                  </div>
                 ) : !selectedTeam ? (
                   <div>
                     <p className="text-xs text-slate-400 font-semibold">Select team above first</p>
@@ -577,12 +643,12 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                 ) : playerInput ? (
                   <div>
                     <p className="text-xs font-semibold text-amber-400">Typing #{playerInput}...</p>
-                    <p className="text-[10px] text-slate-500">Must match player on {teamName}</p>
+                    <p className="text-[10px] text-slate-500">Any number 0–99 allowed</p>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-xs text-slate-300 font-semibold">Enter or tap player number</p>
-                    <p className="text-[10px] text-slate-500">Only active roster players on {teamName}</p>
+                    <p className="text-xs text-slate-300 font-semibold">Enter or tap player number (0–99)</p>
+                    <p className="text-[10px] text-slate-500">Works with or without sticker sheet</p>
                   </div>
                 )}
               </div>
@@ -619,6 +685,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                       type="button"
                       onClick={() => {
                         setPlayerInput(String(player.number));
+                        setActiveKeypadTarget('player');
                         setValidationError(null);
                       }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all active:scale-95 border ${
@@ -640,8 +707,44 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             )}
           </div>
 
-          {/* Keypad */}
-          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+          {/* Keypad with Target Switcher */}
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 space-y-2">
+            {/* Keypad Mode Switcher: Player Number vs Penalty Minutes */}
+            <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-800/80">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Keypad Enters:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveKeypadTarget('player');
+                    playerInputRef.current?.focus();
+                  }}
+                  className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
+                    activeKeypadTarget === 'player'
+                      ? 'bg-amber-400 text-slate-950 shadow-sm font-black ring-1 ring-amber-300'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Hash className="w-3 h-3" />
+                  <span>Player #{playerInput || '--'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveKeypadTarget('minutes')}
+                  className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 ${
+                    activeKeypadTarget === 'minutes'
+                      ? 'bg-amber-400 text-slate-950 shadow-sm font-black ring-1 ring-amber-300'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>Minutes ({durationLabel})</span>
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-3 gap-1.5">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => {
                 const isAllowed = isDigitAllowed(digit);
@@ -664,7 +767,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
               <button
                 type="button"
-                disabled={!selectedTeam || !playerInput}
+                disabled={!selectedTeam || (activeKeypadTarget === 'player' ? !playerInput : customMinutes === 0 && !durationText)}
                 onClick={handleClear}
                 className="h-11 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500 active:text-white text-rose-400 font-bold text-xs uppercase tracking-wider border border-rose-500/30 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
@@ -691,7 +794,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
               <button
                 type="button"
-                disabled={!selectedTeam || !playerInput}
+                disabled={!selectedTeam || (activeKeypadTarget === 'player' ? !playerInput : customMinutes === 0 && !durationText)}
                 onClick={handleBackspace}
                 className="h-11 rounded-lg bg-slate-800/90 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-slate-300 text-sm font-bold border border-slate-700/80 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Backspace"
@@ -701,7 +804,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             </div>
           </div>
 
-          {/* Penalty Duration Selection */}
+            {/* Penalty Duration Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -752,6 +855,42 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Quick 1-tap minute chips for common youth & standard hockey penalties */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {[
+                { mins: 1, label: '1 Min', spoken: 'one minute' },
+                { mins: 2, label: '2 Min (Minor)', spoken: 'two minutes' },
+                { mins: 3, label: '3 Min', spoken: 'three minutes' },
+                { mins: 4, label: '4 Min (Dbl)', spoken: 'four minutes' },
+                { mins: 5, label: '5 Min (Major)', spoken: 'five minutes' },
+                { mins: 10, label: '10 Min (Misc)', spoken: 'ten minutes' },
+              ].map((chip) => {
+                const isSelected = durationText === chip.spoken;
+                return (
+                  <button
+                    key={chip.mins}
+                    type="button"
+                    onClick={() => {
+                      setCustomMinutes(chip.mins);
+                      setCustomSeconds(0);
+                      const spoken = chip.spoken;
+                      const display = `${chip.mins}:00 Min`;
+                      setDurationText(spoken);
+                      setDurationLabel(display);
+                      setIsCustomDurationOpen(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 border transition-all active:scale-95 ${
+                      isSelected
+                        ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm font-black'
+                        : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Custom Penalty Duration Creator / Stepper */}
@@ -1212,8 +1351,8 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             </div>
             <p className="text-[10px] text-slate-500">
               {durationText
-                ? `Template: "Number ${matchedPlayer?.number || '12'}, ${teamName} ${durationText} for ${activeInfraction}.${effectiveClockString ? ` Time of the penalty, ${effectiveClockString}.` : ''}"`
-                : `Template: "Number ${matchedPlayer?.number || '12'}, ${teamName} for ${activeInfraction}.${effectiveClockString ? ` Time of the penalty, ${effectiveClockString}.` : ''}"`}
+                ? `Template: "Number ${effectivePlayer?.number || '12'}, ${teamName} ${durationText} for ${activeInfraction}.${effectiveClockString ? ` Time of the penalty, ${effectiveClockString}.` : ''}"`
+                : `Template: "Number ${effectivePlayer?.number || '12'}, ${teamName} for ${activeInfraction}.${effectiveClockString ? ` Time of the penalty, ${effectiveClockString}.` : ''}"`}
             </p>
           </div>
         </div>
@@ -1230,10 +1369,10 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
           <button
             type="button"
-            disabled={!selectedTeam || !matchedPlayer || isSubmitting}
+            disabled={!selectedTeam || !effectivePlayer || isSubmitting}
             onClick={handleSubmit}
             className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
-              !selectedTeam || !matchedPlayer || isSubmitting
+              !selectedTeam || !effectivePlayer || isSubmitting
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25 active:scale-95 font-black uppercase tracking-wider'
             }`}
@@ -1244,7 +1383,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                 ? 'Announcing...'
                 : !selectedTeam
                 ? '1. Choose Team Above'
-                : !matchedPlayer
+                : !effectivePlayer
                 ? '2. Enter Player #'
                 : 'Announce Penalty!'}
             </span>

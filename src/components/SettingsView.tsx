@@ -161,7 +161,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
-  const [testSampleType, setTestSampleType] = useState<'welcome' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
+  const [testSampleType, setTestSampleType] = useState<'welcome' | 'speakerTest' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
   const [copiedEnvVar, setCopiedEnvVar] = useState<string | null>(null);
   const [showAccount2Guide, setShowAccount2Guide] = useState<boolean>(false);
 
@@ -482,7 +482,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     let testText = generateWelcomePrompt(visitorTeamName);
-    if (testSampleType === 'pelhamGoal') {
+    if (testSampleType === 'speakerTest') {
+      testText = 'Speaker check: One, two, three. Testing arena sound system. Audio is loud and clear.';
+    } else if (testSampleType === 'pelhamGoal') {
       testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
     } else if (testSampleType === 'visitorGoal') {
       testText = `${visitorTeamName} goal! Scored by number 88, Patrick Kane!`;
@@ -520,7 +522,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setIsTestingVoiceCustom(true);
 
     let testText = generateWelcomePrompt(visitorTeamName);
-    if (testSampleType === 'pelhamGoal') {
+    if (testSampleType === 'speakerTest') {
+      testText = 'Speaker check: One, two, three. Testing arena sound system. Audio is loud and clear.';
+    } else if (testSampleType === 'pelhamGoal') {
       testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
     } else if (testSampleType === 'visitorGoal') {
       testText = `${visitorTeamName} goal! Scored by number 88, Patrick Kane!`;
@@ -2525,7 +2529,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-300'
                     }`}
                   >
-                    <span>🎙️ Welcome ({visitorTeamName})</span>
+                    <span>🎙️ Welcome message ({visitorTeamName})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTestSampleType('speakerTest')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors flex items-center gap-1 ${
+                      testSampleType === 'speakerTest'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-300'
+                    }`}
+                  >
+                    <span>🔊 Test Speaker (Short)</span>
                   </button>
                   <button
                     type="button"
