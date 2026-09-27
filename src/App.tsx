@@ -136,6 +136,18 @@ export default function App() {
     return sortPlayersByNumber(DEFAULT_PELHAM_PLAYERS);
   });
 
+  // Helper to migrate legacy visitor player names ("Visitor Player X" -> "Player Number X")
+  const migrateVisitorPlayerName = (name: string, fallbackIdx?: number): string => {
+    const match = name.match(/^visitor\s*player\s*(\d+)$/i);
+    if (match) {
+      return `Player Number ${match[1]}`;
+    }
+    if (name.toLowerCase() === 'visitor player') {
+      return `Player Number ${fallbackIdx !== undefined ? fallbackIdx + 1 : 1}`;
+    }
+    return name;
+  };
+
   // Visitor players state with local persistence (sorted 1-99, supports any roster count)
   const [visitorPlayers, setVisitorPlayers] = useState<Player[]>(() => {
     try {
@@ -143,7 +155,11 @@ export default function App() {
       if (savedV2) {
         const parsed = JSON.parse(savedV2);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return sortPlayersByNumber(parsed);
+          const migrated = parsed.map((p: Player, idx: number) => ({
+            ...p,
+            name: migrateVisitorPlayerName(p.name, idx),
+          }));
+          return sortPlayersByNumber(migrated);
         }
       }
       // Migrate from v1 storage to preserve custom names & scores while adding the 5 new rows
@@ -153,7 +169,10 @@ export default function App() {
         if (Array.isArray(parsedV1) && parsedV1.length > 0) {
           const existingIds = new Set(parsedV1.map((p: Player) => p.id));
           const newRows = DEFAULT_VISITOR_PLAYERS.filter((p) => !existingIds.has(p.id));
-          const merged = [...parsedV1, ...newRows];
+          const merged = [...parsedV1, ...newRows].map((p: Player, idx: number) => ({
+            ...p,
+            name: migrateVisitorPlayerName(p.name, idx),
+          }));
           if (merged.length > 0) {
             return sortPlayersByNumber(merged);
           }
@@ -270,10 +289,16 @@ export default function App() {
       .catch((err) => console.warn('Could not fetch server voice status:', err));
   }, []);
 
-  // Auto-sort existing saved rosters from smallest to largest by player number on mount
+  // Auto-sort existing saved rosters from smallest to largest by player number on mount, and ensure visitor default names are Player Number X
   useEffect(() => {
     setHomePlayers((prev) => sortPlayersByNumber(prev));
-    setVisitorPlayers((prev) => sortPlayersByNumber(prev));
+    setVisitorPlayers((prev) => {
+      const migrated = prev.map((p, idx) => ({
+        ...p,
+        name: migrateVisitorPlayerName(p.name, idx),
+      }));
+      return sortPlayersByNumber(migrated);
+    });
   }, []);
 
   // Compute team totals

@@ -352,7 +352,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
             next.push({
               id: existing?.id || `scanned-${Date.now()}-${index}`,
               number: scanned.number > 0 ? scanned.number : (existing?.number ?? 0),
-              name: scanned.name.trim() ? scanned.name.trim() : (existing?.name ?? `Player ${index + 1}`),
+              name: scanned.name.trim() ? scanned.name.trim() : (existing?.name ?? `Player Number ${index + 1}`),
               isAssignedFromScan: true,
             });
           });
@@ -443,7 +443,7 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
         {
           id: `custom-slot-${Date.now()}`,
           number: nextNum,
-          name: `Player ${prev.length + 1}`,
+          name: `Player Number ${prev.length + 1}`,
           isAssignedFromScan: true,
         },
       ];

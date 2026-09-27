@@ -793,10 +793,14 @@ function isGenericPlayerName(name?: string | null, playerNum?: number | null): b
   if (
     clean === `player #${playerNum}` ||
     clean === `player ${playerNum}` ||
+    clean === `player number ${playerNum}` ||
     clean === `#${playerNum}` ||
     clean === 'player' ||
     clean === 'unlisted' ||
-    clean === 'unlisted player'
+    clean === 'unlisted player' ||
+    /^player\s*number\s*\d+$/i.test(clean) ||
+    /^visitor\s*player\s*\d+$/i.test(clean) ||
+    /^player\s*#?\d+$/i.test(clean)
   ) {
     return true;
   }
