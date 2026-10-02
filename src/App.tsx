@@ -5,11 +5,12 @@ import { ResetConfirmModal } from './components/ResetConfirmModal';
 import { CameraStickerScannerModal } from './components/CameraStickerScannerModal';
 import { QuickGoalModal } from './components/QuickGoalModal';
 import { PenaltyModal } from './components/PenaltyModal';
+import { ArenaConsoleModal, ConsoleTab } from './components/ArenaConsoleModal';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
-import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash } from 'lucide-react';
+import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt, generatePeriodRemainingPrompt } from './utils/audio';
+import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -233,6 +234,15 @@ export default function App() {
   const [scannerTargetPlayerId, setScannerTargetPlayerId] = useState<string | null>(null);
   const [isQuickGoalModalOpen, setIsQuickGoalModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
+
+  // Single Window Arena Announcer Console State ('goal' | 'penalty' | 'period' | 'speaker')
+  const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false);
+  const [consoleActiveTab, setConsoleActiveTab] = useState<ConsoleTab>('goal');
+
+  const openConsole = useCallback((tab: ConsoleTab = 'goal') => {
+    setConsoleActiveTab(tab);
+    setIsConsoleModalOpen(true);
+  }, []);
 
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
@@ -604,6 +614,104 @@ export default function App() {
     } catch (err: any) {
       setVoiceFeedback({
         message: err?.message || 'Speaker test failed',
+        type: 'warning'
+      });
+    } finally {
+      setIsAnnouncing(false);
+      setActiveAnnouncePlayerId(null);
+    }
+  }, [voiceStatus?.configured]);
+
+  // One minute remaining in period announcement
+  const handleAnnouncePeriod = useCallback(async (period: 'first' | 'second' | 'third' | 'overtime') => {
+    soundEngine.unlock();
+    const prompt = generatePeriodRemainingPrompt(period);
+
+    const announcement: Announcement = {
+      id: `period-${Date.now()}`,
+      type: 'period',
+      playerId: 'system',
+      playerNumber: 0,
+      playerName: 'Arena Clock',
+      text: prompt,
+      timestamp: Date.now(),
+      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      team: 'Pelham Arena',
+    };
+
+    setCurrentAnnouncement(announcement);
+    setIsAnnouncing(true);
+    setActiveAnnouncePlayerId(null);
+
+    try {
+      const res = await soundEngine.announce(prompt, 'nhl');
+      if (res.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
+      }
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice Notice: ${res.error}`,
+          type: 'warning'
+        });
+      } else {
+        const periodTitle = period === 'first' ? '1st Period' : period === 'second' ? '2nd Period' : period === 'third' ? '3rd Period' : 'Overtime';
+        setVoiceFeedback({
+          message: `Announced: "One minute remaining in the ${periodTitle.toLowerCase()}."`,
+          type: 'success'
+        });
+      }
+    } catch (err: any) {
+      setVoiceFeedback({
+        message: err?.message || 'Period announcement failed',
+        type: 'warning'
+      });
+    } finally {
+      setIsAnnouncing(false);
+      setActiveAnnouncePlayerId(null);
+    }
+  }, [voiceStatus?.configured]);
+
+  // Custom Arena announcement
+  const handleCustomAnnouncement = useCallback(async (customText: string) => {
+    if (!customText.trim()) return;
+    soundEngine.unlock();
+    const prompt = customText.trim();
+
+    const announcement: Announcement = {
+      id: `custom-${Date.now()}`,
+      type: 'welcome',
+      playerId: 'system',
+      playerNumber: 0,
+      playerName: 'Arena Announcer',
+      text: prompt,
+      timestamp: Date.now(),
+      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      team: 'Pelham Arena',
+    };
+
+    setCurrentAnnouncement(announcement);
+    setIsAnnouncing(true);
+    setActiveAnnouncePlayerId(null);
+
+    try {
+      const res = await soundEngine.announce(prompt, 'nhl');
+      if (res.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
+      }
+      if (res.error) {
+        setVoiceFeedback({
+          message: `Voice Notice: ${res.error}`,
+          type: 'warning'
+        });
+      } else {
+        setVoiceFeedback({
+          message: `Broadcast: "${prompt}"`,
+          type: 'success'
+        });
+      }
+    } catch (err: any) {
+      setVoiceFeedback({
+        message: err?.message || 'Custom announcement failed',
         type: 'warning'
       });
     } finally {
@@ -1094,7 +1202,7 @@ export default function App() {
             <button
               id="nav-quick-goal-btn"
               type="button"
-              onClick={() => setIsQuickGoalModalOpen(true)}
+              onClick={() => openConsole('goal')}
               className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shadow-amber-500/20 shrink-0"
               title="Input jersey numbers of scorer and assist maker with numeric keypad"
             >
@@ -1109,7 +1217,7 @@ export default function App() {
             <button
               id="nav-penalty-btn"
               type="button"
-              onClick={() => setIsPenaltyModalOpen(true)}
+              onClick={() => openConsole('penalty')}
               className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
               title="Announce a penalty: 'Number [X], [Team] two minutes for [foul]'"
             >
@@ -1119,11 +1227,26 @@ export default function App() {
             </button>
           )}
 
-          {/* Test Speaker Button (Short pre-game sound check) */}
+          {/* Period Warnings Trigger: 1 Minute Remaining */}
+          {currentTab !== 'settings' && (
+            <button
+              id="nav-period-btn"
+              type="button"
+              onClick={() => openConsole('period')}
+              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-sky-500/20 active:scale-95 text-sky-300 hover:text-white border border-sky-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
+              title="Announce: 'One minute remaining in the [first/second/third] period'"
+            >
+              <Clock className="w-3 h-3 text-sky-400 shrink-0" />
+              <span className="hidden sm:inline">1 Min Period</span>
+              <span className="sm:hidden">1 Min</span>
+            </button>
+          )}
+
+          {/* Test Speaker Button (Opens Speaker tab in console or sound check) */}
           <button
             id="nav-test-speaker-btn"
             type="button"
-            onClick={handleTestSpeaker}
+            onClick={() => openConsole('speaker')}
             disabled={isAnnouncing}
             className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-cyan-500/20 active:scale-95 text-cyan-300 hover:text-white border border-cyan-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
             title="Test Speaker: Short pre-game sound check before game"
@@ -1133,11 +1256,11 @@ export default function App() {
             <span className="sm:hidden">Speaker</span>
           </button>
 
-          {/* Welcome Message Button (Renamed from Test Sound) */}
+          {/* Welcome Message Button */}
           <button
             id="nav-welcome-msg-btn"
             type="button"
-            onClick={handleTestVoice}
+            onClick={() => openConsole('speaker')}
             disabled={isAnnouncing}
             className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-amber-500/20 active:scale-95 text-amber-300 hover:text-white border border-amber-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
             title={`Welcome message: Pre-game welcome announcement hosting ${visitorTeamName} and national anthem lineup`}
@@ -1322,7 +1445,7 @@ export default function App() {
               {/* Quick Keypad Goal & Assist Entry */}
               <button
                 type="button"
-                onClick={() => setIsQuickGoalModalOpen(true)}
+                onClick={() => openConsole('goal')}
                 className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
                   isVisitor
                     ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
@@ -1338,12 +1461,24 @@ export default function App() {
               <button
                 type="button"
                 id="roster-penalty-btn"
-                onClick={() => setIsPenaltyModalOpen(true)}
+                onClick={() => openConsole('penalty')}
                 className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-white border border-rose-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
                 title="Announce penalty with template: Number [X], [Team] two minutes for [foul]"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
                 <span className="font-athletic uppercase tracking-wider">Penalty</span>
+              </button>
+
+              {/* Period 1 Minute Warning */}
+              <button
+                type="button"
+                id="roster-period-btn"
+                onClick={() => openConsole('period')}
+                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-sky-500/20 text-sky-300 hover:text-white border border-sky-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
+                title="Announce: 'One minute remaining in the [first/second/third] period'"
+              >
+                <Clock className="w-3.5 h-3.5 text-sky-400" />
+                <span className="font-athletic uppercase tracking-wider">1 Min Warning</span>
               </button>
 
               <button
@@ -1466,7 +1601,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsQuickGoalModalOpen(true)}
+                onClick={() => openConsole('goal')}
                 className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${
                   isVisitor
                     ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
@@ -1623,28 +1758,48 @@ export default function App() {
         onUpdateAllPlayers={handleSaveAllPlayersFromSticker}
       />
 
-      {/* Quick Goal & Assist Entry Modal with Numeric Keypad */}
-      <QuickGoalModal
-        isOpen={isQuickGoalModalOpen}
-        onClose={() => setIsQuickGoalModalOpen(false)}
+      {/* Unified Arena Announcer Console: Single Window for Keypad Goal, Penalty, Period Alerts, Speaker & Welcome */}
+      <ArenaConsoleModal
+        isOpen={isConsoleModalOpen || isQuickGoalModalOpen || isPenaltyModalOpen}
+        onClose={() => {
+          setIsConsoleModalOpen(false);
+          setIsQuickGoalModalOpen(false);
+          setIsPenaltyModalOpen(false);
+        }}
+        activeTab={
+          isQuickGoalModalOpen
+            ? 'goal'
+            : isPenaltyModalOpen
+            ? 'penalty'
+            : consoleActiveTab
+        }
+        onTabChange={(tab) => {
+          setConsoleActiveTab(tab);
+          if (tab === 'goal') {
+            setIsQuickGoalModalOpen(true);
+            setIsPenaltyModalOpen(false);
+          } else if (tab === 'penalty') {
+            setIsPenaltyModalOpen(true);
+            setIsQuickGoalModalOpen(false);
+          } else {
+            setIsQuickGoalModalOpen(false);
+            setIsPenaltyModalOpen(false);
+          }
+        }}
         homePlayers={homePlayers}
         visitorPlayers={visitorPlayers}
         activeTeamTab={activeTeamTab}
         onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
         visitorTeamName={visitorTeamName}
+        isAnnouncing={isAnnouncing}
+        currentAnnouncement={currentAnnouncement}
         onScoreGoalWithAssist={handleScoreGoalWithAssist}
-      />
-
-      {/* Penalty Announcement Modal with Template & Foul Type Selector */}
-      <PenaltyModal
-        isOpen={isPenaltyModalOpen}
-        onClose={() => setIsPenaltyModalOpen(false)}
-        homePlayers={homePlayers}
-        visitorPlayers={visitorPlayers}
-        activeTeamTab={activeTeamTab}
-        onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
-        visitorTeamName={visitorTeamName}
         onAnnouncePenalty={handleAnnouncePenalty}
+        onAnnouncePeriod={handleAnnouncePeriod}
+        onTestSpeaker={handleTestSpeaker}
+        onWelcomeMessage={handleTestVoice}
+        onCustomAnnouncement={handleCustomAnnouncement}
+        onReplayAnnouncement={handleReplayAnnouncement}
       />
 
       {/* Confirmation Modal when removing a player who already has goals or assists */}

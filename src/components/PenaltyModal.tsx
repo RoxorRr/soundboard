@@ -44,6 +44,7 @@ interface PenaltyModalProps {
   activeTeamTab?: 'home' | 'visitor';
   onSwitchTeamTab?: (tab: 'home' | 'visitor') => void;
   visitorTeamName?: string;
+  embedded?: boolean;
   onAnnouncePenalty: (
     team: 'home' | 'visitor',
     player: Player,
@@ -61,6 +62,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   visitorPlayers,
   onSwitchTeamTab,
   visitorTeamName = 'Visiting Team',
+  embedded = false,
   onAnnouncePenalty,
 }) => {
   // CRITICAL: Do NOT pre-select team. User must choose explicitly to avoid game-time mistakes.
@@ -449,11 +451,11 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150 select-none">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92dvh]">
-        {/* Header */}
-        <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+  const modalBody = (
+    <div className={`w-full overflow-hidden flex flex-col ${embedded ? 'flex-1 min-h-0' : 'bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-lg max-h-[92dvh]'}`}>
+      {/* Header - only if not embedded */}
+      {!embedded && (
+        <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
               <ShieldAlert className="w-5 h-5" />
@@ -477,8 +479,9 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+      )}
 
-        {/* Manual Team Selector Tabs - Not pre-selected to prevent game-time mistakes */}
+      {/* Manual Team Selector Tabs - Not pre-selected to prevent game-time mistakes */}
         <div className="bg-slate-900/95 px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -1390,7 +1393,17 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
           </button>
         </div>
       </div>
+  );
+
+  if (embedded) {
+    return modalBody;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150 select-none">
+      {modalBody}
     </div>
   );
 };
+
 

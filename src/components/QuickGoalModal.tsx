@@ -11,6 +11,7 @@ interface QuickGoalModalProps {
   activeTeamTab?: 'home' | 'visitor';
   onSwitchTeamTab?: (tab: 'home' | 'visitor') => void;
   visitorTeamName?: string;
+  embedded?: boolean;
   onScoreGoalWithAssist: (
     team: 'home' | 'visitor',
     scorer: Player,
@@ -28,6 +29,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   visitorPlayers,
   onSwitchTeamTab,
   visitorTeamName = 'Visiting Team',
+  embedded = false,
   onScoreGoalWithAssist,
 }) => {
   // CRITICAL: Do NOT pre-select team. User must choose manually to prevent scoring mistakes during the game.
@@ -475,11 +477,11 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150 select-none">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[94dvh]">
-        {/* Header */}
-        <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+  const modalBody = (
+    <div className={`w-full overflow-hidden flex flex-col ${embedded ? 'flex-1 min-h-0' : 'bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-xl max-h-[94dvh]'}`}>
+      {/* Header - only if not embedded */}
+      {!embedded && (
+        <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
             <div className={`p-2 rounded-xl ${selectedTeam === 'visitor' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'} border border-current/20`}>
               <Flame className="w-5 h-5" />
@@ -506,6 +508,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+      )}
 
         {/* Team Selector Tabs - Manual Selection Required */}
         <div className="bg-slate-900/95 px-4 py-2.5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
@@ -1125,6 +1128,16 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
           </div>
         </div>
       </div>
+  );
+
+  if (embedded) {
+    return modalBody;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150 select-none">
+      {modalBody}
     </div>
   );
 };
+

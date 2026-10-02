@@ -909,5 +909,23 @@ export function generateWelcomePrompt(opponentTeam: string = 'visiting team'): s
   return `Welcome, everyone, and thank you for joining us for today’s hockey game. The Pelham Pelicans are excited to host ${teamPhrase} and look forward to a competitive, respectful, and fun matchup. Enjoy the game, and best of luck to both teams. At this time, I’d like to ask both teams to please line up for our national anthem.`;
 }
 
+export function generatePeriodRemainingPrompt(period: 'first' | 'second' | 'third' | 'overtime' | string): string {
+  const clean = period?.trim().toLowerCase();
+  if (clean === 'first' || clean === '1' || clean === '1st') {
+    return 'One minute remaining in the first period.';
+  }
+  if (clean === 'second' || clean === '2' || clean === '2nd') {
+    return 'One minute remaining in the second period.';
+  }
+  if (clean === 'third' || clean === '3' || clean === '3rd') {
+    return 'One minute remaining in the third period.';
+  }
+  if (clean === 'overtime' || clean === 'ot') {
+    return 'One minute remaining in overtime.';
+  }
+  return `One minute remaining in the ${clean} period.`;
+}
+
+
 
 

@@ -10,7 +10,7 @@ export type TTSProvider = 'elevenlabs' | 'cartesia' | 'speechify';
 
 export interface Announcement {
   id: string;
-  type: 'goal' | 'assist' | 'penalty' | 'welcome';
+  type: 'goal' | 'assist' | 'penalty' | 'welcome' | 'period';
   playerId: string;
   playerNumber: number;
   playerName: string;
