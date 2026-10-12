@@ -18,10 +18,10 @@ export default async function handler(req: any, res: any) {
   const hasCartesia = hasCartesia1 || hasCartesia2;
   const hasSpeechify = Boolean((process.env.SPEECHIFY_API_KEY || process.env.SPEECHITY_API_KEY || process.env.SPEECHIFY_KEY)?.trim());
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
-  const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID || "nhl";
-  const rawVoice1 = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE || process.env.CARTESIA_VOICE_ID_1 || "694f9389-aac1-45b6-b726-9d9369183238").trim();
+  const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID || "6j98Cb2txyqvHRXeRQYZ";
+  const rawVoice1 = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE || process.env.CARTESIA_VOICE_ID_1 || "a27f2ab7-6793-4893-9f40-e50d5e5605ba").trim();
   const rawVoice2 = (process.env.CARTESIA_VOICE_ID_2 || process.env.CARTESIA_SECOND_VOICE_ID || process.env.CARTESIA_VOICE_2 || "").trim();
-  const cartesiaVoiceId = !rawVoice1.startsWith("sk_") ? rawVoice1 : "694f9389-aac1-45b6-b726-9d9369183238";
+  const cartesiaVoiceId = !rawVoice1.startsWith("sk_") ? rawVoice1 : "a27f2ab7-6793-4893-9f40-e50d5e5605ba";
   const cartesiaVoiceId2 = !rawVoice2.startsWith("sk_") ? rawVoice2 : "";
   const speechifyVoiceId = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "geffen_32").trim();
   const speechifyModel = (process.env.SPEECHIFY_MODEL || "simba-3.2").trim();

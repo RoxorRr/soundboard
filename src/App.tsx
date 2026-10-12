@@ -294,7 +294,10 @@ export default function App() {
         return res.json();
       })
       .then((data: VoiceStatus | null) => {
-        if (data) setVoiceStatus(data);
+        if (data) {
+          setVoiceStatus(data);
+          soundEngine.syncServerVoiceDefaults(data);
+        }
       })
       .catch((err) => console.warn('Could not fetch server voice status:', err));
   }, []);

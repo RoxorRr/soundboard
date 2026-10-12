@@ -114,7 +114,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [cartesiaPreset, setCartesiaPreset] = useState<string>('arena');
   const [customVoiceIdAccount1Input, setCustomVoiceIdAccount1Input] = useState<string>(() => {
     const s = soundEngine.getCartesiaSettings();
-    return s.voiceIdAccount1 || (s.voiceId !== '694f9389-aac1-45b6-b726-9d9369183238' ? s.voiceId : '') || '';
+    return s.voiceIdAccount1 || (s.voiceId !== '694f9389-aac1-45b6-b726-9d9369183238' ? s.voiceId : '') || 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
   });
   const [customVoiceIdAccount2Input, setCustomVoiceIdAccount2Input] = useState<string>(() => {
     const s = soundEngine.getCartesiaSettings();
@@ -124,10 +124,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isTestingAccount1, setIsTestingAccount1] = useState<boolean>(false);
   const [isTestingAccount2, setIsTestingAccount2] = useState<boolean>(false);
   const [customCartesiaVoiceIdInput, setCustomCartesiaVoiceIdInput] = useState<string>(
-    cartesiaSettings.voiceId || '694f9389-aac1-45b6-b726-9d9369183238'
+    cartesiaSettings.voiceId || 'a27f2ab7-6793-4893-9f40-e50d5e5605ba'
   );
   const [isCustomCartesiaVoiceSelected, setIsCustomCartesiaVoiceSelected] = useState<boolean>(
-    !['694f9389-aac1-45b6-b726-9d9369183238', '47c38ca4-5f35-497b-b1a3-415245fb35e1', 'a167e0f3-df7e-4d52-a9c3-f949145efdab', 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4'].includes(
+    !['a27f2ab7-6793-4893-9f40-e50d5e5605ba', '694f9389-aac1-45b6-b726-9d9369183238', '47c38ca4-5f35-497b-b1a3-415245fb35e1', 'a167e0f3-df7e-4d52-a9c3-f949145efdab', 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4'].includes(
       cartesiaSettings.voiceId || ''
     )
   );
@@ -146,10 +146,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     )
   );
 
-  // Sync server configured env voice IDs when loaded if state is empty
+  // Sync server configured env voice IDs when loaded across all devices
   useEffect(() => {
-    if (voiceStatus?.cartesiaVoiceId && !customVoiceIdAccount1Input) {
-      setCustomVoiceIdAccount1Input(voiceStatus.cartesiaVoiceId);
+    if (voiceStatus?.cartesiaVoiceId) {
+      if (!customVoiceIdAccount1Input || customVoiceIdAccount1Input === '694f9389-aac1-45b6-b726-9d9369183238') {
+        setCustomVoiceIdAccount1Input(voiceStatus.cartesiaVoiceId);
+      }
+      if (!cartesiaSettings.voiceId || cartesiaSettings.voiceId === '694f9389-aac1-45b6-b726-9d9369183238') {
+        handleUpdateCartesiaSetting('voiceId', voiceStatus.cartesiaVoiceId);
+      }
     }
     if (voiceStatus?.cartesiaVoiceId2 && !customVoiceIdAccount2Input) {
       setCustomVoiceIdAccount2Input(voiceStatus.cartesiaVoiceId2);
@@ -157,7 +162,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (voiceStatus?.speechifyVoiceId && !customSpeechifyVoiceIdInput) {
       setCustomSpeechifyVoiceIdInput(voiceStatus.speechifyVoiceId);
     }
-  }, [voiceStatus?.cartesiaVoiceId, voiceStatus?.cartesiaVoiceId2, voiceStatus?.speechifyVoiceId]);
+    if (voiceStatus?.voiceId && voiceStatus.voiceId !== 'nhl' && (!voiceSettings.voiceId || voiceSettings.voiceId === 'nhl')) {
+      handleUpdateSetting('voiceId', voiceStatus.voiceId);
+    }
+  }, [voiceStatus?.cartesiaVoiceId, voiceStatus?.cartesiaVoiceId2, voiceStatus?.speechifyVoiceId, voiceStatus?.voiceId]);
 
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
@@ -185,6 +193,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ];
 
   const CARTESIA_PRESET_VOICES = [
+    { id: 'a27f2ab7-6793-4893-9f40-e50d5e5605ba', name: 'Pelham Custom Arena Voice', desc: 'Custom Cloned Arena Play-by-Play' },
     { id: '694f9389-aac1-45b6-b726-9d9369183238', name: 'Barbershop Announcer', desc: 'Deep & Confident Stadium Voice' },
     { id: '47c38ca4-5f35-497b-b1a3-415245fb35e1', name: 'Daniel (Sports Broadcast)', desc: 'Clear & Natural Play-by-Play' },
     { id: 'a167e0f3-df7e-4d52-a9c3-f949145efdab', name: 'Commercial Promo Host', desc: 'Dynamic High-Octane Hype' },

@@ -1,5 +1,5 @@
 // Professional Web Audio Arena sound engine, ElevenLabs, Cartesia & Speechify TTS player
-import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, SpeechifyVoiceSettings, TTSProvider } from '../types';
+import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, SpeechifyVoiceSettings, TTSProvider, VoiceStatus } from '../types';
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
@@ -19,8 +19,8 @@ export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
 };
 
 export const DEFAULT_CARTESIA_VOICE_SETTINGS: CartesiaVoiceSettings = {
-  voiceId: '694f9389-aac1-45b6-b726-9d9369183238', // Barbershop Man / Announcer
-  voiceIdAccount1: '',
+  voiceId: 'a27f2ab7-6793-4893-9f40-e50d5e5605ba', // Pelham Custom Arena Voice
+  voiceIdAccount1: 'a27f2ab7-6793-4893-9f40-e50d5e5605ba',
   voiceIdAccount2: '',
   modelId: 'sonic-3.5',
   speed: 1.05,
@@ -67,7 +67,13 @@ class SoundEngine {
 
         const savedCartesia = localStorage.getItem('pelham_cartesia_voice_settings');
         if (savedCartesia) {
-          this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...JSON.parse(savedCartesia) };
+          const parsed = JSON.parse(savedCartesia);
+          // If previously saved with the legacy default barbershop ID, auto-upgrade to the custom voice ID
+          if (parsed && (parsed.voiceId === '694f9389-aac1-45b6-b726-9d9369183238' || !parsed.voiceId)) {
+            parsed.voiceId = 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
+            parsed.voiceIdAccount1 = parsed.voiceIdAccount1 || 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
+          }
+          this.cartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS, ...parsed };
         }
 
         const savedSpeechify = localStorage.getItem('pelham_speechify_voice_settings');
@@ -83,6 +89,72 @@ class SoundEngine {
         unlockEvents.forEach((ev) => window.removeEventListener(ev, onUserInteraction));
       };
       unlockEvents.forEach((ev) => window.addEventListener(ev, onUserInteraction, { passive: true }));
+    }
+  }
+
+  // Synchronize server-configured custom voice IDs across all devices without requiring manual setup
+  public syncServerVoiceDefaults(status?: VoiceStatus | null): void {
+    if (!status) return;
+
+    // 1. Sync Cartesia custom voice ID across all devices
+    const targetCartesiaVoice = status.cartesiaVoiceId || 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
+    if (targetCartesiaVoice) {
+      const current = this.cartesiaVoiceSettings.voiceId;
+      if (!current || current === '694f9389-aac1-45b6-b726-9d9369183238') {
+        this.cartesiaVoiceSettings = {
+          ...this.cartesiaVoiceSettings,
+          voiceId: targetCartesiaVoice,
+          voiceIdAccount1: targetCartesiaVoice,
+        };
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('pelham_cartesia_voice_settings', JSON.stringify(this.cartesiaVoiceSettings));
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 2. Sync ElevenLabs custom voice ID
+    const targetElevenVoice = status.voiceId || '6j98Cb2txyqvHRXeRQYZ';
+    if (targetElevenVoice && targetElevenVoice !== 'nhl') {
+      const current = this.voiceSettings.voiceId;
+      if (!current || current === 'nhl') {
+        this.voiceSettings = {
+          ...this.voiceSettings,
+          voiceId: targetElevenVoice,
+        };
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('pelham_voice_settings', JSON.stringify(this.voiceSettings));
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 3. Sync Speechify custom voice ID
+    if (status.speechifyVoiceId && status.speechifyVoiceId !== 'geffen_32') {
+      this.speechifyVoiceSettings = {
+        ...this.speechifyVoiceSettings,
+        voiceId: status.speechifyVoiceId,
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('pelham_speechify_voice_settings', JSON.stringify(this.speechifyVoiceSettings));
+        } catch (_) {}
+      }
+    }
+
+    // 4. Default to Cartesia if Cartesia is configured and ElevenLabs is not
+    if (status.cartesiaConfigured && !status.elevenLabsConfigured) {
+      if (typeof window !== 'undefined') {
+        const savedProvider = localStorage.getItem('pelham_tts_provider');
+        if (!savedProvider || savedProvider === 'elevenlabs') {
+          this.ttsProvider = 'cartesia';
+          try {
+            localStorage.setItem('pelham_tts_provider', 'cartesia');
+          } catch (_) {}
+        }
+      }
     }
   }
 

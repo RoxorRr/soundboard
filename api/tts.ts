@@ -64,7 +64,7 @@ export default async function handler(req: any, res: any) {
           fallback: true,
           provider: "cartesia",
           error: "Cartesia API Key is not configured in environment variables. Add CARTESIA_API_KEY (Account 1) or CARTESIA_API_KEY_2 (Account 2) in your Project Settings > Environment Variables.",
-          voiceId: cartesiaSettings?.voiceId || account1VoiceId || account2VoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
+          voiceId: cartesiaSettings?.voiceId || account1VoiceId || account2VoiceId || "a27f2ab7-6793-4893-9f40-e50d5e5605ba",
         });
         return;
       }
@@ -82,7 +82,7 @@ export default async function handler(req: any, res: any) {
           id: "account1",
           label: "Account 1 (Primary)",
           apiKey: account1ApiKey,
-          defaultVoiceId: account1VoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
+          defaultVoiceId: account1VoiceId || "a27f2ab7-6793-4893-9f40-e50d5e5605ba",
         });
       }
       if (account2ApiKey) {
@@ -90,7 +90,7 @@ export default async function handler(req: any, res: any) {
           id: "account2",
           label: "Account 2 (Secondary)",
           apiKey: account2ApiKey,
-          defaultVoiceId: account2VoiceId || account1VoiceId || "694f9389-aac1-45b6-b726-9d9369183238",
+          defaultVoiceId: account2VoiceId || account1VoiceId || "a27f2ab7-6793-4893-9f40-e50d5e5605ba",
         });
       }
 
