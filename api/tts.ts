@@ -1,3 +1,5 @@
+import { recordAndReportTTSUsage } from "./usageEmailReporter";
+
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -45,7 +47,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const provider = (reqProvider || "elevenlabs").toLowerCase();
+    const provider = (reqProvider || "speechify").toLowerCase();
 
     // ==========================================
     // PROVIDER 1: CARTESIA SONIC TTS (MULTI-ACCOUNT)
@@ -349,7 +351,7 @@ export default async function handler(req: any, res: any) {
 
       const envVoice = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "").trim();
       const userVoice = (speechifySettings?.voiceId || reqVoiceId || "").trim();
-      const defaultVoice = "geffen_32";
+      const defaultVoice = "cf2bbc5b-59fb-427e-95a5-bcd76641852f";
 
       if (!speechifyApiKey) {
         res.status(200).json({
@@ -367,6 +369,7 @@ export default async function handler(req: any, res: any) {
       const voiceCandidates: string[] = [];
       if (userVoice && userVoice.toLowerCase() !== "nhl") voiceCandidates.push(userVoice);
       if (envVoice && envVoice.toLowerCase() !== "nhl") voiceCandidates.push(envVoice);
+      voiceCandidates.push("cf2bbc5b-59fb-427e-95a5-bcd76641852f"); // Personal Cloned NHL Arena Voice
       voiceCandidates.push("geffen_32"); // Simba 3.2 High-energy announcer
       voiceCandidates.push("dominic_32"); // Simba 3.2 Deep resonant play-by-play
       voiceCandidates.push("beatrice_32"); // Simba 3.2 Professional clear announcer
@@ -475,6 +478,24 @@ export default async function handler(req: any, res: any) {
       }
 
       const buffer = Buffer.from(successfulAudioBuffer);
+
+      // Asynchronously track character usage and notify richard.repka@gmail.com
+      const clientInfo = body.clientInfo || {};
+      const clientIp = (req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.socket?.remoteAddress || "Unknown")
+        .toString()
+        .split(",")[0]
+        .trim();
+      const userAgent = req.headers["user-agent"] || clientInfo.userAgent || "Unknown";
+      recordAndReportTTSUsage({
+        charactersUsed: text.length,
+        text,
+        provider: "speechify",
+        voiceId: winningVoiceId,
+        clientIp,
+        userAgent,
+        clientInfo,
+      }).catch((e) => console.warn("[TTS] Usage record error:", e));
+
       const wantsBase64 = reqFormat === "base64" || req.headers["accept"]?.includes("application/json");
 
       if (wantsBase64) {

@@ -358,7 +358,7 @@ export default function App() {
       playerName: player.name,
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+      source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
     };
 
     setCurrentAnnouncement(announcement);
@@ -425,7 +425,7 @@ export default function App() {
       playerName: player.name,
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+      source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
     };
 
     setCurrentAnnouncement(announcement);
@@ -528,20 +528,9 @@ export default function App() {
           message: `Voice Notice: ${res.error}`,
           type: 'warning'
         });
-      } else if (res.source === 'cartesia') {
-        const accountStr = res.cartesiaAccount === 'account2' ? 'Account 2' : res.cartesiaAccount === 'account1' ? 'Account 1' : '';
-        setVoiceFeedback({
-          message: `Cartesia Sonic ${accountStr ? `(${accountStr}) ` : ''}voice playing (${res.voiceId || 'announcer'})`,
-          type: 'success'
-        });
       } else if (res.source === 'speechify') {
         setVoiceFeedback({
           message: `Speechify Simba 3.2 voice playing (${res.voiceId || 'announcer'})`,
-          type: 'success'
-        });
-      } else if (res.source === 'elevenlabs') {
-        setVoiceFeedback({
-          message: `ElevenLabs voice playing (${res.voiceId || 'announcer'})`,
           type: 'success'
         });
       } else {
@@ -592,20 +581,9 @@ export default function App() {
           message: `Speaker Test Notice: ${res.error}`,
           type: 'warning'
         });
-      } else if (res.source === 'cartesia') {
-        const accountStr = res.cartesiaAccount === 'account2' ? 'Account 2' : res.cartesiaAccount === 'account1' ? 'Account 1' : '';
-        setVoiceFeedback({
-          message: `Cartesia Sonic ${accountStr ? `(${accountStr}) ` : ''}speaker test audio played (${res.voiceId || 'announcer'})`,
-          type: 'success'
-        });
       } else if (res.source === 'speechify') {
         setVoiceFeedback({
           message: `Speechify Simba 3.2 speaker test audio played (${res.voiceId || 'announcer'})`,
-          type: 'success'
-        });
-      } else if (res.source === 'elevenlabs') {
-        setVoiceFeedback({
-          message: `ElevenLabs speaker test audio played (${res.voiceId || 'announcer'})`,
           type: 'success'
         });
       } else {
@@ -924,7 +902,7 @@ export default function App() {
         playerName: scorer.name,
         text: prompt,
         timestamp: Date.now(),
-        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+        source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
         team: currentTeam,
       };
 
@@ -999,7 +977,7 @@ export default function App() {
         playerName: player.name,
         text: promptText,
         timestamp: Date.now(),
-        source: voiceStatus?.configured ? 'elevenlabs' : 'webspeech',
+        source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
         team: currentTeam,
         penaltyInfraction: infraction,
         penaltyDuration: durationText && durationText.trim() !== '' ? durationText : 'Without time',

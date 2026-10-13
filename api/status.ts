@@ -23,24 +23,15 @@ export default async function handler(req: any, res: any) {
   const rawVoice2 = (process.env.CARTESIA_VOICE_ID_2 || process.env.CARTESIA_SECOND_VOICE_ID || process.env.CARTESIA_VOICE_2 || "").trim();
   const cartesiaVoiceId = !rawVoice1.startsWith("sk_") ? rawVoice1 : "a27f2ab7-6793-4893-9f40-e50d5e5605ba";
   const cartesiaVoiceId2 = !rawVoice2.startsWith("sk_") ? rawVoice2 : "";
-  const speechifyVoiceId = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "geffen_32").trim();
+  const speechifyVoiceId = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "cf2bbc5b-59fb-427e-95a5-bcd76641852f").trim();
   const speechifyModel = (process.env.SPEECHIFY_MODEL || "simba-3.2").trim();
 
   res.status(200).json({
-    configured: hasElevenLabs || hasCartesia || hasSpeechify,
-    elevenLabsConfigured: hasElevenLabs,
-    cartesiaConfigured: hasCartesia,
-    cartesiaAccount1Configured: hasCartesia1,
-    cartesiaAccount2Configured: hasCartesia2,
-    cartesiaAccountsCount: (hasCartesia1 ? 1 : 0) + (hasCartesia2 ? 1 : 0),
+    configured: hasSpeechify,
     speechifyConfigured: hasSpeechify,
+    activeProvider: "speechify",
     geminiConfigured: hasGemini,
-    voiceId,
-    cartesiaVoiceId,
-    cartesiaVoiceId2,
     speechifyVoiceId,
-    model: "eleven_turbo_v2_5",
-    cartesiaModel: "sonic-3.5",
     speechifyModel,
     team: "Pelham Pelicans"
   });
