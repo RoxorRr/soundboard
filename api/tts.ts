@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import { recordAndReportTTSUsage } from "./usageEmailReporter";
 
 export default async function handler(req: any, res: any) {
@@ -363,6 +365,7 @@ export default async function handler(req: any, res: any) {
         process.env.VITE_SPEECHITY_API_KEY,
         process.env.NEXT_PUBLIC_SPEECHIFY_API_KEY,
         speechifySettings?.apiKey,
+        "sk_myrwfk72sn1zdgmqb3z2s2yfxhrznygvy6hcvzjga7n",
       ];
 
       const rawKey = speechifyKeyCandidates
@@ -463,13 +466,13 @@ export default async function handler(req: any, res: any) {
       };
 
       // Priority 1: User explicitly chosen voice
-      if (userVoice && userVoice.toLowerCase() !== "nhl") {
+      if (userVoice) {
         const resolved = resolveVoiceOrPersonal(userVoice);
         if (resolved) candidateList.push(resolved);
       }
 
       // Priority 2: Vercel environment voice setting
-      if (envVoice && envVoice.toLowerCase() !== "nhl") {
+      if (envVoice) {
         const resolved = resolveVoiceOrPersonal(envVoice);
         if (resolved) candidateList.push(resolved);
       }

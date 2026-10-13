@@ -7,7 +7,7 @@ import scanStickerHandler from "./api/scan-sticker";
 import ttsHandler from "./api/tts";
 import creditsHandler from "./api/credits";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 async function startServer() {
   const app = express();

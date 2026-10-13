@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config({ override: true });
+
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -26,6 +29,7 @@ export default async function handler(req: any, res: any) {
     { name: "VITE_SPEECHIFY_KEY", val: process.env.VITE_SPEECHIFY_KEY },
     { name: "VITE_SPEECHITY_API_KEY", val: process.env.VITE_SPEECHITY_API_KEY },
     { name: "NEXT_PUBLIC_SPEECHIFY_API_KEY", val: process.env.NEXT_PUBLIC_SPEECHIFY_API_KEY },
+    { name: "SPEECHIFY_DEFAULT_KEY", val: "sk_myrwfk72sn1zdgmqb3z2s2yfxhrznygvy6hcvzjga7n" },
   ];
 
   let detectedKey = "";
