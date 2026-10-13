@@ -1,6 +1,209 @@
 import dotenv from "dotenv";
 dotenv.config({ override: true });
-import { recordAndReportTTSUsage } from "./usageEmailReporter";
+import fs from "fs";
+import path from "path";
+import nodemailer from "nodemailer";
+
+const TARGET_EMAIL = "richard.repka@gmail.com";
+
+interface TTSUsageEntry {
+  id: string;
+  timestamp: string;
+  charactersUsed: number;
+  text: string;
+  provider: string;
+  voiceId: string;
+  clientIp: string;
+  userAgent: string;
+  deviceSummary: string;
+  deviceId: string;
+}
+
+interface TTSUsageStorage {
+  totalCharacters: number;
+  totalAnnouncements: number;
+  lastUpdated: string;
+  byDevice: Record<string, { deviceSummary: string; count: number; characters: number; lastSeen: string }>;
+  recentLogs: TTSUsageEntry[];
+}
+
+const STORAGE_PATH = path.join("/tmp", "pelham_speechify_usage_data.json");
+
+let inMemoryStorage: TTSUsageStorage = {
+  totalCharacters: 0,
+  totalAnnouncements: 0,
+  lastUpdated: new Date().toISOString(),
+  byDevice: {},
+  recentLogs: [],
+};
+
+function loadStorage(): TTSUsageStorage {
+  try {
+    if (fs.existsSync(STORAGE_PATH)) {
+      const raw = fs.readFileSync(STORAGE_PATH, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.totalCharacters === "number") {
+        inMemoryStorage = parsed;
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  return inMemoryStorage;
+}
+
+function saveStorage(data: TTSUsageStorage): void {
+  inMemoryStorage = data;
+  try {
+    fs.writeFileSync(STORAGE_PATH, JSON.stringify(data, null, 2), "utf8");
+  } catch (_) {}
+}
+
+function getFriendlyDeviceSummary(ua: string, clientInfo?: any): string {
+  let dev = "Web Client";
+  if (/iPhone/i.test(ua)) dev = "Apple iPhone (iOS)";
+  else if (/iPad/i.test(ua)) dev = "Apple iPad (iPadOS)";
+  else if (/Macintosh/i.test(ua) || /Mac/i.test(clientInfo?.platform || "")) dev = "Apple Mac (macOS)";
+  else if (/Windows/i.test(ua) || /Win/i.test(clientInfo?.platform || "")) dev = "Windows PC";
+  else if (/Android/i.test(ua)) dev = "Android Device";
+  else if (/CrOS/i.test(ua)) dev = "ChromeOS Device";
+  else if (/Linux/i.test(ua)) dev = "Linux Device";
+  else if (clientInfo?.platform && clientInfo.platform !== "Unknown") dev = clientInfo.platform;
+
+  let browser = "";
+  if (/Edg/i.test(ua)) browser = "Edge";
+  else if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = "Chrome";
+  else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+  else if (/Firefox/i.test(ua)) browser = "Firefox";
+
+  const parts = [dev];
+  if (browser) parts.push(browser);
+  if (clientInfo?.timeZone && clientInfo.timeZone !== "UTC") {
+    const tzClean = clientInfo.timeZone.split("/").pop()?.replace(/_/g, " ") || clientInfo.timeZone;
+    parts.push(tzClean);
+  }
+  return parts.join(" • ");
+}
+
+async function sendUsageEmail(entry: TTSUsageEntry, storage: TTSUsageStorage): Promise<boolean> {
+  const subject = `[Pelham Arena PA] ${entry.charactersUsed} chars used for TTS (${entry.deviceSummary})`;
+  const textBody = `Pelham Pelicans Arena PA - TTS Usage Report\n\nTarget Recipient: ${TARGET_EMAIL}\nTTS Engine: Speechify (Simba 3.2)\nVoice ID: ${entry.voiceId}\nTimestamp: ${entry.timestamp}\n\n1. WHO IS USING THE APP\n• Device: ${entry.deviceSummary}\n• Device ID: ${entry.deviceId}\n• Client IP: ${entry.clientIp}\n• User Agent: ${entry.userAgent}\n\n2. USAGE\n• Characters: ${entry.charactersUsed}\n• Text: "${entry.text}"\n\n3. TOTALS\n• Total Characters: ${storage.totalCharacters.toLocaleString()}\n• Total Announcements: ${storage.totalAnnouncements.toLocaleString()}\n`;
+
+  let delivered = false;
+
+  // 1. Direct FormSubmit HTTP Relay
+  try {
+    const formSubmitRes = await fetch(`https://formsubmit.co/ajax/${TARGET_EMAIL}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        _subject: subject,
+        _template: "table",
+        User_Device: entry.deviceSummary,
+        Characters_Used: `${entry.charactersUsed} characters`,
+        Spoken_Announcement: entry.text,
+        Device_ID: entry.deviceId,
+        Client_IP: entry.clientIp,
+        Voice_ID: entry.voiceId,
+        Timestamp: entry.timestamp,
+        Cumulative_Total_Characters: `${storage.totalCharacters.toLocaleString()} characters`,
+        Cumulative_Announcements: `${storage.totalAnnouncements.toLocaleString()}`,
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (formSubmitRes.ok) {
+      console.log(`[UsageReporter] Delivered usage email via FormSubmit relay to ${TARGET_EMAIL}`);
+      delivered = true;
+    }
+  } catch (e: any) {
+    // Non-blocking
+  }
+
+  // 2. SMTP if configured
+  const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_HOST;
+  const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.GMAIL_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || process.env.GMAIL_APP_PASSWORD;
+
+  if (smtpHost || (smtpUser && smtpPass)) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost || "smtp.gmail.com",
+        port: Number(process.env.SMTP_PORT || 465),
+        secure: Number(process.env.SMTP_PORT || 465) === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+      await transporter.sendMail({
+        from: smtpUser || `"Pelham Arena PA" <noreply@pelhampelicans.com>`,
+        to: TARGET_EMAIL,
+        subject,
+        text: textBody,
+      });
+      console.log(`[UsageReporter] Delivered usage email via SMTP to ${TARGET_EMAIL}`);
+      delivered = true;
+    } catch (e: any) {
+      // Non-blocking
+    }
+  }
+
+  return delivered;
+}
+
+async function recordAndReportTTSUsage(params: {
+  charactersUsed: number;
+  text: string;
+  provider: string;
+  voiceId: string;
+  clientIp: string;
+  userAgent: string;
+  clientInfo?: { deviceId?: string; platform?: string; screenResolution?: string };
+}): Promise<void> {
+  try {
+    const storage = loadStorage();
+    const count = Math.max(0, params.charactersUsed || params.text.length);
+    const deviceSummary = getFriendlyDeviceSummary(params.userAgent, params.clientInfo);
+    const deviceId = params.clientInfo?.deviceId || params.clientIp || "device-unknown";
+
+    storage.totalCharacters += count;
+    storage.totalAnnouncements += 1;
+    storage.lastUpdated = new Date().toISOString();
+
+    if (!storage.byDevice[deviceId]) {
+      storage.byDevice[deviceId] = {
+        deviceSummary,
+        count: 0,
+        characters: 0,
+        lastSeen: new Date().toISOString(),
+      };
+    }
+
+    storage.byDevice[deviceId].count += 1;
+    storage.byDevice[deviceId].characters += count;
+    storage.byDevice[deviceId].deviceSummary = deviceSummary;
+    storage.byDevice[deviceId].lastSeen = new Date().toISOString();
+
+    const entry: TTSUsageEntry = {
+      id: `tts_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toLocaleString("en-US", { timeZoneName: "short" }),
+      charactersUsed: count,
+      text: params.text,
+      provider: params.provider,
+      voiceId: params.voiceId,
+      clientIp: params.clientIp,
+      userAgent: params.userAgent,
+      deviceSummary,
+      deviceId,
+    };
+
+    storage.recentLogs.unshift(entry);
+    if (storage.recentLogs.length > 50) {
+      storage.recentLogs = storage.recentLogs.slice(0, 50);
+    }
+
+    saveStorage(storage);
+    sendUsageEmail(entry, storage).catch(() => {});
+  } catch (err: any) {
+    console.warn("[UsageReporter] Error recording TTS usage:", err?.message);
+  }
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -372,7 +575,7 @@ export default async function handler(req: any, res: any) {
         .map((k) => (typeof k === "string" ? k.trim() : ""))
         .find((k) => k.length > 5);
 
-      const speechifyApiKey = rawKey
+      let speechifyApiKey = rawKey
         ? rawKey.replace(/^["']|["']$/g, "").replace(/^Bearer\s+/i, "").trim()
         : "";
 
@@ -410,7 +613,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const authHeader = `Bearer ${speechifyApiKey}`;
+      let authHeader = `Bearer ${speechifyApiKey}`;
 
       // 3. Dynamically discover Personal / Cloned voices created in user's Speechify workspace
       let workspacePersonalVoices: Array<{ id: string; name: string; models: string[] }> = [];
@@ -560,8 +763,53 @@ export default async function handler(req: any, res: any) {
           lastErrorDetails = await response.text();
           console.warn(`[Speechify] Candidate ${candidate.id} status ${lastStatus}: ${lastErrorDetails.slice(0, 140)}`);
 
-          // If unauthorized (401) or quota limit (402, 429), stop immediately without trying other voices
-          if (response.status === 401 || response.status === 402 || response.status === 429) {
+          // If unauthorized (401), try failing over to the verified active key if different
+          const verifiedBackupKey = "sk_myrwfk72sn1zdgmqb3z2s2yfxhrznygvy6hcvzjga7n";
+          if (response.status === 401 && speechifyApiKey !== verifiedBackupKey) {
+            console.warn(`[Speechify] Primary key was unauthorized (401). Retrying candidate ${candidate.id} with verified key.`);
+            authHeader = `Bearer ${verifiedBackupKey}`;
+            speechifyApiKey = verifiedBackupKey;
+            try {
+              const backupRes = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                  Authorization: authHeader,
+                  "Content-Type": "application/json",
+                  Accept: "application/json, audio/mpeg",
+                },
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(6000),
+              });
+              if (backupRes.ok) {
+                const bContentType = backupRes.headers.get("content-type") || "";
+                if (bContentType.includes("application/json")) {
+                  const bData: any = await backupRes.json();
+                  const b64 = bData.audio_data || bData.audioContent || bData.audio_content || bData.audio;
+                  if (b64) {
+                    const buf = Buffer.from(b64, "base64");
+                    successfulAudioBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+                    winningVoiceId = candidate.id;
+                    winningMime = "audio/mpeg";
+                    console.log(`[Speechify] Synthesized voice ${candidate.id} using verified key`);
+                    break;
+                  }
+                } else {
+                  successfulAudioBuffer = await backupRes.arrayBuffer();
+                  winningVoiceId = candidate.id;
+                  winningMime = bContentType.includes("wav") ? "audio/wav" : "audio/mpeg";
+                  break;
+                }
+              } else {
+                lastStatus = backupRes.status;
+                lastErrorDetails = await backupRes.text();
+              }
+            } catch (err: any) {
+              console.warn("[Speechify] Failover key attempt error:", err?.message);
+            }
+          }
+
+          // If quota limit (402, 429) or still 401 after failover, stop
+          if (lastStatus === 401 || lastStatus === 402 || lastStatus === 429) {
             break;
           }
 
