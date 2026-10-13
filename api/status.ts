@@ -31,7 +31,12 @@ export default async function handler(req: any, res: any) {
   let detectedKey = "";
   let detectedKeySource = "";
   for (const cand of speechifyKeyCandidates) {
-    const trimmed = (cand.val || "").trim();
+    let trimmed = (cand.val || "").trim();
+    // Clean any surrounding quotes that users commonly paste in Vercel
+    trimmed = trimmed.replace(/^["']|["']$/g, "").trim();
+    if (trimmed.startsWith("Bearer ")) {
+      trimmed = trimmed.slice(7).trim();
+    }
     if (trimmed.length > 5) {
       detectedKey = trimmed;
       detectedKeySource = cand.name;
@@ -41,6 +46,11 @@ export default async function handler(req: any, res: any) {
 
   const hasSpeechify = Boolean(detectedKey);
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
+
+  const apiKeyMasked = detectedKey
+    ? `${detectedKey.slice(0, 9)}...${detectedKey.slice(-6)}`
+    : "";
+  const apiKeyLength = detectedKey.length;
 
   // 2. Comprehensive Voice ID discovery from environment variables
   const envVoiceCandidates = [
@@ -61,7 +71,8 @@ export default async function handler(req: any, res: any) {
   let envVoiceId = "";
   let envVoiceSource = "";
   for (const v of envVoiceCandidates) {
-    const trimmed = (v.val || "").trim();
+    let trimmed = (v.val || "").trim();
+    trimmed = trimmed.replace(/^["']|["']$/g, "").trim();
     if (trimmed.length > 0) {
       envVoiceId = trimmed;
       envVoiceSource = v.name;
@@ -73,16 +84,19 @@ export default async function handler(req: any, res: any) {
   let personalVoices: Array<{ id: string; name: string; models: string[]; gender?: string; locale?: string }> = [];
   let workspaceClonedVoiceId = "";
   let workspaceClonedVoiceName = "";
+  let apiConnectionStatus: "verified" | "unauthorized" | "quota_exceeded" | "error" | "not_configured" = hasSpeechify ? "error" : "not_configured";
+  let apiErrorMessage = "";
 
   if (hasSpeechify) {
     try {
-      const auth = detectedKey.startsWith("Bearer ") ? detectedKey : `Bearer ${detectedKey}`;
+      const auth = `Bearer ${detectedKey}`;
       const vRes = await fetch("https://api.sws.speechify.com/v1/voices", {
         headers: { Authorization: auth, Accept: "application/json" },
         signal: AbortSignal.timeout(3500),
       });
 
       if (vRes.ok) {
+        apiConnectionStatus = "verified";
         const vData: any = await vRes.json();
         const list: any[] = Array.isArray(vData) ? vData : vData?.voices || [];
         // Speechify marks user-created custom/cloned voices with type === "personal" or can_manage === true
@@ -119,8 +133,21 @@ export default async function handler(req: any, res: any) {
           workspaceClonedVoiceId = chosen.id;
           workspaceClonedVoiceName = chosen.name;
         }
+      } else {
+        if (vRes.status === 401) {
+          apiConnectionStatus = "unauthorized";
+          apiErrorMessage = "Speechify rejected this API key (401 Unauthorized). The key in your Vercel environment is invalid or expired.";
+        } else if (vRes.status === 402 || vRes.status === 429) {
+          apiConnectionStatus = "quota_exceeded";
+          apiErrorMessage = "Speechify character quota or billing credit limit reached (429/402).";
+        } else {
+          apiConnectionStatus = "error";
+          apiErrorMessage = `Speechify API error status ${vRes.status}: ${await vRes.text().catch(() => "")}`;
+        }
       }
     } catch (err: any) {
+      apiConnectionStatus = "error";
+      apiErrorMessage = `Network error connecting to Speechify: ${err?.message || String(err)}`;
       console.warn("[Status] Personal voice discovery skipped:", err?.message);
     }
   }
@@ -140,10 +167,14 @@ export default async function handler(req: any, res: any) {
   const speechifyModel = (process.env.SPEECHIFY_MODEL || "simba-3.2").trim();
 
   res.status(200).json({
-    configured: hasSpeechify,
+    configured: hasSpeechify && apiConnectionStatus === "verified",
     speechifyConfigured: hasSpeechify,
     apiKeyConfigured: hasSpeechify,
     apiKeySource: detectedKeySource,
+    apiKeyMasked,
+    apiKeyLength,
+    apiConnectionStatus,
+    apiErrorMessage: apiErrorMessage || undefined,
     activeProvider: "speechify",
     geminiConfigured: hasGemini,
     speechifyVoiceId: effectiveSpeechifyVoice,

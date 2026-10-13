@@ -42,6 +42,10 @@ export interface VoiceStatus {
   speechifyConfigured?: boolean;
   apiKeyConfigured?: boolean;
   apiKeySource?: string;
+  apiKeyMasked?: string;
+  apiKeyLength?: number;
+  apiConnectionStatus?: 'verified' | 'unauthorized' | 'quota_exceeded' | 'error' | 'not_configured';
+  apiErrorMessage?: string;
   activeProvider?: TTSProvider;
   geminiConfigured?: boolean;
   voiceId: string;

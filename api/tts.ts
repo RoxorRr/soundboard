@@ -365,9 +365,13 @@ export default async function handler(req: any, res: any) {
         speechifySettings?.apiKey,
       ];
 
-      const speechifyApiKey = speechifyKeyCandidates
+      const rawKey = speechifyKeyCandidates
         .map((k) => (typeof k === "string" ? k.trim() : ""))
         .find((k) => k.length > 5);
+
+      const speechifyApiKey = rawKey
+        ? rawKey.replace(/^["']|["']$/g, "").replace(/^Bearer\s+/i, "").trim()
+        : "";
 
       // 2. Comprehensive Voice ID discovery from environment variables
       const envVoiceCandidates = [
@@ -385,11 +389,12 @@ export default async function handler(req: any, res: any) {
         process.env.NEXT_PUBLIC_SPEECHIFY_VOICE_ID,
       ];
 
-      const envVoice = envVoiceCandidates
+      const rawEnvVoice = envVoiceCandidates
         .map((v) => (typeof v === "string" ? v.trim() : ""))
         .find((v) => v.length > 0) || "";
+      const envVoice = rawEnvVoice.replace(/^["']|["']$/g, "").trim();
 
-      const userVoice = (speechifySettings?.voiceId || reqVoiceId || "").trim();
+      const userVoice = (speechifySettings?.voiceId || reqVoiceId || "").replace(/^["']|["']$/g, "").trim();
       const defaultVoice = "cf2bbc5b-59fb-427e-95a5-bcd76641852f";
 
       if (!speechifyApiKey) {
@@ -402,9 +407,7 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
-      const authHeader = speechifyApiKey.startsWith("Bearer ")
-        ? speechifyApiKey
-        : `Bearer ${speechifyApiKey}`;
+      const authHeader = `Bearer ${speechifyApiKey}`;
 
       // 3. Dynamically discover Personal / Cloned voices created in user's Speechify workspace
       let workspacePersonalVoices: Array<{ id: string; name: string; models: string[] }> = [];

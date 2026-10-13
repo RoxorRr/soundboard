@@ -598,18 +598,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* SPEECHIFY VOICE SETTINGS (SIMBA 3.2 EXCLUSIVELY) */}
               <div className="space-y-4">
                 {/* Vercel / Cloud Setup Notice when not configured */}
-                {/* Connection Status Card */}
+                {/* Connection Status & Key Verification Card */}
                 {voiceStatus?.speechifyConfigured ? (
-                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/40 text-xs space-y-2">
-                    <div className="flex items-center justify-between">
+                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/40 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
                       <div className="flex items-center gap-2 font-bold text-white">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>Speechify Simba 3.2 Connected</span>
+                        {voiceStatus.apiConnectionStatus === 'verified' ? (
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                        ) : voiceStatus.apiConnectionStatus === 'unauthorized' ? (
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                        ) : (
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                        )}
+                        <span>
+                          {voiceStatus.apiConnectionStatus === 'verified'
+                            ? 'Speechify Simba 3.2 Connected'
+                            : voiceStatus.apiConnectionStatus === 'unauthorized'
+                            ? 'Speechify API Key Unauthorized (401)'
+                            : 'Speechify API Connection Issue'}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
-                        {voiceStatus.apiKeySource || "SPEECHIFY_API_KEY"} Active
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-900/60 text-purple-200 border border-purple-700/50">
+                        {voiceStatus.apiKeySource || "SPEECHIFY_API_KEY"}
                       </span>
                     </div>
+
+                    {/* Key Fingerprint for verifying whether app and Vercel use the exact same key */}
+                    <div className="p-2 rounded-lg bg-slate-950/80 border border-purple-900/50 space-y-1 font-mono text-[11px]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-slate-300 gap-1">
+                        <span className="text-slate-400 font-sans">Active Key Fingerprint:</span>
+                        <code className="text-purple-300 font-bold bg-purple-950/80 px-1.5 py-0.5 rounded border border-purple-800/40">
+                          {voiceStatus.apiKeyMasked || "sk_••••••••"} ({voiceStatus.apiKeyLength || 0} chars)
+                        </code>
+                      </div>
+                      {voiceStatus.apiErrorMessage && (
+                        <div className="text-[10px] text-rose-300 pt-1 font-sans border-t border-purple-900/30">
+                          ⚠️ {voiceStatus.apiErrorMessage}
+                        </div>
+                      )}
+                    </div>
+
                     {voiceStatus.speechifyVoiceName && (
                       <div className="text-[11px] text-purple-200 flex items-center justify-between bg-purple-900/30 p-2 rounded-lg border border-purple-800/40">
                         <span>Active Voice: <strong className="text-white">{voiceStatus.speechifyVoiceName}</strong></span>
