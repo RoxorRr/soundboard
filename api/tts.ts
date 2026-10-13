@@ -21,7 +21,13 @@ export default async function handler(req: any, res: any) {
 
   try {
     let body = req.body;
-    if (typeof body === "string") {
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString("utf8"));
+      } catch {
+        body = {};
+      }
+    } else if (typeof body === "string") {
       try {
         body = JSON.parse(body);
       } catch {
@@ -346,10 +352,22 @@ export default async function handler(req: any, res: any) {
         process.env.SPEECHIFY_API_KEY ||
         process.env.SPEECHITY_API_KEY ||
         process.env.SPEECHIFY_KEY ||
+        process.env.SPEECHIFY_SECRET_KEY ||
+        process.env.SPEECHIFY_TOKEN ||
         speechifySettings?.apiKey
       )?.trim();
 
-      const envVoice = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "").trim();
+      const envVoice = (
+        process.env.SPEECHIFY_VOICE_ID ||
+        process.env.SPEECHITY_VOICE_ID ||
+        process.env.SPEECHIFY_CUSTOM_VOICE_ID ||
+        process.env.SPEECHIFY_CLONED_VOICE_ID ||
+        process.env.SPEECHIFY_VOICE ||
+        process.env.CUSTOM_VOICE_ID ||
+        process.env.VOICE_ID ||
+        ""
+      )?.trim();
+
       const userVoice = (speechifySettings?.voiceId || reqVoiceId || "").trim();
       const defaultVoice = "cf2bbc5b-59fb-427e-95a5-bcd76641852f";
 
@@ -357,55 +375,89 @@ export default async function handler(req: any, res: any) {
         res.status(200).json({
           fallback: true,
           provider: "speechify",
-          error: "Speechify (Speechity) API Key is not configured in environment variables. Add SPEECHIFY_API_KEY in Project Settings > Environment Variables.",
+          error: "Speechify API Key is not configured in Vercel environment variables. Add SPEECHIFY_API_KEY in Vercel Project Settings > Environment Variables.",
           voiceId: userVoice || envVoice || defaultVoice,
         });
         return;
       }
 
+      const authHeader = speechifyApiKey.startsWith("Bearer ")
+        ? speechifyApiKey
+        : `Bearer ${speechifyApiKey}`;
+
+      // Dynamically discover any cloned voices created in the user's Speechify workspace
+      let workspaceClonedVoices: string[] = [];
+      try {
+        const vRes = await fetch("https://api.sws.speechify.com/v1/voices", {
+          headers: { Authorization: authHeader, Accept: "application/json" },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (vRes.ok) {
+          const vData: any = await vRes.json();
+          const list: any[] = Array.isArray(vData) ? vData : vData?.voices || [];
+          const clonedList = list.filter(
+            (v: any) => v.is_cloned || v.cloned || v.category === "cloned" || v.type === "cloned" || v.is_custom
+          );
+          workspaceClonedVoices = clonedList.map((v: any) => v.id || v.voice_id).filter(Boolean);
+          if (workspaceClonedVoices.length > 0) {
+            console.log(`[Speechify] Discovered ${workspaceClonedVoices.length} workspace cloned voice(s):`, workspaceClonedVoices);
+          }
+        }
+      } catch (err: any) {
+        console.warn("[Speechify] Cloned voice discovery skipped:", err?.message);
+      }
+
       const requestedModel = (speechifySettings?.model || reqModel || process.env.SPEECHIFY_MODEL || "simba-3.2").trim();
-      const modelsToTry = [requestedModel, "simba-3.2", "simba-3.0", "simba-english"].filter((m, i, arr) => arr.indexOf(m) === i);
+      // Notice: simba-english is retired in current API version, so only use simba-3.2, simba-3.0, and auto (empty)
+      const modelsToTry = [
+        requestedModel !== "simba-english" ? requestedModel : "simba-3.2",
+        "simba-3.2",
+        "simba-3.0",
+        "", // empty means omit model field to allow Speechify to auto-select native model for custom voice
+      ].filter((m, i, arr) => arr.indexOf(m) === i);
 
-      const voiceCandidates: string[] = [];
-      if (userVoice && userVoice.toLowerCase() !== "nhl") voiceCandidates.push(userVoice);
-      if (envVoice && envVoice.toLowerCase() !== "nhl") voiceCandidates.push(envVoice);
-      voiceCandidates.push("cf2bbc5b-59fb-427e-95a5-bcd76641852f"); // Personal Cloned NHL Arena Voice
-      voiceCandidates.push("geffen_32"); // Simba 3.2 High-energy announcer
-      voiceCandidates.push("dominic_32"); // Simba 3.2 Deep resonant play-by-play
-      voiceCandidates.push("beatrice_32"); // Simba 3.2 Professional clear announcer
-      voiceCandidates.push("kristy"); // Energetic presenter
-      voiceCandidates.push("cliff"); // Classic announcer
+      // Phase 1: Custom voices (User-specified ID, Vercel env voice ID, discovered workspace clones, default clone)
+      const customVoiceCandidates: string[] = [];
+      if (userVoice && userVoice.toLowerCase() !== "nhl") customVoiceCandidates.push(userVoice);
+      if (envVoice && envVoice.toLowerCase() !== "nhl") customVoiceCandidates.push(envVoice);
+      workspaceClonedVoices.forEach((id) => customVoiceCandidates.push(id));
+      customVoiceCandidates.push("cf2bbc5b-59fb-427e-95a5-bcd76641852f"); // Pelham Custom NHL Voice
+      const uniqueCustomVoices = Array.from(new Set(customVoiceCandidates.filter(Boolean)));
 
-      const uniqueVoices = Array.from(new Set(voiceCandidates.filter(Boolean)));
+      // Phase 2: Stock fallback catalog voices
+      const stockVoiceCandidates = ["geffen_32", "dominic_32", "beatrice_32", "kristy", "cliff"];
+
+      const endpoints = [
+        "https://api.sws.speechify.com/v1/audio/speech",
+        "https://api.speechify.ai/v1/audio/speech",
+      ];
 
       let successfulAudioBuffer: ArrayBuffer | null = null;
-      let winningVoiceId = uniqueVoices[0] || defaultVoice;
+      let winningVoiceId = uniqueCustomVoices[0] || defaultVoice;
       let winningMime = "audio/mpeg";
       let lastStatus = 0;
       let lastErrorDetails = "";
 
-      const endpoints = [
-        "https://api.speechify.ai/v1/audio/speech",
-        "https://api.sws.speechify.com/v1/audio/speech",
-      ];
-
-      for (const endpoint of endpoints) {
-        for (const voiceCandidate of uniqueVoices) {
+      // 1. ATTEMPT CUSTOM VOICES FIRST across all endpoints and model variants
+      for (const voiceCandidate of uniqueCustomVoices) {
+        for (const endpoint of endpoints) {
           for (const modelCandidate of modelsToTry) {
             try {
-              const payload = {
+              const payload: Record<string, any> = {
                 input: text,
                 voice_id: voiceCandidate,
                 audio_format: "mp3",
-                model: modelCandidate,
               };
+              if (modelCandidate) {
+                payload.model = modelCandidate;
+              }
 
               const response = await fetch(endpoint, {
                 method: "POST",
                 headers: {
-                  "Authorization": `Bearer ${speechifyApiKey}`,
+                  Authorization: authHeader,
                   "Content-Type": "application/json",
-                  "Accept": "application/json, audio/mpeg",
+                  Accept: "application/json, audio/mpeg",
                 },
                 body: JSON.stringify(payload),
               });
@@ -420,24 +472,29 @@ export default async function handler(req: any, res: any) {
                     successfulAudioBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
                     winningVoiceId = voiceCandidate;
                     winningMime = "audio/mpeg";
+                    console.log(`[Speechify] Custom voice ${voiceCandidate} generated via ${endpoint} (${modelCandidate || "default-model"})`);
                     break;
                   }
                 } else {
                   successfulAudioBuffer = await response.arrayBuffer();
                   winningVoiceId = voiceCandidate;
                   winningMime = respContentType.includes("wav") ? "audio/wav" : "audio/mpeg";
+                  console.log(`[Speechify] Custom voice ${voiceCandidate} binary stream generated via ${endpoint}`);
                   break;
                 }
               }
 
               lastStatus = response.status;
               lastErrorDetails = await response.text();
+              console.warn(`[Speechify] Voice ${voiceCandidate} on ${endpoint} (${modelCandidate || "none"}) status ${lastStatus}: ${lastErrorDetails.slice(0, 120)}`);
 
+              // If unauthorized or account quota exhausted, don't keep polling
               if (response.status === 401 || response.status === 402 || response.status === 429) {
                 break;
               }
             } catch (err: any) {
               lastErrorDetails = err?.message || String(err);
+              console.warn(`[Speechify] Request failed for ${voiceCandidate}:`, lastErrorDetails);
             }
           }
           if (successfulAudioBuffer || lastStatus === 401 || lastStatus === 402 || lastStatus === 429) {
@@ -449,14 +506,62 @@ export default async function handler(req: any, res: any) {
         }
       }
 
+      // 2. ONLY IF CUSTOM VOICES FAILED and not quota/auth error, try standard catalog voices
+      if (!successfulAudioBuffer && lastStatus !== 401 && lastStatus !== 402 && lastStatus !== 429) {
+        console.warn("[Speechify] Custom voice failed, attempting catalog fallback voices...");
+        for (const stockVoice of stockVoiceCandidates) {
+          for (const endpoint of endpoints) {
+            try {
+              const payload = {
+                input: text,
+                voice_id: stockVoice,
+                audio_format: "mp3",
+                model: "simba-3.2",
+              };
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                  Authorization: authHeader,
+                  "Content-Type": "application/json",
+                  Accept: "application/json, audio/mpeg",
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (response.ok) {
+                const respContentType = response.headers.get("content-type") || "";
+                if (respContentType.includes("application/json")) {
+                  const data: any = await response.json();
+                  const base64Str = data.audio_data || data.audioContent || data.audio_content || data.audio;
+                  if (base64Str) {
+                    const buf = Buffer.from(base64Str, "base64");
+                    successfulAudioBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+                    winningVoiceId = stockVoice;
+                    winningMime = "audio/mpeg";
+                    console.log(`[Speechify] Fallback stock voice ${stockVoice} generated`);
+                    break;
+                  }
+                } else {
+                  successfulAudioBuffer = await response.arrayBuffer();
+                  winningVoiceId = stockVoice;
+                  winningMime = respContentType.includes("wav") ? "audio/wav" : "audio/mpeg";
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+          if (successfulAudioBuffer) break;
+        }
+      }
+
       if (!successfulAudioBuffer) {
-        let userFriendlyError = "Speechify (Speechity) speech synthesis failed";
+        let userFriendlyError = "Speechify speech synthesis failed";
         if (lastStatus === 401) {
-          userFriendlyError = "Speechify API key is unauthorized or invalid (401). Verify SPEECHIFY_API_KEY in Project Settings.";
+          userFriendlyError = "Speechify API key is unauthorized or invalid (401). Verify SPEECHIFY_API_KEY in Vercel Project Settings.";
         } else if (lastStatus === 429 || lastStatus === 402 || lastErrorDetails.toLowerCase().includes("quota") || lastErrorDetails.toLowerCase().includes("credit")) {
-          userFriendlyError = "Speechify character quota or credit limit reached. Falling back to local voice.";
+          userFriendlyError = "Speechify character quota or credit limit reached. Falling back to local browser voice.";
         } else if (lastStatus === 404) {
-          userFriendlyError = "Speechify voice or model was not found (404). Falling back to local voice.";
+          userFriendlyError = `Speechify voice '${winningVoiceId}' was not found in your Speechify workspace (404). Check voice ID or create a cloned voice.`;
         } else if (lastErrorDetails) {
           try {
             const parsed = JSON.parse(lastErrorDetails);

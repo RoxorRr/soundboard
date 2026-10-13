@@ -12,18 +12,49 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const hasElevenLabs = Boolean((process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim());
-  const hasCartesia1 = Boolean((process.env.CARTESIA_API_KEY || process.env.CARTESIA_KEY || process.env.CARTESIA_API_KEY_1)?.trim());
-  const hasCartesia2 = Boolean((process.env.CARTESIA_API_KEY_2 || process.env.CARTESIA_SECOND_API_KEY || process.env.CARTESIA_KEY_2)?.trim());
-  const hasCartesia = hasCartesia1 || hasCartesia2;
-  const hasSpeechify = Boolean((process.env.SPEECHIFY_API_KEY || process.env.SPEECHITY_API_KEY || process.env.SPEECHIFY_KEY)?.trim());
+  const rawSpeechifyKey = (
+    process.env.SPEECHIFY_API_KEY ||
+    process.env.SPEECHITY_API_KEY ||
+    process.env.SPEECHIFY_KEY ||
+    process.env.SPEECHIFY_SECRET_KEY ||
+    process.env.SPEECHIFY_TOKEN
+  )?.trim();
+  const hasSpeechify = Boolean(rawSpeechifyKey);
   const hasGemini = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
-  const voiceId = process.env.ELEVENLABS_VOICE_ID || process.env.ELEVEN_LABS_VOICE_ID || "6j98Cb2txyqvHRXeRQYZ";
-  const rawVoice1 = (process.env.CARTESIA_VOICE_ID || process.env.CARTESIA_VOICE || process.env.CARTESIA_VOICE_ID_1 || "a27f2ab7-6793-4893-9f40-e50d5e5605ba").trim();
-  const rawVoice2 = (process.env.CARTESIA_VOICE_ID_2 || process.env.CARTESIA_SECOND_VOICE_ID || process.env.CARTESIA_VOICE_2 || "").trim();
-  const cartesiaVoiceId = !rawVoice1.startsWith("sk_") ? rawVoice1 : "a27f2ab7-6793-4893-9f40-e50d5e5605ba";
-  const cartesiaVoiceId2 = !rawVoice2.startsWith("sk_") ? rawVoice2 : "";
-  const speechifyVoiceId = (process.env.SPEECHIFY_VOICE_ID || process.env.SPEECHITY_VOICE_ID || "cf2bbc5b-59fb-427e-95a5-bcd76641852f").trim();
+
+  const envVoiceId = (
+    process.env.SPEECHIFY_VOICE_ID ||
+    process.env.SPEECHITY_VOICE_ID ||
+    process.env.SPEECHIFY_CUSTOM_VOICE_ID ||
+    process.env.SPEECHIFY_CLONED_VOICE_ID ||
+    process.env.SPEECHIFY_VOICE ||
+    process.env.CUSTOM_VOICE_ID ||
+    process.env.VOICE_ID ||
+    ""
+  )?.trim();
+
+  let workspaceClonedVoiceId = "";
+  if (hasSpeechify && rawSpeechifyKey) {
+    try {
+      const auth = rawSpeechifyKey.startsWith("Bearer ") ? rawSpeechifyKey : `Bearer ${rawSpeechifyKey}`;
+      const vRes = await fetch("https://api.sws.speechify.com/v1/voices", {
+        headers: { Authorization: auth, Accept: "application/json" },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (vRes.ok) {
+        const vData: any = await vRes.json();
+        const list: any[] = Array.isArray(vData) ? vData : vData?.voices || [];
+        const cloned = list.find(
+          (v: any) => v.is_cloned || v.cloned || v.category === "cloned" || v.type === "cloned" || v.is_custom
+        );
+        if (cloned) {
+          workspaceClonedVoiceId = cloned.id || cloned.voice_id || "";
+        }
+      }
+    } catch (_) {}
+  }
+
+  const effectiveSpeechifyVoice = envVoiceId || workspaceClonedVoiceId || "cf2bbc5b-59fb-427e-95a5-bcd76641852f";
   const speechifyModel = (process.env.SPEECHIFY_MODEL || "simba-3.2").trim();
 
   res.status(200).json({
@@ -31,8 +62,9 @@ export default async function handler(req: any, res: any) {
     speechifyConfigured: hasSpeechify,
     activeProvider: "speechify",
     geminiConfigured: hasGemini,
-    speechifyVoiceId,
+    speechifyVoiceId: effectiveSpeechifyVoice,
     speechifyModel,
+    hasCustomVoiceEnv: Boolean(envVoiceId || workspaceClonedVoiceId),
     team: "Pelham Pelicans"
   });
 }

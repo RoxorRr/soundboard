@@ -108,11 +108,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Sync server configured env voice IDs when loaded across all devices
   useEffect(() => {
     if (voiceStatus?.speechifyVoiceId) {
-      if (!customSpeechifyVoiceIdInput || customSpeechifyVoiceIdInput === "geffen_32") {
-        setCustomSpeechifyVoiceIdInput(voiceStatus.speechifyVoiceId);
-      }
-      if (!speechifySettings.voiceId || speechifySettings.voiceId === "geffen_32") {
-        handleUpdateSpeechifySetting("voiceId", voiceStatus.speechifyVoiceId);
+      const serverVoice = voiceStatus.speechifyVoiceId;
+      setCustomSpeechifyVoiceIdInput(serverVoice);
+      // Auto-apply custom voice if current is unset, stock default, or placeholder
+      const current = speechifySettings.voiceId;
+      const isStock = ['geffen_32', 'dominic_32', 'beatrice_32', 'kristy', 'cliff'].includes(current);
+      if (!current || isStock || current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f') {
+        const updated = { ...speechifySettings, voiceId: serverVoice };
+        setSpeechifySettings(updated);
+        soundEngine.setSpeechifySettings(updated);
+        setIsCustomSpeechifyVoiceSelected(true);
       }
     }
   }, [voiceStatus?.speechifyVoiceId]);
@@ -192,6 +197,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleApplyCustomSpeechifyVoiceId = () => {
     if (customSpeechifyVoiceIdInput.trim()) {
       handleUpdateSpeechifySetting('voiceId', customSpeechifyVoiceIdInput.trim());
+      setIsCustomSpeechifyVoiceSelected(true);
       showSavedNotification('Speechify voice applied');
     }
   };
@@ -225,7 +231,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (res.source === "speechify") {
         showSavedNotification(`Test voice generated via Speechify Simba 3.2 (${res.voiceId || speechifySettings.voiceId})`);
       } else {
-        showSavedNotification(`Test announcement played via ${res.source || "vocal engine"}`);
+        showSavedNotification(res.error ? `Speechify: ${res.error}` : `Test announcement played via ${res.source || "vocal engine"}`);
       }
     } finally {
       setIsTestingVoiceCustom(false);

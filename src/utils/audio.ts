@@ -188,11 +188,12 @@ class SoundEngine {
       }
     }
 
-    // 3. Sync Speechify custom voice ID across all devices
-    const targetSpeechifyVoice = status.speechifyVoiceId || 'cf2bbc5b-59fb-427e-95a5-bcd76641852f';
+    // 3. Sync Speechify custom voice ID across all devices (seamless across Vercel deployments)
+    const targetSpeechifyVoice = status.speechifyVoiceId;
     if (targetSpeechifyVoice) {
       const current = this.speechifyVoiceSettings.voiceId;
-      if (!current || current === 'geffen_32') {
+      const isStockVoice = ['geffen_32', 'dominic_32', 'beatrice_32', 'kristy', 'cliff'].includes(current);
+      if (!current || isStockVoice || current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f' || current === 'nhl') {
         this.speechifyVoiceSettings = {
           ...this.speechifyVoiceSettings,
           voiceId: targetSpeechifyVoice,
