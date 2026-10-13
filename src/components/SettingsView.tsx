@@ -110,23 +110,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (voiceStatus?.speechifyVoiceId) {
       const serverVoice = voiceStatus.speechifyVoiceId;
       setCustomSpeechifyVoiceIdInput(serverVoice);
-      // Auto-apply custom voice if current is unset, stock default, or placeholder
+      // Auto-apply custom voice if current is unset, stock default, placeholder, or personal voice detected
       const current = speechifySettings.voiceId;
       const isStock = ['geffen_32', 'dominic_32', 'beatrice_32', 'kristy', 'cliff'].includes(current);
-      if (!current || isStock || current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f') {
+      if (
+        !current ||
+        isStock ||
+        current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f' ||
+        voiceStatus.hasPersonalVoice ||
+        voiceStatus.hasCustomVoiceEnv
+      ) {
         const updated = { ...speechifySettings, voiceId: serverVoice };
         setSpeechifySettings(updated);
         soundEngine.setSpeechifySettings(updated);
         setIsCustomSpeechifyVoiceSelected(true);
       }
     }
-  }, [voiceStatus?.speechifyVoiceId]);
+  }, [voiceStatus?.speechifyVoiceId, voiceStatus?.hasPersonalVoice, voiceStatus?.hasCustomVoiceEnv]);
 
   const [saveBadgeText, setSaveBadgeText] = useState<string | null>(null);
   const [isTestingVoiceCustom, setIsTestingVoiceCustom] = useState(false);
+  const [testVoiceFeedback, setTestVoiceFeedback] = useState<{
+    message: string;
+    type: 'success' | 'warning' | 'error';
+    voiceId?: string;
+  } | null>(null);
   const [testSampleType, setTestSampleType] = useState<'welcome' | 'speakerTest' | 'pelhamGoal' | 'visitorGoal' | 'assist'>('welcome');
   const [copiedEnvVar, setCopiedEnvVar] = useState<string | null>(null);
-  const [showAccount2Guide, setShowAccount2Guide] = useState<boolean>(false);
 
   const handleCopyVar = (varName: string) => {
     try {
@@ -229,10 +239,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const res = await soundEngine.announce(testText, speechifySettings.voiceId);
       if (res.source === "speechify") {
-        showSavedNotification(`Test voice generated via Speechify Simba 3.2 (${res.voiceId || speechifySettings.voiceId})`);
+        const msg = `Speechify Simba 3.2 generated successfully! Active voice: ${res.voiceId || speechifySettings.voiceId}`;
+        showSavedNotification(msg);
+        setTestVoiceFeedback({
+          message: msg,
+          type: 'success',
+          voiceId: res.voiceId || speechifySettings.voiceId,
+        });
       } else {
-        showSavedNotification(res.error ? `Speechify: ${res.error}` : `Test announcement played via ${res.source || "vocal engine"}`);
+        const msg = res.error ? `Speechify: ${res.error}` : `Test announcement played via ${res.source || "vocal engine"}`;
+        showSavedNotification(msg);
+        setTestVoiceFeedback({
+          message: res.error || "Speechify synthesis failed on server; fallback browser voice played. Verify SPEECHIFY_API_KEY in Vercel Project Settings and trigger a Redeploy.",
+          type: 'warning',
+          voiceId: res.voiceId || speechifySettings.voiceId,
+        });
       }
+    } catch (err: any) {
+      setTestVoiceFeedback({
+        message: err?.message || "Network error while connecting to Speechify TTS service.",
+        type: 'error',
+      });
     } finally {
       setIsTestingVoiceCustom(false);
     }
@@ -571,39 +598,114 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* SPEECHIFY VOICE SETTINGS (SIMBA 3.2 EXCLUSIVELY) */}
               <div className="space-y-4">
                 {/* Vercel / Cloud Setup Notice when not configured */}
-                {!voiceStatus?.speechifyConfigured && (
-                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2">
+                {/* Connection Status Card */}
+                {voiceStatus?.speechifyConfigured ? (
+                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/40 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-white">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Speechify Simba 3.2 Connected</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-600/40">
+                        {voiceStatus.apiKeySource || "SPEECHIFY_API_KEY"} Active
+                      </span>
+                    </div>
+                    {voiceStatus.speechifyVoiceName && (
+                      <div className="text-[11px] text-purple-200 flex items-center justify-between bg-purple-900/30 p-2 rounded-lg border border-purple-800/40">
+                        <span>Active Voice: <strong className="text-white">{voiceStatus.speechifyVoiceName}</strong></span>
+                        <code className="text-[10px] text-purple-300 font-mono">{voiceStatus.speechifyVoiceId}</code>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 font-bold text-purple-300">
                         <Key className="w-4 h-4 text-purple-400" />
                         <span>Speechify Configuration: SPEECHIFY_API_KEY Required</span>
                       </div>
                       <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/50">
-                        Env Var
+                        Vercel Env
                       </span>
                     </div>
                     <p className="text-slate-300 text-[11px] leading-relaxed">
-                      To activate Speechify (Speechity) AI announcer voices on your deployment:
+                      To activate custom Speechify announcer voices on your Vercel deployment:
                     </p>
                     <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 font-mono text-[11px]">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-slate-400">1. Variable Name:</span>
+                        <span className="text-slate-400">1. Variable:</span>
                         <code className="text-purple-300 font-bold bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800/60 selection:bg-purple-600">
                           SPEECHIFY_API_KEY
                         </code>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="text-slate-400">2. Also Accepted:</span>
-                        <code className="text-purple-300 font-mono">SPEECHITY_API_KEY</code>
+                        <span className="text-slate-400">2. Optional Voice ID:</span>
+                        <code className="text-purple-300 font-mono">SPEECHIFY_VOICE_ID</code>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <span className="text-slate-400">3. Portal:</span>
                         <span className="text-slate-300 font-sans">platform.speechify.ai &rarr; API Keys</span>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-400">
-                      Until configured, game announcements automatically use your browser's local vocal engine.
-                    </p>
+                    <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-200 space-y-0.5">
+                      <div className="font-bold flex items-center gap-1">
+                        <span>⚠️ Important Vercel Step:</span>
+                      </div>
+                      <div>
+                        After adding environment variables in Vercel Project Settings, you must click <strong>Deployments &rarr; ... &rarr; Redeploy</strong> for them to take effect!
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Workspace Personal Cloned Voices (Discovered Dynamically) */}
+                {voiceStatus?.personalVoices && voiceStatus.personalVoices.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-500/40 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-purple-200 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Your Cloned Speechify Voices (from Workspace)</span>
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                        {voiceStatus.personalVoices.length} Discovered
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {voiceStatus.personalVoices.map((pv) => {
+                        const isSelected = speechifySettings.voiceId === pv.id;
+                        return (
+                          <button
+                            key={pv.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectSpeechifyVoiceId(pv.id);
+                              setCustomSpeechifyVoiceIdInput(pv.id);
+                              setIsCustomSpeechifyVoiceSelected(true);
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-purple-600/30 border-purple-400 text-white shadow-sm ring-1 ring-purple-400'
+                                : 'bg-slate-950/80 border-purple-900/60 text-slate-300 hover:border-purple-600/60'
+                            }`}
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="text-xs font-bold flex items-center gap-1.5 flex-wrap">
+                                <span>⭐ {pv.name}</span>
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800">
+                                  Custom Personal
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+                                {pv.id}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 shadow-sm shadow-emerald-400/50" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -684,7 +786,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                     <Volume2 className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Speechify Announcer Voices</span>
+                    <span>Catalog Announcer Voices</span>
                   </label>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -948,6 +1050,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Live Test Feedback Banner */}
+            {testVoiceFeedback && (
+              <div
+                className={`p-3 rounded-xl text-xs border flex items-center justify-between gap-2.5 transition-all ${
+                  testVoiceFeedback.type === 'success'
+                    ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+                    : testVoiceFeedback.type === 'warning'
+                    ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                    : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base shrink-0">
+                    {testVoiceFeedback.type === 'success' ? '✅' : '⚠️'}
+                  </span>
+                  <div>
+                    <div className="font-bold">
+                      {testVoiceFeedback.type === 'success'
+                        ? 'Speechify Audio Playback OK'
+                        : 'Announcer Notice'}
+                    </div>
+                    <div className="text-[11px] opacity-90">{testVoiceFeedback.message}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTestVoiceFeedback(null)}
+                  className="px-2 py-1 text-slate-400 hover:text-white rounded hover:bg-slate-800/60 text-xs shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {/* Current / Recent Announcement display */}
             <div className="pt-3 border-t border-slate-800">

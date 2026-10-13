@@ -24,6 +24,14 @@ export interface Announcement {
   penaltyClockTime?: string;
 }
 
+export interface SpeechifyPersonalVoice {
+  id: string;
+  name: string;
+  models: string[];
+  gender?: string;
+  locale?: string;
+}
+
 export interface VoiceStatus {
   configured: boolean;
   elevenLabsConfigured?: boolean;
@@ -32,12 +40,19 @@ export interface VoiceStatus {
   cartesiaAccount2Configured?: boolean;
   cartesiaAccountsCount?: number;
   speechifyConfigured?: boolean;
+  apiKeyConfigured?: boolean;
+  apiKeySource?: string;
   activeProvider?: TTSProvider;
   geminiConfigured?: boolean;
   voiceId: string;
   cartesiaVoiceId?: string;
   cartesiaVoiceId2?: string;
   speechifyVoiceId?: string;
+  speechifyVoiceName?: string;
+  hasCustomVoiceEnv?: boolean;
+  envVoiceSource?: string;
+  hasPersonalVoice?: boolean;
+  personalVoices?: SpeechifyPersonalVoice[];
   model: string;
   cartesiaModel?: string;
   speechifyModel?: string;

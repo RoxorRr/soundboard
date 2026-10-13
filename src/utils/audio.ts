@@ -193,7 +193,14 @@ class SoundEngine {
     if (targetSpeechifyVoice) {
       const current = this.speechifyVoiceSettings.voiceId;
       const isStockVoice = ['geffen_32', 'dominic_32', 'beatrice_32', 'kristy', 'cliff'].includes(current);
-      if (!current || isStockVoice || current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f' || current === 'nhl') {
+      if (
+        !current ||
+        isStockVoice ||
+        current === 'cf2bbc5b-59fb-427e-95a5-bcd76641852f' ||
+        current === 'nhl' ||
+        status.hasPersonalVoice ||
+        status.hasCustomVoiceEnv
+      ) {
         this.speechifyVoiceSettings = {
           ...this.speechifyVoiceSettings,
           voiceId: targetSpeechifyVoice,
