@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 // In-memory cache for ultra-fast serverless and express responses
-interface StoredGoalHorn {
+export interface StoredGoalHorn {
   hasCustomHorn: boolean;
   audioBase64: string | null;
   mimeType: string;
@@ -24,6 +24,28 @@ interface StoredGoalHorn {
   };
 }
 
+export const DEFAULT_SERVER_HORN: StoredGoalHorn = {
+  hasCustomHorn: true,
+  audioBase64: "/audio/pelham_pelicans_goal_horn.mp3",
+  mimeType: "audio/mpeg",
+  filename: "pelham_pelicans_goal_horn.mp3",
+  fileSize: 2161720,
+  duration: 90,
+  updatedAt: 1730000000000,
+  mixerSettings: {
+    hornEnabled: true,
+    hornVolume: 0.95,
+    voiceVolume: 1.0,
+    masterVolume: 1.0,
+    selectedPreset: "custom",
+    hornDurationLimit: 0,
+    voiceTriggerMode: "delay",
+    voiceDelaySeconds: 2.0,
+    duckHornOnVoice: true,
+    autoTriggerOnGoal: false,
+  },
+};
+
 let inMemoryHorn: StoredGoalHorn | null = null;
 
 function getStorePaths(): string[] {
@@ -37,22 +59,27 @@ function getStorePaths(): string[] {
   return paths;
 }
 
-function loadHornFromDisk(): StoredGoalHorn | null {
-  if (inMemoryHorn) return inMemoryHorn;
+function loadHornFromDisk(): StoredGoalHorn {
+  if (inMemoryHorn && inMemoryHorn.hasCustomHorn && inMemoryHorn.audioBase64) {
+    return inMemoryHorn;
+  }
 
   for (const filePath of getStorePaths()) {
     try {
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, "utf8");
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.updatedAt === "number") {
+        if (parsed && typeof parsed.updatedAt === "number" && parsed.audioBase64) {
           inMemoryHorn = parsed;
           return parsed;
         }
       }
     } catch (_) {}
   }
-  return null;
+
+  // Fallback to the authentic bundled Pelham Pelicans Goal Horn MP3 track
+  inMemoryHorn = { ...DEFAULT_SERVER_HORN };
+  return inMemoryHorn;
 }
 
 function saveHornToDisk(data: StoredGoalHorn): void {
@@ -82,27 +109,16 @@ export default async function handler(req: any, res: any) {
   // GET: Fetch stored goal horn audio and mixer preferences across all devices
   if (req.method === "GET") {
     const horn = loadHornFromDisk();
-    if (!horn || !horn.hasCustomHorn || !horn.audioBase64) {
-      return res.status(200).json({
-        hasCustomHorn: false,
-        audioBase64: null,
-        mimeType: "audio/mpeg",
-        filename: "",
-        fileSize: 0,
-        updatedAt: horn?.updatedAt || 0,
-        mixerSettings: horn?.mixerSettings || null,
-      });
-    }
 
     return res.status(200).json({
       hasCustomHorn: true,
-      audioBase64: horn.audioBase64,
+      audioBase64: horn.audioBase64 || DEFAULT_SERVER_HORN.audioBase64,
       mimeType: horn.mimeType || "audio/mpeg",
-      filename: horn.filename || "goal_horn.mp3",
-      fileSize: horn.fileSize || 0,
-      duration: horn.duration || 0,
-      updatedAt: horn.updatedAt,
-      mixerSettings: horn.mixerSettings || null,
+      filename: horn.filename || "pelham_pelicans_goal_horn.mp3",
+      fileSize: horn.fileSize || DEFAULT_SERVER_HORN.fileSize,
+      duration: horn.duration || 90,
+      updatedAt: horn.updatedAt || Date.now(),
+      mixerSettings: horn.mixerSettings || DEFAULT_SERVER_HORN.mixerSettings,
     });
   }
 
@@ -120,20 +136,19 @@ export default async function handler(req: any, res: any) {
 
       // If audioBase64 is provided, update custom horn. If not provided, strictly preserve existing horn data!
       const hasNewAudio = Boolean(audioBase64 && typeof audioBase64 === "string" && audioBase64.length > 50);
-      const hasCustom = hasNewAudio ? true : (existing?.hasCustomHorn ?? false);
-      const audioData = hasNewAudio ? audioBase64 : (existing?.audioBase64 ?? null);
+      const audioData = hasNewAudio ? audioBase64 : (existing.audioBase64 || DEFAULT_SERVER_HORN.audioBase64);
 
       const updatedRecord: StoredGoalHorn = {
-        hasCustomHorn: hasCustom,
+        hasCustomHorn: true,
         audioBase64: audioData,
-        mimeType: hasNewAudio ? (mimeType || "audio/mpeg") : (existing?.mimeType || "audio/mpeg"),
-        filename: hasNewAudio ? (filename || "goal_horn.mp3") : (existing?.filename || "goal_horn.mp3"),
-        fileSize: hasNewAudio ? (typeof fileSize === "number" ? fileSize : audioBase64.length) : (existing?.fileSize || 0),
-        duration: typeof duration === "number" ? duration : existing?.duration,
-        updatedAt: hasNewAudio ? Date.now() : (existing?.updatedAt || Date.now()),
+        mimeType: hasNewAudio ? (mimeType || "audio/mpeg") : (existing.mimeType || "audio/mpeg"),
+        filename: hasNewAudio ? (filename || "custom_goal_horn.mp3") : (existing.filename || "pelham_pelicans_goal_horn.mp3"),
+        fileSize: hasNewAudio ? (typeof fileSize === "number" ? fileSize : audioBase64.length) : (existing.fileSize || DEFAULT_SERVER_HORN.fileSize),
+        duration: typeof duration === "number" ? duration : (existing.duration || 90),
+        updatedAt: hasNewAudio ? Date.now() : (existing.updatedAt || Date.now()),
         mixerSettings: mixerSettings
-          ? { ...(existing?.mixerSettings || {}), ...mixerSettings }
-          : existing?.mixerSettings,
+          ? { ...(existing.mixerSettings || DEFAULT_SERVER_HORN.mixerSettings || {}), ...mixerSettings }
+          : existing.mixerSettings,
       };
 
       saveHornToDisk(updatedRecord);
@@ -142,9 +157,10 @@ export default async function handler(req: any, res: any) {
         success: true,
         message: hasNewAudio ? "Goal horn saved and synced" : "Mixer settings updated",
         updatedAt: updatedRecord.updatedAt,
-        hasCustomHorn: updatedRecord.hasCustomHorn,
+        hasCustomHorn: true,
         filename: updatedRecord.filename,
         fileSize: updatedRecord.fileSize,
+        duration: updatedRecord.duration,
       });
     } catch (err: any) {
       console.error("Error saving goal horn:", err);
@@ -152,25 +168,23 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // DELETE: Remove uploaded horn and revert to default preset
+  // DELETE: Remove uploaded horn and revert to default authentic Pelham MP3 track
   if (req.method === "DELETE") {
     const existing = loadHornFromDisk();
     const updatedRecord: StoredGoalHorn = {
-      hasCustomHorn: false,
-      audioBase64: null,
-      mimeType: "audio/mpeg",
-      filename: "",
-      fileSize: 0,
+      ...DEFAULT_SERVER_HORN,
       updatedAt: Date.now(),
-      mixerSettings: existing?.mixerSettings,
+      mixerSettings: existing.mixerSettings || DEFAULT_SERVER_HORN.mixerSettings,
     };
 
     saveHornToDisk(updatedRecord);
 
     return res.status(200).json({
       success: true,
-      message: "Custom goal horn removed. Reset to standard arena preset.",
+      message: "Reverted to built-in Pelham Pelicans arena goal horn MP3 track.",
       updatedAt: updatedRecord.updatedAt,
+      hasCustomHorn: true,
+      filename: updatedRecord.filename,
     });
   }
 

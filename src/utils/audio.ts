@@ -44,6 +44,16 @@ export const DEFAULT_MIXER_SETTINGS: MixerSettings = {
 };
 
 
+export const DEFAULT_PELHAM_HORN: StoredGoalHornData = {
+  hasCustomHorn: true,
+  audioBase64: '/audio/pelham_pelicans_goal_horn.mp3',
+  mimeType: 'audio/mpeg',
+  filename: 'pelham_pelicans_goal_horn.mp3',
+  fileSize: 2161720,
+  duration: 90,
+  updatedAt: 1730000000000,
+};
+
 export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   voiceId: '6j98Cb2txyqvHRXeRQYZ', // Pelham Custom NHL Voice
   speed: 1.05,
@@ -143,7 +153,7 @@ class SoundEngine {
 
   // Arena Mixer and Goal Horn state
   private mixerSettings: MixerSettings = { ...DEFAULT_MIXER_SETTINGS };
-  private storedGoalHorn: StoredGoalHornData | null = null;
+  private storedGoalHorn: StoredGoalHornData = { ...DEFAULT_PELHAM_HORN };
   private hornAudioElement: HTMLAudioElement | null = null;
   private hornGain: GainNode | null = null;
   private activeHornStopFns: Array<() => void> = [];
@@ -431,19 +441,12 @@ class SoundEngine {
     // Save ONLY mixer levels to Firestore cloud (never touches or deletes the custom audio file/chunks!)
     saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
 
-    // Asynchronously notify server for cross-device sync (never erase audio on volume changes!)
+    // Asynchronously notify server of mixer settings change (do NOT send large audio base64 on volume tweaks!)
     fetch('/api/goal-horn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mixerSettings: this.mixerSettings,
-        ...(hasCustom && this.storedGoalHorn?.audioBase64 ? {
-          audioBase64: this.storedGoalHorn.audioBase64,
-          mimeType: this.storedGoalHorn.mimeType,
-          filename: this.storedGoalHorn.filename,
-          fileSize: this.storedGoalHorn.fileSize,
-          duration: this.storedGoalHorn.duration,
-        } : {})
       }),
     }).catch(() => {});
 
@@ -495,17 +498,17 @@ class SoundEngine {
       const data = await res.json();
 
       if (data && typeof data.updatedAt === 'number') {
-        // ONLY adopt custom horn from server if server sent actual valid audioBase64 data!
-        if (data.hasCustomHorn && data.audioBase64 && typeof data.audioBase64 === 'string' && data.audioBase64.length > 50) {
+        // Adopt custom horn from server if server sent actual valid audioBase64 or audio path!
+        if (data.hasCustomHorn && data.audioBase64 && typeof data.audioBase64 === 'string' && data.audioBase64.length >= 10) {
           const isNewer = !this.storedGoalHorn || data.updatedAt > (this.storedGoalHorn.updatedAt || 0);
           if (isNewer || !this.storedGoalHorn?.hasCustomHorn) {
             this.storedGoalHorn = {
               hasCustomHorn: true,
               audioBase64: data.audioBase64,
               mimeType: data.mimeType || 'audio/mpeg',
-              filename: data.filename || 'goal_horn.mp3',
-              fileSize: data.fileSize || 0,
-              duration: data.duration,
+              filename: data.filename || 'pelham_pelicans_goal_horn.mp3',
+              fileSize: data.fileSize || 2161720,
+              duration: data.duration || 90,
               updatedAt: data.updatedAt,
             };
             saveAudioToIdb('goal_horn', this.storedGoalHorn).catch(() => {});
@@ -515,27 +518,11 @@ class SoundEngine {
             this.mixerSettings.selectedPreset = 'custom';
             this.notifyHornChange();
           }
-        } else if (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
-          // Client has custom horn locally, but server is missing it (e.g. Vercel serverless cold start).
-          // NEVER wipe local horn! Auto-restore local horn up to server so other devices get it:
-          this.mixerSettings.selectedPreset = 'custom';
-          fetch('/api/goal-horn', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              audioBase64: this.storedGoalHorn.audioBase64,
-              mimeType: this.storedGoalHorn.mimeType,
-              filename: this.storedGoalHorn.filename,
-              fileSize: this.storedGoalHorn.fileSize,
-              duration: this.storedGoalHorn.duration,
-              mixerSettings: this.mixerSettings,
-            }),
-          }).catch(() => {});
         }
 
         if (data.mixerSettings) {
-          // Never override selectedPreset back to pelham_blast if local custom horn exists
-          const preset = this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64
+          const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
+          const preset = hasCustom
             ? 'custom'
             : data.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset;
 
@@ -646,26 +633,19 @@ class SoundEngine {
     }
   }
 
-  // Remove uploaded horn and revert to default authentic preset
+  // Remove custom uploaded horn and revert to authentic built-in Pelham Pelicans MP3 track
   public async removeCustomGoalHorn(): Promise<boolean> {
     this.stopHorn();
-    this.storedGoalHorn = {
-      hasCustomHorn: false,
-      audioBase64: null,
-      mimeType: 'audio/mpeg',
-      filename: '',
-      fileSize: 0,
-      updatedAt: Date.now(),
-    };
-    this.mixerSettings.selectedPreset = 'pelham_blast';
+    this.storedGoalHorn = { ...DEFAULT_PELHAM_HORN, updatedAt: Date.now() };
+    this.mixerSettings.selectedPreset = 'custom';
     deleteAudioFromIdb('goal_horn').catch(() => {});
     try {
-      localStorage.removeItem('pelham_stored_goal_horn_v1');
+      localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
       localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
     } catch (_) {}
 
-    // Remove from Firebase Firestore cloud
-    saveGoalHornToCloud(null, this.mixerSettings).catch(() => {});
+    // Reset in cloud and server
+    saveGoalHornToCloud(this.storedGoalHorn, this.mixerSettings).catch(() => {});
 
     try {
       await fetch('/api/goal-horn', { method: 'DELETE' });
@@ -1014,12 +994,16 @@ class SoundEngine {
       : 0;
     const effectiveVol = Math.max(0, Math.min(1, (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0)));
 
-    // CASE 1: Custom audio file uploaded by user (MP3, WAV, etc.)
-    if (preset === 'custom' && this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
+    // CASE 1: Authentic MP3 Goal Horn track (either user-uploaded MP3 or built-in Pelham Pelicans MP3)
+    const audioSrc = (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64)
+      ? this.storedGoalHorn.audioBase64
+      : '/audio/pelham_pelicans_goal_horn.mp3';
+
+    if ((preset === 'custom' || preset === 'pelham_blast') && audioSrc) {
       try {
         const audio = new Audio();
         this.hornAudioElement = audio;
-        audio.src = this.storedGoalHorn.audioBase64;
+        audio.src = audioSrc;
         audio.volume = effectiveVol;
 
         let finished = false;
@@ -1041,13 +1025,12 @@ class SoundEngine {
         };
 
         audio.onended = cleanup;
-        audio.onerror = () => {
-          console.warn('Custom horn audio error, falling back to synthesized blast');
+        audio.onerror = (err) => {
+          console.warn('MP3 goal horn playback error, falling back:', err);
           cleanup();
           this.playSynthesizedHorn('pelham_blast', durationLimit > 0 ? durationLimit : 5.0, effectiveVol, onEnded);
         };
 
-        // CRITICAL FIX: Only set a timeout cutoff if durationLimit is explicitly > 0.
         // If durationLimit is 0 (Full track), NO TIMEOUT IS SET! The MP3 plays all the way through to the end!
         if (durationLimit > 0) {
           timer = setTimeout(() => {
@@ -1060,7 +1043,7 @@ class SoundEngine {
 
         if (playPromise !== undefined) {
           playPromise.catch((err) => {
-            console.warn('Custom horn playback failed:', err);
+            console.warn('Goal horn MP3 play failed:', err);
             cleanup();
             this.playSynthesizedHorn('pelham_blast', durationLimit > 0 ? durationLimit : 5.0, effectiveVol, onEnded);
           });
@@ -1072,11 +1055,11 @@ class SoundEngine {
         this.activeHornStopFns.push(stopFn);
         return stopFn;
       } catch (err) {
-        console.warn('Custom horn init error, falling back to synthesized blast:', err);
+        console.warn('Goal horn audio init error:', err);
       }
     }
 
-    // CASE 2: High quality synthesized preset
+    // CASE 2: Specialized synthesized presets (e.g. NHL Foghorn or Arena Siren)
     const synthDuration = durationLimit > 0 ? durationLimit : 5.0;
     this.notifyMp3Playback(true);
     return this.playSynthesizedHorn(

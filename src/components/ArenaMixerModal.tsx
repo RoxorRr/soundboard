@@ -20,6 +20,7 @@ import {
   Layers,
   Zap,
   Info,
+  Download,
 } from 'lucide-react';
 import { MixerSettings, StoredGoalHornData, GoalHornPreset } from '../types';
 import { soundEngine } from '../utils/audio';
@@ -64,7 +65,9 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     soundEngine
       .syncServerGoalHorn()
       .then((horn) => {
-        setStoredHorn(horn);
+        if (horn && horn.hasCustomHorn && horn.audioBase64) {
+          setStoredHorn(horn);
+        }
         setMixerSettings(soundEngine.getMixerSettings());
       })
       .finally(() => setIsSyncing(false));
@@ -88,6 +91,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
   const updateSetting = <K extends keyof MixerSettings>(key: K, value: MixerSettings[K]) => {
     const updated = soundEngine.setMixerSettings({ [key]: value });
     setMixerSettings(updated);
+    setStoredHorn(soundEngine.getStoredGoalHorn());
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -425,50 +429,46 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                       type="button"
                       onClick={() => updateSetting('selectedPreset', 'custom')}
                       className={`p-2.5 rounded-xl text-left border flex items-center justify-between transition-all ${
-                        mixerSettings.selectedPreset === 'custom'
+                        mixerSettings.selectedPreset === 'custom' || mixerSettings.selectedPreset === 'pelham_blast'
                           ? 'bg-amber-500/15 border-amber-500/50 text-white'
                           : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <Upload className="w-4 h-4 text-amber-400 shrink-0" />
+                        <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
                         <div>
-                          <div className="text-xs font-bold">
-                            {storedHorn?.hasCustomHorn ? storedHorn.filename : 'Custom Uploaded Horn'}
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span>
+                              {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3'
+                                ? storedHorn.filename
+                                : 'Official Pelham Pelicans Goal Horn (MP3)'}
+                            </span>
                           </div>
-                          <div className="text-[10px] text-slate-400">
-                            {storedHorn?.hasCustomHorn
-                              ? `${storedHorn.duration ? `${storedHorn.duration}s • ` : ''}${Math.round(
+                          <div className="text-[10px] text-amber-300/80">
+                            {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3'
+                              ? `Custom Audio (${storedHorn.duration ? `${storedHorn.duration}s • ` : ''}${Math.round(
                                   (storedHorn.fileSize || 0) / 1024
-                                )} KB • Stored in App`
-                              : 'Upload MP3 / WAV / M4A file'}
+                                )} KB) • Saved in App`
+                              : 'Built-in 90s Authentic Pelham Arena Track • Ready on all devices'}
                           </div>
                         </div>
                       </div>
-                      {storedHorn?.hasCustomHorn && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
-                          Active
-                        </span>
-                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-wider">
+                        Active MP3
+                      </span>
                     </button>
 
-                    {/* Preset 1: Pelham Arena Blast */}
+                    {/* Preset 1: Revert / Re-sync Official Pelham MP3 */}
                     <button
                       type="button"
-                      onClick={() => updateSetting('selectedPreset', 'pelham_blast')}
-                      className={`p-2 rounded-xl text-left border flex items-center justify-between transition-all ${
-                        mixerSettings.selectedPreset === 'pelham_blast'
-                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
-                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
+                      onClick={handleRemoveCustomHorn}
+                      className="p-2 rounded-xl text-left border flex items-center justify-between transition-all bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700"
                     >
                       <div>
-                        <div className="text-xs font-bold">Pelham Arena Blast</div>
-                        <div className="text-[10px] text-slate-400">Stadium train horn chord (F3/A3/C4)</div>
+                        <div className="text-xs font-bold">Reset to Official Pelham Track</div>
+                        <div className="text-[10px] text-slate-400">90-second authentic Pelham Scored arena track (no upload needed)</div>
                       </div>
-                      {mixerSettings.selectedPreset === 'pelham_blast' && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                      )}
+                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
                     </button>
 
                     {/* Preset 2: NHL Deep Foghorn */}
@@ -528,23 +528,33 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                         htmlFor="goal-horn-file-input"
                         className="text-xs font-bold text-amber-400 hover:text-amber-300 cursor-pointer underline underline-offset-2"
                       >
-                        {isUploading ? 'Uploading & Syncing to Cloud...' : 'Upload MP3 (From Phone or Computer)'}
+                        {isUploading ? 'Uploading & Syncing to Cloud...' : 'Upload Replacement MP3 (From Phone or Computer)'}
                       </label>
-                      <p className="text-[10px] text-slate-400 mt-0.5">MP3, WAV, M4A up to 20MB • Auto-syncs to all devices via Firebase</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">MP3, WAV, M4A up to 20MB • Stored in browser and synced to cloud</p>
                     </div>
 
-                    {storedHorn?.hasCustomHorn && (
-                      <div className="flex items-center gap-2 pt-1">
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      {storedHorn?.audioBase64 && (
+                        <a
+                          href={storedHorn.audioBase64}
+                          download={storedHorn.filename || 'pelham_goal_horn.mp3'}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors underline"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Download / Save MP3</span>
+                        </a>
+                      )}
+                      {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3' && (
                         <button
                           type="button"
                           onClick={handleRemoveCustomHorn}
-                          className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors"
+                          className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors ml-2"
                         >
                           <Trash2 className="w-3 h-3" />
-                          <span>Remove uploaded audio</span>
+                          <span>Reset to Official Pelham Track</span>
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
