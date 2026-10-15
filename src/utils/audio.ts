@@ -1,5 +1,14 @@
 // Professional Web Audio Arena sound engine, ElevenLabs, Cartesia & Speechify TTS player
-import { ElevenLabsVoiceSettings, CartesiaVoiceSettings, SpeechifyVoiceSettings, TTSProvider, VoiceStatus } from '../types';
+import {
+  ElevenLabsVoiceSettings,
+  CartesiaVoiceSettings,
+  SpeechifyVoiceSettings,
+  TTSProvider,
+  VoiceStatus,
+  GoalHornPreset,
+  StoredGoalHornData,
+  MixerSettings,
+} from '../types';
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
@@ -7,6 +16,20 @@ export interface AnnounceResult {
   cartesiaAccount?: 'account1' | 'account2';
   error?: string;
 }
+
+export const DEFAULT_MIXER_SETTINGS: MixerSettings = {
+  hornEnabled: true,
+  hornVolume: 0.95,
+  voiceVolume: 1.0,
+  masterVolume: 1.0,
+  selectedPreset: 'custom',
+  hornDurationLimit: 0, // 0 = Full File: MP3 plays all the way through without cutoff
+  voiceTriggerMode: 'delay',
+  voiceDelaySeconds: 2.0,
+  duckHornOnVoice: true,
+  autoTriggerOnGoal: false, // User requested: Do not play simultaneously; separate MP3 and Goal buttons
+};
+
 
 export const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   voiceId: '6j98Cb2txyqvHRXeRQYZ', // Pelham Custom NHL Voice
@@ -105,6 +128,15 @@ class SoundEngine {
   private cartesiaVoiceSettings: CartesiaVoiceSettings = { ...DEFAULT_CARTESIA_VOICE_SETTINGS };
   private speechifyVoiceSettings: SpeechifyVoiceSettings = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS };
 
+  // Arena Mixer and Goal Horn state
+  private mixerSettings: MixerSettings = { ...DEFAULT_MIXER_SETTINGS };
+  private storedGoalHorn: StoredGoalHornData | null = null;
+  private hornAudioElement: HTMLAudioElement | null = null;
+  private hornGain: GainNode | null = null;
+  private activeHornStopFns: Array<() => void> = [];
+  private hornChangeListeners: Array<() => void> = [];
+  private mp3PlaybackListeners: Array<(isPlaying: boolean) => void> = [];
+
   constructor() {
     // Exclusively Speechify is enabled per user configuration
     this.ttsProvider = 'speechify';
@@ -137,7 +169,32 @@ class SoundEngine {
           }
           this.speechifyVoiceSettings = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS, ...parsed };
         }
+
+        const savedMixer = localStorage.getItem('pelham_mixer_settings_v1');
+        if (savedMixer) {
+          const parsed = JSON.parse(savedMixer);
+          // If saved with old 5s/6s cutoff, ensure 0 (full track) is respected
+          if (parsed.hornDurationLimit === 5 || parsed.hornDurationLimit === 6) {
+            parsed.hornDurationLimit = 0;
+          }
+          // Do not play them simultaneously per user preference
+          parsed.autoTriggerOnGoal = false;
+          this.mixerSettings = { ...DEFAULT_MIXER_SETTINGS, ...parsed };
+        }
+
+        const savedHorn = localStorage.getItem('pelham_stored_goal_horn_v1');
+        if (savedHorn) {
+          this.storedGoalHorn = JSON.parse(savedHorn);
+          if (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
+            this.mixerSettings.selectedPreset = 'custom';
+          }
+        }
       } catch (_) {}
+
+      // Auto-sync stored goal horn and mixer settings across all devices on start
+      setTimeout(() => {
+        this.syncServerGoalHorn().catch(() => {});
+      }, 300);
 
       // Auto-unlock on first user interaction anywhere in the window
       const unlockEvents = ['click', 'touchstart', 'touchend', 'keydown', 'pointerdown'];
@@ -278,6 +335,219 @@ class SoundEngine {
     return { ...this.speechifyVoiceSettings };
   }
 
+  // --- ARENA MIXER & CROSS-DEVICE GOAL HORN CONTROLS ---
+
+  public getMixerSettings(): MixerSettings {
+    return { ...this.mixerSettings };
+  }
+
+  public setMixerSettings(partial: Partial<MixerSettings>): MixerSettings {
+    this.mixerSettings = { ...this.mixerSettings, ...partial };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+      } catch (_) {}
+    }
+    // Asynchronously notify server for cross-device sync
+    fetch('/api/goal-horn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mixerSettings: this.mixerSettings }),
+    }).catch(() => {});
+
+    this.notifyHornChange();
+    return { ...this.mixerSettings };
+  }
+
+  public getStoredGoalHorn(): StoredGoalHornData | null {
+    return this.storedGoalHorn;
+  }
+
+  public subscribeToHornChange(listener: () => void): () => void {
+    this.hornChangeListeners.push(listener);
+    return () => {
+      this.hornChangeListeners = this.hornChangeListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyHornChange(): void {
+    this.hornChangeListeners.forEach((fn) => {
+      try {
+        fn();
+      } catch (_) {}
+    });
+  }
+
+  public subscribeToMp3Playback(callback: (isPlaying: boolean) => void): () => void {
+    this.mp3PlaybackListeners.push(callback);
+    callback(this.isHornPlaying());
+    return () => {
+      this.mp3PlaybackListeners = this.mp3PlaybackListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public notifyMp3Playback(isPlaying: boolean): void {
+    this.mp3PlaybackListeners.forEach((cb) => {
+      try {
+        cb(isPlaying);
+      } catch (_) {}
+    });
+  }
+
+
+  // Sync latest stored horn and mixer settings from the server across all devices
+  public async syncServerGoalHorn(): Promise<StoredGoalHornData | null> {
+    if (typeof window === 'undefined') return this.storedGoalHorn;
+    try {
+      const res = await fetch('/api/goal-horn');
+      if (!res.ok) return this.storedGoalHorn;
+      const data = await res.json();
+
+      if (data && typeof data.updatedAt === 'number') {
+        const isNewer = !this.storedGoalHorn || data.updatedAt > (this.storedGoalHorn.updatedAt || 0);
+        if (isNewer || (data.hasCustomHorn && !this.storedGoalHorn?.hasCustomHorn)) {
+          this.storedGoalHorn = {
+            hasCustomHorn: Boolean(data.hasCustomHorn),
+            audioBase64: data.audioBase64 || null,
+            mimeType: data.mimeType || 'audio/mpeg',
+            filename: data.filename || 'goal_horn.mp3',
+            fileSize: data.fileSize || 0,
+            duration: data.duration,
+            updatedAt: data.updatedAt,
+          };
+          try {
+            localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
+          } catch (_) {}
+          if (this.storedGoalHorn.hasCustomHorn && this.storedGoalHorn.audioBase64) {
+            this.mixerSettings.selectedPreset = 'custom';
+          }
+          this.notifyHornChange();
+        }
+
+        if (data.mixerSettings) {
+          this.mixerSettings = { ...this.mixerSettings, ...data.mixerSettings };
+          try {
+            localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+          } catch (_) {}
+          this.notifyHornChange();
+        }
+      }
+      return this.storedGoalHorn;
+    } catch (e) {
+      console.warn('Sync server goal horn notice:', e);
+      return this.storedGoalHorn;
+    }
+  }
+
+  // Upload custom goal horn file (MP3, WAV, AAC, M4A, OGG) to app and sync across all devices
+  public async uploadGoalHorn(
+    file: File
+  ): Promise<{ success: boolean; data?: StoredGoalHornData; error?: string }> {
+    try {
+      if (!file) throw new Error('No audio file selected.');
+      if (file.size > 22 * 1024 * 1024) {
+        throw new Error('Audio file exceeds 20MB limit. Please upload a shorter clip.');
+      }
+
+      this.unlock();
+
+      // Read file as base64 Data URL
+      const base64Url = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read audio file'));
+        reader.readAsDataURL(file);
+      });
+
+      // Measure audio duration
+      let duration = 0;
+      try {
+        const probeAudio = new Audio();
+        probeAudio.src = base64Url;
+        await new Promise<void>((resolve) => {
+          probeAudio.onloadedmetadata = () => {
+            duration = probeAudio.duration || 0;
+            resolve();
+          };
+          probeAudio.onerror = () => resolve();
+          setTimeout(resolve, 2000);
+        });
+      } catch (_) {}
+
+      const record: StoredGoalHornData = {
+        hasCustomHorn: true,
+        audioBase64: base64Url,
+        mimeType: file.type || 'audio/mpeg',
+        filename: file.name || 'custom_goal_horn.mp3',
+        fileSize: file.size,
+        duration: duration > 0 ? Math.round(duration * 10) / 10 : undefined,
+        updatedAt: Date.now(),
+      };
+
+      // 1. Store in memory and localStorage for instant offline access
+      this.storedGoalHorn = record;
+      this.mixerSettings.selectedPreset = 'custom';
+      this.mixerSettings.hornEnabled = true;
+      try {
+        localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(record));
+        localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+      } catch (_) {}
+
+      // 2. Persist to server API so all arena tablets and devices have access
+      try {
+        const res = await fetch('/api/goal-horn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64: base64Url,
+            mimeType: file.type || 'audio/mpeg',
+            filename: file.name || 'custom_goal_horn.mp3',
+            fileSize: file.size,
+            duration: record.duration,
+            mixerSettings: this.mixerSettings,
+          }),
+        });
+
+        if (!res.ok) {
+          console.warn('Server horn sync status:', res.status);
+        }
+      } catch (postErr) {
+        console.warn('Could not sync uploaded horn to server immediately:', postErr);
+      }
+
+      this.notifyHornChange();
+      return { success: true, data: record };
+    } catch (err: any) {
+      console.error('Goal horn upload failed:', err);
+      return { success: false, error: err?.message || 'Failed to upload goal horn.' };
+    }
+  }
+
+  // Remove uploaded horn and revert to default authentic preset
+  public async removeCustomGoalHorn(): Promise<boolean> {
+    this.stopHorn();
+    this.storedGoalHorn = {
+      hasCustomHorn: false,
+      audioBase64: null,
+      mimeType: 'audio/mpeg',
+      filename: '',
+      fileSize: 0,
+      updatedAt: Date.now(),
+    };
+    this.mixerSettings.selectedPreset = 'pelham_blast';
+    try {
+      localStorage.removeItem('pelham_stored_goal_horn_v1');
+      localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+    } catch (_) {}
+
+    try {
+      await fetch('/api/goal-horn', { method: 'DELETE' });
+    } catch (_) {}
+
+    this.notifyHornChange();
+    return true;
+  }
+
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
   public unlock(): void {
     if (typeof window === 'undefined') return;
@@ -374,6 +644,12 @@ class SoundEngine {
   }
 
   public stopAll() {
+    this.stopHorn();
+    this.stopVoiceOnly();
+  }
+
+  // Stops any ongoing voice announcement without interrupting the MP3/Goal Horn
+  public stopVoiceOnly(): void {
     if (this.currentSource) {
       try {
         this.currentSource.stop();
@@ -395,12 +671,356 @@ class SoundEngine {
     }
   }
 
-  public playGoalHorn(): void {
-    // Disabled per user preference
+  public isHornPlaying(): boolean {
+    if (this.hornAudioElement && !this.hornAudioElement.paused && !this.hornAudioElement.ended) {
+      return true;
+    }
+    return this.activeHornStopFns.length > 0;
   }
 
-  public playAssistChime(): void {
-    // Disabled per user preference
+  public isMp3Playing(): boolean {
+    return this.isHornPlaying();
+  }
+
+  public stopHorn(): void {
+    if (this.hornAudioElement) {
+      try {
+        this.hornAudioElement.pause();
+        this.hornAudioElement.currentTime = 0;
+      } catch (_) {}
+      this.hornAudioElement = null;
+    }
+    while (this.activeHornStopFns.length > 0) {
+      const stopFn = this.activeHornStopFns.pop();
+      try {
+        stopFn?.();
+      } catch (_) {}
+    }
+    this.notifyMp3Playback(false);
+  }
+
+  public duckActiveHorn(duckRatio = 0.28): void {
+    if (this.hornAudioElement) {
+      try {
+        const baseVol = (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0);
+        this.hornAudioElement.volume = Math.max(0.05, baseVol * duckRatio);
+      } catch (_) {}
+    }
+    if (this.hornGain && this.audioCtx) {
+      try {
+        const now = this.audioCtx.currentTime;
+        const currentGain = this.hornGain.gain.value;
+        this.hornGain.gain.setValueAtTime(currentGain, now);
+        this.hornGain.gain.linearRampToValueAtTime(currentGain * duckRatio, now + 0.15);
+      } catch (_) {}
+    }
+  }
+
+  public unduckActiveHorn(): void {
+    if (this.hornAudioElement) {
+      try {
+        const baseVol = (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0);
+        this.hornAudioElement.volume = Math.max(0.1, Math.min(1.0, baseVol));
+      } catch (_) {}
+    }
+    if (this.hornGain && this.audioCtx) {
+      try {
+        const now = this.audioCtx.currentTime;
+        const baseVol = (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0);
+        this.hornGain.gain.setValueAtTime(this.hornGain.gain.value, now);
+        this.hornGain.gain.linearRampToValueAtTime(0.55 * baseVol, now + 0.25);
+      } catch (_) {}
+    }
+  }
+
+
+  // Synthesize realistic arena goal horns using Web Audio API
+  public playSynthesizedHorn(
+    preset: GoalHornPreset = 'pelham_blast',
+    durationSec: number = 4.5,
+    volume: number = 1.0,
+    onEnded?: () => void
+  ): () => void {
+    if (this.isMuted) {
+      onEnded?.();
+      return () => {};
+    }
+
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      const effectiveVol = Math.max(0, Math.min(1, volume * (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0)));
+
+      // Horn Master Gain Node
+      const hornGain = ctx.createGain();
+      this.hornGain = hornGain;
+      hornGain.connect(this.masterGain || ctx.destination);
+
+      // Lowpass resonant filter for authentic heavy brass acoustics
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1150, now);
+      filter.Q.setValueAtTime(2.8, now);
+      filter.connect(hornGain);
+
+      // Waveshaper for subtle air-valve saturation
+      const waveShaper = ctx.createWaveShaper();
+      const curve = new Float32Array(256);
+      for (let i = 0; i < 256; i++) {
+        const x = (i * 2) / 256 - 1;
+        curve[i] = (Math.PI + 3) * x / (Math.PI + 3 * Math.abs(x));
+      }
+      waveShaper.curve = curve;
+      waveShaper.connect(filter);
+
+      const oscillators: OscillatorNode[] = [];
+
+      // Frequencies for each horn character
+      let freqs: number[] = [174.61, 220.00, 261.63, 87.31]; // Pelham Blast: F3, A3, C4 chord + F2 sub
+      if (preset === 'nhl_foghorn') {
+        freqs = [130.81, 196.00, 261.63, 65.41]; // NHL Deep Foghorn: C3, G3, C4 + C2 sub
+      } else if (preset === 'arena_siren') {
+        freqs = [185.00, 233.08, 277.18, 92.50]; // High tension brass
+      }
+
+      freqs.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        // Sawtooth gives the rich brass overtones of compressed air horns
+        osc.type = idx === freqs.length - 1 ? 'triangle' : 'sawtooth';
+        osc.frequency.setValueAtTime(freq, now);
+
+        // Small initial pitch chirp mimicking pneumatic valve release
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.02, now + 0.03);
+        osc.frequency.exponentialRampToValueAtTime(freq, now + 0.08);
+
+        // Slight detuning for rich chorus/beating effect
+        const detuneCents = (idx - 1.5) * 5;
+        osc.detune.setValueAtTime(detuneCents, now);
+
+        osc.connect(waveShaper);
+        osc.start(now);
+        oscillators.push(osc);
+      });
+
+      // Optional siren oscillator if arena_siren preset is selected
+      let sirenOsc: OscillatorNode | null = null;
+      if (preset === 'arena_siren') {
+        sirenOsc = ctx.createOscillator();
+        sirenOsc.type = 'sawtooth';
+        sirenOsc.frequency.setValueAtTime(650, now);
+        // Siren sweep up and down
+        for (let t = 0; t < durationSec; t += 1.2) {
+          sirenOsc.frequency.linearRampToValueAtTime(1050, now + t + 0.6);
+          sirenOsc.frequency.linearRampToValueAtTime(650, now + t + 1.2);
+        }
+        const sirenGain = ctx.createGain();
+        sirenGain.gain.setValueAtTime(0.25 * effectiveVol, now);
+        sirenOsc.connect(sirenGain);
+        sirenGain.connect(hornGain);
+        sirenOsc.start(now);
+        oscillators.push(sirenOsc);
+      }
+
+      // Attack & decay envelope
+      hornGain.gain.setValueAtTime(0.001, now);
+      hornGain.gain.linearRampToValueAtTime(0.55 * effectiveVol, now + 0.04);
+      hornGain.gain.setValueAtTime(0.55 * effectiveVol, now + Math.max(0.1, durationSec - 0.4));
+      hornGain.gain.linearRampToValueAtTime(0.001, now + durationSec);
+
+      let stopped = false;
+      const stopFn = () => {
+        if (stopped) return;
+        stopped = true;
+        try {
+          const stopTime = ctx.currentTime;
+          hornGain.gain.cancelScheduledValues(stopTime);
+          hornGain.gain.setValueAtTime(hornGain.gain.value, stopTime);
+          hornGain.gain.linearRampToValueAtTime(0.001, stopTime + 0.08);
+          setTimeout(() => {
+            oscillators.forEach((osc) => {
+              try {
+                osc.stop();
+                osc.disconnect();
+              } catch (_) {}
+            });
+            hornGain.disconnect();
+          }, 100);
+        } catch (_) {}
+      };
+
+      this.activeHornStopFns.push(stopFn);
+
+      const timer = setTimeout(() => {
+        stopFn();
+        onEnded?.();
+      }, durationSec * 1000);
+
+      return () => {
+        clearTimeout(timer);
+        stopFn();
+      };
+    } catch (err) {
+      console.warn('Synthesized horn error:', err);
+      onEnded?.();
+      return () => {};
+    }
+  }
+
+  // Play configured Goal Horn: Either uploaded custom audio file or synthesized preset
+  public playGoalHorn(onEnded?: () => void): () => void {
+    this.unlock();
+
+    if (this.isMuted || !this.mixerSettings.hornEnabled) {
+      onEnded?.();
+      return () => {};
+    }
+
+    this.stopHorn();
+
+    const preset = this.mixerSettings.selectedPreset;
+    const durationLimit = typeof this.mixerSettings.hornDurationLimit === 'number'
+      ? this.mixerSettings.hornDurationLimit
+      : 0;
+    const effectiveVol = Math.max(0, Math.min(1, (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0)));
+
+    // CASE 1: Custom audio file uploaded by user (MP3, WAV, etc.)
+    if (preset === 'custom' && this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
+      try {
+        const audio = new Audio();
+        this.hornAudioElement = audio;
+        audio.src = this.storedGoalHorn.audioBase64;
+        audio.volume = effectiveVol;
+
+        let finished = false;
+        let timer: any = null;
+
+        const cleanup = () => {
+          if (finished) return;
+          finished = true;
+          if (timer) clearTimeout(timer);
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+          } catch (_) {}
+          if (this.hornAudioElement === audio) {
+            this.hornAudioElement = null;
+          }
+          this.notifyMp3Playback(false);
+          onEnded?.();
+        };
+
+        audio.onended = cleanup;
+        audio.onerror = () => {
+          console.warn('Custom horn audio error, falling back to synthesized blast');
+          cleanup();
+          this.playSynthesizedHorn('pelham_blast', durationLimit > 0 ? durationLimit : 5.0, effectiveVol, onEnded);
+        };
+
+        // CRITICAL FIX: Only set a timeout cutoff if durationLimit is explicitly > 0.
+        // If durationLimit is 0 (Full track), NO TIMEOUT IS SET! The MP3 plays all the way through to the end!
+        if (durationLimit > 0) {
+          timer = setTimeout(() => {
+            cleanup();
+          }, durationLimit * 1000);
+        }
+
+        const playPromise = audio.play();
+        this.notifyMp3Playback(true);
+
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn('Custom horn playback failed:', err);
+            cleanup();
+            this.playSynthesizedHorn('pelham_blast', durationLimit > 0 ? durationLimit : 5.0, effectiveVol, onEnded);
+          });
+        }
+
+        const stopFn = () => {
+          cleanup();
+        };
+        this.activeHornStopFns.push(stopFn);
+        return stopFn;
+      } catch (err) {
+        console.warn('Custom horn init error, falling back to synthesized blast:', err);
+      }
+    }
+
+    // CASE 2: High quality synthesized preset
+    const synthDuration = durationLimit > 0 ? durationLimit : 5.0;
+    this.notifyMp3Playback(true);
+    return this.playSynthesizedHorn(
+      preset === 'custom' ? 'pelham_blast' : preset,
+      synthDuration,
+      effectiveVol,
+      () => {
+        this.notifyMp3Playback(false);
+        onEnded?.();
+      }
+    );
+  }
+
+  // Dedicated MP3 trigger method: Starts MP3 (or stops if already playing)
+  public playMp3(onEnded?: () => void): () => void {
+    this.unlock();
+    if (this.isHornPlaying()) {
+      this.stopHorn();
+      onEnded?.();
+      return () => {};
+    }
+    return this.playGoalHorn(onEnded);
+  }
+
+
+  // Sequenced Playback: Triggers Goal Horn, followed by announcer voice-over
+  public async playCelebrationSequence(options?: {
+    text?: string;
+    voiceStyle?: string;
+    onStep?: (step: 'horn' | 'voice' | 'idle') => void;
+  }): Promise<AnnounceResult> {
+    const text = options?.text || "Goal Pelham Pelicans! The puck is in the net!";
+    const onStep = options?.onStep;
+
+    this.unlock();
+
+    if (this.isMuted) {
+      onStep?.('idle');
+      return { source: 'speechify' };
+    }
+
+    // 1. Play Goal Horn if enabled in Mixer
+    if (this.mixerSettings.hornEnabled) {
+      onStep?.('horn');
+
+      if (this.mixerSettings.voiceTriggerMode === 'after_horn') {
+        // Wait for horn to finish its blast before starting voice-over
+        await new Promise<void>((resolve) => {
+          this.playGoalHorn(() => resolve());
+        });
+      } else {
+        // Delay mode: start horn, wait configured seconds, duck horn, then start voice
+        this.playGoalHorn();
+        const delaySec = Math.max(0.5, this.mixerSettings.voiceDelaySeconds || 2.5);
+        await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+        if (this.mixerSettings.duckHornOnVoice) {
+          this.duckActiveHorn();
+        }
+      }
+    }
+
+    // 2. Play Voice-over announcement
+    onStep?.('voice');
+    try {
+      const res = await this.announce(text, options?.voiceStyle || 'nhl');
+      onStep?.('idle');
+      return res;
+    } catch (err: any) {
+      onStep?.('idle');
+      return { source: 'webspeech', error: err?.message };
+    }
   }
 
   public playWhistle(): void {
@@ -627,6 +1247,8 @@ class SoundEngine {
   }
 
   // Announce text using Speechify (Simba 3.2) TTS engine with WebSpeech fallback
+  // Announce text using Speechify (Simba 3.2) TTS engine with WebSpeech fallback
+  // Plays voice-over over the ongoing MP3 without stopping the MP3!
   public async announce(
     text: string,
     overrideVoiceId?: string,
@@ -637,7 +1259,13 @@ class SoundEngine {
     }
 
     this.unlock();
-    this.stopAll();
+    // Stop any previous voice without stopping the Goal Horn / MP3!
+    this.stopVoiceOnly();
+
+    const wasHornActive = this.isHornPlaying();
+    if (wasHornActive && this.mixerSettings.duckHornOnVoice) {
+      this.duckActiveHorn(0.25);
+    }
 
     // SPEECHIFY TTS ENGINE (SOLE ACTIVE PROVIDER)
     const sSettings: SpeechifyVoiceSettings = {
@@ -684,7 +1312,7 @@ class SoundEngine {
 
         const errorMsg = data.error || (data.fallback ? 'Fallback active' : 'Speechify synthesis failed');
         console.warn('Speechify TTS server fallback active:', errorMsg, data);
-        this.speakWebSpeech(text);
+        await this.speakWebSpeech(text);
         return { source: 'webspeech', voiceId: data.voiceId, error: errorMsg };
       }
 
@@ -699,72 +1327,90 @@ class SoundEngine {
         }
       }
 
-      this.speakWebSpeech(text);
+      await this.speakWebSpeech(text);
       return { source: 'webspeech', error: 'Unexpected voice response format' };
     } catch (err: any) {
       console.warn('Speechify API request failed, falling back to Web Speech API:', err);
-      this.speakWebSpeech(text);
+      await this.speakWebSpeech(text);
       return { source: 'webspeech', error: err?.message || 'Network error during Speechify voice playback' };
+    } finally {
+      if (wasHornActive && this.isHornPlaying()) {
+        this.unduckActiveHorn();
+      }
     }
   }
 
   // Web Speech API with rate and pitch controls matching active provider settings
-  private speakWebSpeech(text: string) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
-
-    try {
-      window.speechSynthesis.cancel();
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-
-      const activeSpeed = this.ttsProvider === 'cartesia'
-        ? this.cartesiaVoiceSettings.speed
-        : this.ttsProvider === 'speechify'
-        ? this.speechifyVoiceSettings.speed
-        : this.voiceSettings.speed;
-      const activePitch = this.ttsProvider === 'cartesia'
-        ? this.cartesiaVoiceSettings.pitchCents
-        : this.ttsProvider === 'speechify'
-        ? this.speechifyVoiceSettings.pitchCents
-        : this.voiceSettings.pitchCents;
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
-
-      // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
-      const pitchOffset = activePitch / 1000;
-      utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
-
-      // Fix for Chromium garbage-collection bug where synthesis stops early
-      (window as any).__lastUtterance = utterance;
-
-      const voices = window.speechSynthesis.getVoices();
-      if (voices && voices.length > 0) {
-        const preferredVoice = voices.find(
-          (v) =>
-            v.lang.startsWith('en') &&
-            (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
-        ) || voices.find((v) => v.lang.startsWith('en'));
-
-        if (preferredVoice) {
-          utterance.voice = preferredVoice;
-        }
-      }
-
-      utterance.onend = () => {
-        (window as any).__lastUtterance = null;
-      };
-
-      utterance.onerror = (e) => {
-        console.warn('Web Speech error:', e);
-        (window as any).__lastUtterance = null;
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.warn('Web Speech invocation failed:', err);
+  private speakWebSpeech(text: string): Promise<void> {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) {
+      return Promise.resolve();
     }
+
+    return new Promise<void>((resolve) => {
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        const activeSpeed = this.ttsProvider === 'cartesia'
+          ? this.cartesiaVoiceSettings.speed
+          : this.ttsProvider === 'speechify'
+          ? this.speechifyVoiceSettings.speed
+          : this.voiceSettings.speed;
+        const activePitch = this.ttsProvider === 'cartesia'
+          ? this.cartesiaVoiceSettings.pitchCents
+          : this.ttsProvider === 'speechify'
+          ? this.speechifyVoiceSettings.pitchCents
+          : this.voiceSettings.pitchCents;
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = Math.max(0.7, Math.min(1.4, activeSpeed));
+
+        // Map cents (-500 to +500) to pitch offset (0.5 to 1.8)
+        const pitchOffset = activePitch / 1000;
+        utterance.pitch = Math.max(0.5, Math.min(1.8, 1.1 + pitchOffset));
+
+        // Fix for Chromium garbage-collection bug where synthesis stops early
+        (window as any).__lastUtterance = utterance;
+
+        const timeout = setTimeout(() => {
+          (window as any).__lastUtterance = null;
+          resolve();
+        }, 12000);
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          const preferredVoice = voices.find(
+            (v) =>
+              v.lang.startsWith('en') &&
+              (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Daniel') || v.name.includes('Samantha'))
+          ) || voices.find((v) => v.lang.startsWith('en'));
+
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+          }
+        }
+
+        utterance.onend = () => {
+          clearTimeout(timeout);
+          (window as any).__lastUtterance = null;
+          resolve();
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('Web Speech error:', e);
+          clearTimeout(timeout);
+          (window as any).__lastUtterance = null;
+          resolve();
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn('Web Speech invocation failed:', err);
+        resolve();
+      }
+    });
   }
 }
 

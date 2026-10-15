@@ -12,6 +12,7 @@ import {
   Timer,
   CheckCircle2,
   Layers,
+  Sliders,
 } from 'lucide-react';
 import { Player, Announcement } from '../types';
 import { QuickGoalModal } from './QuickGoalModal';
@@ -50,6 +51,7 @@ interface ArenaConsoleModalProps {
   onWelcomeMessage: () => Promise<void> | void;
   onCustomAnnouncement?: (text: string) => Promise<void> | void;
   onReplayAnnouncement?: () => Promise<void> | void;
+  onOpenMixer?: () => void;
 }
 
 export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
@@ -71,6 +73,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
   onWelcomeMessage,
   onCustomAnnouncement,
   onReplayAnnouncement,
+  onOpenMixer,
 }) => {
   const [currentTab, setCurrentTab] = useState<ConsoleTab>(activeTab);
   const [customText, setCustomText] = useState('');
@@ -220,6 +223,19 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
               <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>Speaker & Welcome</span>
             </button>
+
+            {/* Tab 5: Mixer & Goal Horn */}
+            {onOpenMixer && (
+              <button
+                type="button"
+                id="console-tab-mixer"
+                onClick={onOpenMixer}
+                className="px-3 py-1.5 rounded-xl font-athletic font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20 active:scale-95"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Mixer & Horn</span>
+              </button>
+            )}
           </div>
         </div>
 

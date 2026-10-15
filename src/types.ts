@@ -105,3 +105,28 @@ export interface SpeechifyVoiceSettings {
   pitchCents: number;
 }
 
+export type GoalHornPreset = 'custom' | 'pelham_blast' | 'nhl_foghorn' | 'arena_siren';
+
+export interface StoredGoalHornData {
+  hasCustomHorn: boolean;
+  audioBase64?: string | null;
+  mimeType: string;
+  filename: string;
+  fileSize?: number;
+  duration?: number;
+  updatedAt: number;
+}
+
+export interface MixerSettings {
+  hornEnabled: boolean;
+  hornVolume: number; // 0.0 to 1.0
+  voiceVolume: number; // 0.0 to 1.0
+  masterVolume: number; // 0.0 to 1.0
+  selectedPreset: GoalHornPreset;
+  hornDurationLimit: number; // in seconds (e.g. 3, 5, 8, 10, or 0 for full file)
+  voiceTriggerMode: 'after_horn' | 'delay'; // 'after_horn' or delay in seconds
+  voiceDelaySeconds: number; // delay before voice kicks in (e.g. 2.0s)
+  duckHornOnVoice: boolean; // lower horn volume when voice starts
+  autoTriggerOnGoal: boolean; // automatically trigger sequence on goal score
+}
+

@@ -30,6 +30,8 @@ import {
   ExternalLink,
   ArrowRightLeft,
   Play,
+  Upload,
+  Square,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, SpeechifyVoiceSettings, TTSProvider } from '../types';
 import { soundEngine, DEFAULT_SPEECHIFY_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
@@ -58,6 +60,7 @@ interface SettingsViewProps {
   onOpenRosterModal: (team?: 'home' | 'visitor') => void;
   onOpenScannerModal: (team?: 'home' | 'visitor') => void;
   onOpenResetModal: () => void;
+  onOpenMixer?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -84,6 +87,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenRosterModal,
   onOpenScannerModal,
   onOpenResetModal,
+  onOpenMixer,
 }) => {
   const [isEditingVisitorName, setIsEditingVisitorName] = useState(false);
   const [tempVisitorName, setTempVisitorName] = useState(visitorTeamName);
@@ -559,6 +563,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+
+            {/* GOAL HORN & ARENA AUDIO MIXER CARD */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-cyan-950/40 border border-amber-500/40 shadow-lg space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <Sliders className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                      <span>Goal Horn & Arena Audio Mixer</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        All Devices Synced
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Upload custom arena goal horn audio, adjust sound channels, and sequence horn followed by announcer voice-over.
+                    </p>
+                  </div>
+                </div>
+
+                {onOpenMixer && (
+                  <button
+                    type="button"
+                    onClick={onOpenMixer}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-95 transition-all shrink-0"
+                  >
+                    <Sliders className="w-4 h-4" />
+                    <span>Open Sound Mixer</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Status Chips */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800 text-xs flex items-center justify-between">
+                  <span className="text-slate-400">Active Horn:</span>
+                  <span className="font-bold text-amber-300 font-mono text-[11px] truncate max-w-[150px]">
+                    {soundEngine.getStoredGoalHorn()?.hasCustomHorn
+                      ? soundEngine.getStoredGoalHorn()?.filename
+                      : soundEngine.getMixerSettings().selectedPreset === 'nhl_foghorn'
+                      ? 'NHL Foghorn'
+                      : soundEngine.getMixerSettings().selectedPreset === 'arena_siren'
+                      ? 'Arena Siren'
+                      : 'Pelham Blast'}
+                  </span>
+                </div>
+                <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800 text-xs flex items-center justify-between">
+                  <span className="text-slate-400">Levels:</span>
+                  <span className="font-bold text-white font-mono text-[11px]">
+                    Horn: {Math.round((soundEngine.getMixerSettings().hornVolume ?? 0.95) * 100)}% • Voice: {Math.round((soundEngine.getMixerSettings().voiceVolume ?? 1.0) * 100)}%
+                  </span>
+                </div>
+                <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800 text-xs flex items-center justify-between">
+                  <span className="text-slate-400">Sequence:</span>
+                  <span className="font-bold text-cyan-300 text-[11px]">
+                    {soundEngine.getMixerSettings().voiceTriggerMode === 'after_horn' ? 'Voice After Horn Ends' : `Delay (${soundEngine.getMixerSettings().voiceDelaySeconds}s)`}
+                  </span>
+                </div>
               </div>
             </div>
 

@@ -6,11 +6,13 @@ import { CameraStickerScannerModal } from './components/CameraStickerScannerModa
 import { QuickGoalModal } from './components/QuickGoalModal';
 import { PenaltyModal } from './components/PenaltyModal';
 import { ArenaConsoleModal, ConsoleTab } from './components/ArenaConsoleModal';
+import { ArenaMixerModal } from './components/ArenaMixerModal';
+import { InlineGoalScorer } from './components/InlineGoalScorer';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt, generatePeriodRemainingPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock, Sliders, Zap, Music, Square, Play } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -244,6 +246,62 @@ export default function App() {
     setIsConsoleModalOpen(true);
   }, []);
 
+  // Live MP3 playback state & subscription
+  const [isMp3Playing, setIsMp3Playing] = useState(false);
+  useEffect(() => {
+    return soundEngine.subscribeToMp3Playback((playing) => {
+      setIsMp3Playing(playing);
+    });
+  }, []);
+
+  const handleToggleMp3 = useCallback(() => {
+    soundEngine.unlock();
+    soundEngine.playMp3();
+  }, []);
+
+  // Inline Goal Scorer Selector state (Immediately visible on same screen; no window switching!)
+  const [isInlineGoalScorerOpen, setIsInlineGoalScorerOpen] = useState(true);
+
+  // Arena Sound Mixer & Goal Horn Modal State
+  const [isMixerModalOpen, setIsMixerModalOpen] = useState(false);
+  const [isCelebrationActive, setIsCelebrationActive] = useState(false);
+
+  const handleQuickCelebration = useCallback(async () => {
+
+    soundEngine.unlock();
+    setIsCelebrationActive(true);
+    setIsAnnouncing(true);
+
+    const announcementText = "Goal Pelham Pelicans! The puck is in the net!";
+    const announcement: Announcement = {
+      id: `${Date.now()}-horn-celebration`,
+      type: 'goal',
+      playerId: 'horn_celebration',
+      playerNumber: 0,
+      playerName: 'Pelham Celebration',
+      text: announcementText,
+      timestamp: Date.now(),
+      source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
+      team: 'Pelham Pelicans',
+    };
+    setCurrentAnnouncement(announcement);
+
+    try {
+      const res = await soundEngine.playCelebrationSequence({
+        text: announcementText,
+        voiceStyle: 'nhl',
+      });
+      if (res?.source) {
+        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
+      }
+    } catch (err: any) {
+      console.error('Celebration error:', err);
+    } finally {
+      setIsCelebrationActive(false);
+      setIsAnnouncing(false);
+    }
+  }, [voiceStatus]);
+
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
   // Confirmation state if a player being removed already has scored goals or assists
@@ -366,6 +424,7 @@ export default function App() {
     setActiveAnnouncePlayerId(player.id);
 
     try {
+      // NEVER trigger horn automatically. Goal Horn is triggered strictly by user button click!
       const res = await soundEngine.announce(prompt, 'nhl');
       if (res.source) {
         setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
@@ -911,6 +970,7 @@ export default function App() {
       setActiveAnnouncePlayerId(scorer.id);
 
       try {
+        // NEVER trigger horn automatically. Goal Horn is triggered strictly by user button click!
         const res = await soundEngine.announce(prompt, 'nhl');
         if (res.source) {
           setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
@@ -1178,20 +1238,52 @@ export default function App() {
             </div>
           )}
 
-          {/* Quick Keypad Goal & Assist Entry Trigger */}
+          {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger (Plays all the way through) */}
+          <button
+            id="nav-goal-mp3-btn"
+            type="button"
+            onClick={handleToggleMp3}
+            className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
+              isMp3Playing
+                ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white animate-pulse shadow-red-500/40 ring-1 ring-red-400'
+                : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 hover:text-white border border-amber-500/40 shadow-sm'
+            }`}
+            title={isMp3Playing ? 'Stop MP3 (currently playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
+          >
+            {isMp3Playing ? (
+              <>
+                <Square className="w-3 h-3 fill-current text-white" />
+                <span className="hidden sm:inline">Stop MP3</span>
+                <span className="sm:hidden">Stop</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3 h-3 fill-current text-amber-400" />
+                <span className="hidden sm:inline">Goal MP3</span>
+                <span className="sm:hidden">MP3</span>
+              </>
+            )}
+          </button>
+
+          {/* BUTTON 2: Dedicated Goal & Who Scored Trigger (No window switching!) */}
           {currentTab !== 'settings' && (
             <button
-              id="nav-quick-goal-btn"
+              id="nav-who-scored-btn"
               type="button"
-              onClick={() => openConsole('goal')}
-              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 active:scale-95 text-slate-950 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shadow-amber-500/20 shrink-0"
-              title="Input jersey numbers of scorer and assist maker with numeric keypad"
+              onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+              className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
+                isInlineGoalScorerOpen
+                  ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/20'
+              }`}
+              title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
             >
-              <Hash className="w-3 h-3 shrink-0" />
-              <span className="hidden sm:inline">Keypad Goal</span>
-              <span className="sm:hidden">Keypad</span>
+              <Flame className="w-3.5 h-3.5 fill-current" />
+              <span className="hidden sm:inline">Who Scored?</span>
+              <span className="sm:hidden">Scorer</span>
             </button>
           )}
+
 
           {/* Quick Penalty Announcement Trigger */}
           {currentTab !== 'settings' && (
@@ -1250,6 +1342,33 @@ export default function App() {
             <span className="hidden sm:inline">Welcome message</span>
             <span className="sm:hidden">Welcome</span>
           </button>
+
+          {/* Arena Audio Mixer & Goal Horn Button */}
+          <button
+            id="nav-mixer-btn"
+            type="button"
+            onClick={() => setIsMixerModalOpen(true)}
+            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-amber-500/25 active:scale-95 text-amber-300 hover:text-white border border-amber-500/40 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
+            title="Arena Mixer & Goal Horn: Upload custom horn, mix volume levels, and trigger celebration"
+          >
+            <Sliders className="w-3 h-3 text-amber-400 shrink-0" />
+            <span className="hidden sm:inline">Mixer & Horn</span>
+            <span className="sm:hidden">Mixer</span>
+          </button>
+
+          {/* One-Click Goal Horn & Voice Celebration Button */}
+          <button
+            id="nav-celebration-blast-btn"
+            type="button"
+            onClick={handleQuickCelebration}
+            disabled={isAnnouncing || isCelebrationActive}
+            className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 hover:from-red-500 hover:to-amber-400 active:scale-95 text-white font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-md shadow-red-600/25 shrink-0 disabled:opacity-50"
+            title="Play Goal Horn blast followed by Pelham voice-over celebration"
+          >
+            <Zap className={`w-3 h-3 fill-current ${isCelebrationActive ? 'animate-bounce text-yellow-300' : 'text-yellow-400'} shrink-0`} />
+            <span className="hidden sm:inline">{isCelebrationActive ? 'Celebrating...' : 'Horn + Voice'}</span>
+            <span className="sm:hidden">Celebration</span>
+          </button>
         </div>
       </nav>
 
@@ -1288,6 +1407,7 @@ export default function App() {
             handleOpenScanner();
           }}
           onOpenResetModal={() => setIsResetModalOpen(true)}
+          onOpenMixer={() => setIsMixerModalOpen(true)}
         />
       ) : (
         <>
@@ -1578,21 +1698,51 @@ export default function App() {
               </div>
             </div>
 
-            {/* Big Team Goals Scoreboard */}
-            <div className="flex items-center gap-2">
+            {/* Two Requested Primary Buttons: One for MP3, One for Goal (Who Scored?) */}
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+              {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger (Plays all the way through) */}
               <button
                 type="button"
-                onClick={() => openConsole('goal')}
-                className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all ${
-                  isVisitor
-                    ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40'
-                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                id="scoreboard-mp3-btn"
+                onClick={handleToggleMp3}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                  isMp3Playing
+                    ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
+                    : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
                 }`}
-                title="Enter jersey # of scorer & assist maker with numeric keypad"
+                title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
               >
-                <Hash className="w-3 h-3" />
-                <span className="hidden sm:inline">Keypad Entry</span>
+                {isMp3Playing ? (
+                  <>
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Stop MP3</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
+                    <span>Goal MP3</span>
+                  </>
+                )}
               </button>
+
+              {/* BUTTON 2: Dedicated Goal Scorer Button (No window switching!) */}
+              <button
+                type="button"
+                id="scoreboard-who-scored-btn"
+                onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+                className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                  isInlineGoalScorerOpen
+                    ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
+                    : isVisitor
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                    : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
+                }`}
+                title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
+              >
+                <Flame className="w-3.5 h-3.5 fill-current" />
+                <span>Who Scored?</span>
+              </button>
+
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
                 Team Total:
               </span>
@@ -1611,6 +1761,20 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Inline Goal Scorer: No Window Switching! Voice announces OVER the MP3 */}
+          <InlineGoalScorer
+            isOpen={isInlineGoalScorerOpen}
+            onClose={() => setIsInlineGoalScorerOpen(false)}
+            homePlayers={homePlayers}
+            visitorPlayers={visitorPlayers}
+            activeTeamTab={activeTeamTab}
+            visitorTeamName={visitorTeamName}
+            isMp3Playing={isMp3Playing}
+            onToggleMp3={handleToggleMp3}
+            isAnnouncing={isAnnouncing}
+            onScoreGoalWithAssist={handleScoreGoalWithAssist}
+          />
 
           {/* Player Rows for Goals - Engineered to fit on screen */}
           <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
@@ -1781,6 +1945,15 @@ export default function App() {
         onWelcomeMessage={handleTestVoice}
         onCustomAnnouncement={handleCustomAnnouncement}
         onReplayAnnouncement={handleReplayAnnouncement}
+        onOpenMixer={() => setIsMixerModalOpen(true)}
+      />
+
+      {/* Arena Audio Mixer & Goal Horn Modal */}
+      <ArenaMixerModal
+        isOpen={isMixerModalOpen}
+        onClose={() => setIsMixerModalOpen(false)}
+        visitorTeamName={visitorTeamName}
+        isAnnouncing={isAnnouncing}
       />
 
       {/* Confirmation Modal when removing a player who already has goals or assists */}
