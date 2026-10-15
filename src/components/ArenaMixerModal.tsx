@@ -204,12 +204,13 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                 <h2 id="mixer-modal-title" className="font-athletic font-bold text-lg sm:text-xl text-white uppercase tracking-wider">
                   Arena Audio Mixer & Goal Horn
                 </h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono font-semibold">
-                  Cross-Device Sync
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  Firebase Cloud Sync Active
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Upload your custom goal horn, configure audio levels, and sequence horn followed by arena voice-over.
+                Upload your MP3 from your phone or computer. Synced permanently in Firebase Firestore cloud across all devices on Vercel.
               </p>
             </div>
           </div>
@@ -527,9 +528,9 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                         htmlFor="goal-horn-file-input"
                         className="text-xs font-bold text-amber-400 hover:text-amber-300 cursor-pointer underline underline-offset-2"
                       >
-                        {isUploading ? 'Uploading & Syncing...' : 'Upload Goal Horn Audio'}
+                        {isUploading ? 'Uploading & Syncing to Cloud...' : 'Upload MP3 (From Phone or Computer)'}
                       </label>
-                      <p className="text-[10px] text-slate-400 mt-0.5">MP3, WAV, M4A up to 20MB</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">MP3, WAV, M4A up to 20MB • Auto-syncs to all devices via Firebase</p>
                     </div>
 
                     {storedHorn?.hasCustomHorn && (

@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "GoalHornConfig": {
+      "title": "GoalHornConfig",
+      "description": "Cross-device persistent configuration for the arena goal horn audio file and mixer levels",
+      "type": "object",
+      "properties": {
+        "hasCustomHorn": { "type": "boolean", "description": "True if a custom audio file is stored" },
+        "audioBase64": { "type": "string", "description": "Base64 encoded data URI of the custom goal horn MP3/WAV audio" },
+        "mimeType": { "type": "string", "description": "Audio MIME type such as audio/mpeg or audio/wav" },
+        "filename": { "type": "string", "description": "Original file name of the uploaded goal horn" },
+        "fileSize": { "type": "number", "description": "File size in bytes" },
+        "duration": { "type": "number", "description": "Audio duration in seconds" },
+        "isChunked": { "type": "boolean", "description": "True if audio payload is split into subcollection chunks for large MP3s" },
+        "totalChunks": { "type": "number", "description": "Total number of subcollection chunks" },
+        "updatedAt": { "type": "number", "description": "Timestamp in milliseconds when settings were last saved" },
+        "mixerSettings": {
+          "type": "object",
+          "description": "Volume mixer channels and sequencing settings",
+          "properties": {
+            "hornEnabled": { "type": "boolean" },
+            "hornVolume": { "type": "number" },
+            "voiceVolume": { "type": "number" },
+            "masterVolume": { "type": "number" },
+            "selectedPreset": { "type": "string" },
+            "hornDurationLimit": { "type": "number" },
+            "voiceTriggerMode": { "type": "string" },
+            "voiceDelaySeconds": { "type": "number" },
+            "duckHornOnVoice": { "type": "boolean" },
+            "autoTriggerOnGoal": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["updatedAt"]
+    },
+    "GoalHornChunk": {
+      "title": "GoalHornChunk",
+      "description": "Subcollection audio chunk enabling cross-device sync of MP3 files of any size without 1MB document limit",
+      "type": "object",
+      "properties": {
+        "index": { "type": "number", "description": "0-based chunk index" },
+        "chunk": { "type": "string", "description": "Portion of the base64 audio data URI" },
+        "updatedAt": { "type": "number", "description": "Timestamp in milliseconds when chunk was written" }
+      },
+      "required": ["index", "chunk"]
+    },
+    "TestConnection": {
+      "title": "TestConnection",
+      "description": "Probe entity used to validate client connection with Firestore",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": "GoalHornConfig",
+      "description": "App-wide synced audio settings and custom goal horn storage accessible across devices"
+    },
+    "/settings/{settingId}/chunks/{chunkId}": {
+      "schema": "GoalHornChunk",
+      "description": "Subcollection chunks storing audio fragments for large MP3 files"
+    },
+    "/test/{testId}": {
+      "schema": "TestConnection",
+      "description": "Connection test probe"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Connection test probe
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // App-wide goal horn & audio mixer settings synced across all user devices
+    match /settings/{settingId} {
+      allow read, write: if true;
+
+      // Subcollection audio chunks for large MP3 goal horns
+      match /chunks/{chunkId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

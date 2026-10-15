@@ -118,14 +118,19 @@ export default async function handler(req: any, res: any) {
 
       const existing = loadHornFromDisk();
 
+      // If audioBase64 is provided, update custom horn. If not provided, strictly preserve existing horn data!
+      const hasNewAudio = Boolean(audioBase64 && typeof audioBase64 === "string" && audioBase64.length > 50);
+      const hasCustom = hasNewAudio ? true : (existing?.hasCustomHorn ?? false);
+      const audioData = hasNewAudio ? audioBase64 : (existing?.audioBase64 ?? null);
+
       const updatedRecord: StoredGoalHorn = {
-        hasCustomHorn: audioBase64 ? true : existing?.hasCustomHorn || false,
-        audioBase64: audioBase64 || existing?.audioBase64 || null,
-        mimeType: mimeType || existing?.mimeType || "audio/mpeg",
-        filename: filename || existing?.filename || "goal_horn.mp3",
-        fileSize: typeof fileSize === "number" ? fileSize : audioBase64 ? audioBase64.length : existing?.fileSize || 0,
+        hasCustomHorn: hasCustom,
+        audioBase64: audioData,
+        mimeType: hasNewAudio ? (mimeType || "audio/mpeg") : (existing?.mimeType || "audio/mpeg"),
+        filename: hasNewAudio ? (filename || "goal_horn.mp3") : (existing?.filename || "goal_horn.mp3"),
+        fileSize: hasNewAudio ? (typeof fileSize === "number" ? fileSize : audioBase64.length) : (existing?.fileSize || 0),
         duration: typeof duration === "number" ? duration : existing?.duration,
-        updatedAt: Date.now(),
+        updatedAt: hasNewAudio ? Date.now() : (existing?.updatedAt || Date.now()),
         mixerSettings: mixerSettings
           ? { ...(existing?.mixerSettings || {}), ...mixerSettings }
           : existing?.mixerSettings,
@@ -135,7 +140,7 @@ export default async function handler(req: any, res: any) {
 
       return res.status(200).json({
         success: true,
-        message: "Goal horn successfully saved and synced across all devices",
+        message: hasNewAudio ? "Goal horn saved and synced" : "Mixer settings updated",
         updatedAt: updatedRecord.updatedAt,
         hasCustomHorn: updatedRecord.hasCustomHorn,
         filename: updatedRecord.filename,

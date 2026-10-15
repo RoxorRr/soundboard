@@ -9,6 +9,19 @@ import {
   StoredGoalHornData,
   MixerSettings,
 } from '../types';
+import {
+  saveGoalHornToCloud,
+  saveMixerSettingsToCloud,
+  loadGoalHornFromCloud,
+  subscribeGoalHornFromCloud,
+  validateFirebaseConnection,
+} from './firebase';
+import {
+  saveAudioToIdb,
+  getAudioFromIdb,
+  deleteAudioFromIdb,
+} from './idbAudio';
+
 
 export interface AnnounceResult {
   source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
@@ -184,14 +197,75 @@ class SoundEngine {
 
         const savedHorn = localStorage.getItem('pelham_stored_goal_horn_v1');
         if (savedHorn) {
-          this.storedGoalHorn = JSON.parse(savedHorn);
-          if (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
-            this.mixerSettings.selectedPreset = 'custom';
-          }
+          try {
+            this.storedGoalHorn = JSON.parse(savedHorn);
+            if (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
+              this.mixerSettings.selectedPreset = 'custom';
+            }
+          } catch (_) {}
         }
+
+        // 1. Prioritize IndexedDB storage for large MP3s (bypasses 5MB localStorage limits)
+        getAudioFromIdb<StoredGoalHornData>('goal_horn')
+          .then((idbHorn) => {
+            if (idbHorn && idbHorn.hasCustomHorn && idbHorn.audioBase64) {
+              this.storedGoalHorn = idbHorn;
+              this.mixerSettings.selectedPreset = 'custom';
+              this.notifyHornChange();
+            }
+          })
+          .catch(() => {});
+
+        // 2. Validate Firebase cloud connection
+        validateFirebaseConnection().catch(() => {});
+
+        // 3. Real-time Cloud Sync across all devices (Phone <-> Laptop <-> Arena PC)
+        subscribeGoalHornFromCloud((cloudHorn, cloudMixer) => {
+          if (cloudHorn && cloudHorn.hasCustomHorn && cloudHorn.audioBase64) {
+            this.storedGoalHorn = cloudHorn;
+            saveAudioToIdb('goal_horn', cloudHorn).catch(() => {});
+            try {
+              localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(cloudHorn));
+            } catch (_) {}
+            this.mixerSettings.selectedPreset = 'custom';
+            this.notifyHornChange();
+          }
+          if (cloudMixer) {
+            const hasCustom = Boolean(
+              (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) ||
+              (cloudHorn?.hasCustomHorn && cloudHorn?.audioBase64)
+            );
+            const preset = hasCustom
+              ? 'custom'
+              : (cloudMixer.selectedPreset || this.mixerSettings.selectedPreset);
+            this.mixerSettings = { ...this.mixerSettings, ...cloudMixer, selectedPreset: preset };
+            try {
+              localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+            } catch (_) {}
+            this.notifyHornChange();
+          }
+        });
+
+        // 4. Initial cloud pull to populate MP3 uploaded from phone on other devices
+        loadGoalHornFromCloud()
+          .then((cloudData) => {
+            if (cloudData?.horn && cloudData.horn.hasCustomHorn && cloudData.horn.audioBase64) {
+              this.storedGoalHorn = cloudData.horn;
+              saveAudioToIdb('goal_horn', cloudData.horn).catch(() => {});
+              this.mixerSettings.selectedPreset = 'custom';
+              this.notifyHornChange();
+            }
+            if (cloudData?.mixerSettings) {
+              const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
+              const preset = hasCustom ? 'custom' : (cloudData.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset);
+              this.mixerSettings = { ...this.mixerSettings, ...cloudData.mixerSettings, selectedPreset: preset };
+              this.notifyHornChange();
+            }
+          })
+          .catch(() => {});
       } catch (_) {}
 
-      // Auto-sync stored goal horn and mixer settings across all devices on start
+      // Auto-sync fallback from server route
       setTimeout(() => {
         this.syncServerGoalHorn().catch(() => {});
       }, 300);
@@ -342,17 +416,35 @@ class SoundEngine {
   }
 
   public setMixerSettings(partial: Partial<MixerSettings>): MixerSettings {
-    this.mixerSettings = { ...this.mixerSettings, ...partial };
+    const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
+    // If a custom horn exists, permanently lock selectedPreset to 'custom' unless explicitly commanded otherwise
+    const selectedPreset = partial.selectedPreset ?? (hasCustom ? 'custom' : this.mixerSettings.selectedPreset);
+    this.mixerSettings = { ...this.mixerSettings, ...partial, selectedPreset };
+
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
       } catch (_) {}
+      saveAudioToIdb('mixer_settings', this.mixerSettings).catch(() => {});
     }
-    // Asynchronously notify server for cross-device sync
+
+    // Save ONLY mixer levels to Firestore cloud (never touches or deletes the custom audio file/chunks!)
+    saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
+
+    // Asynchronously notify server for cross-device sync (never erase audio on volume changes!)
     fetch('/api/goal-horn', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mixerSettings: this.mixerSettings }),
+      body: JSON.stringify({
+        mixerSettings: this.mixerSettings,
+        ...(hasCustom && this.storedGoalHorn?.audioBase64 ? {
+          audioBase64: this.storedGoalHorn.audioBase64,
+          mimeType: this.storedGoalHorn.mimeType,
+          filename: this.storedGoalHorn.filename,
+          fileSize: this.storedGoalHorn.fileSize,
+          duration: this.storedGoalHorn.duration,
+        } : {})
+      }),
     }).catch(() => {});
 
     this.notifyHornChange();
@@ -394,7 +486,6 @@ class SoundEngine {
     });
   }
 
-
   // Sync latest stored horn and mixer settings from the server across all devices
   public async syncServerGoalHorn(): Promise<StoredGoalHornData | null> {
     if (typeof window === 'undefined') return this.storedGoalHorn;
@@ -404,28 +495,55 @@ class SoundEngine {
       const data = await res.json();
 
       if (data && typeof data.updatedAt === 'number') {
-        const isNewer = !this.storedGoalHorn || data.updatedAt > (this.storedGoalHorn.updatedAt || 0);
-        if (isNewer || (data.hasCustomHorn && !this.storedGoalHorn?.hasCustomHorn)) {
-          this.storedGoalHorn = {
-            hasCustomHorn: Boolean(data.hasCustomHorn),
-            audioBase64: data.audioBase64 || null,
-            mimeType: data.mimeType || 'audio/mpeg',
-            filename: data.filename || 'goal_horn.mp3',
-            fileSize: data.fileSize || 0,
-            duration: data.duration,
-            updatedAt: data.updatedAt,
-          };
-          try {
-            localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
-          } catch (_) {}
-          if (this.storedGoalHorn.hasCustomHorn && this.storedGoalHorn.audioBase64) {
+        // ONLY adopt custom horn from server if server sent actual valid audioBase64 data!
+        if (data.hasCustomHorn && data.audioBase64 && typeof data.audioBase64 === 'string' && data.audioBase64.length > 50) {
+          const isNewer = !this.storedGoalHorn || data.updatedAt > (this.storedGoalHorn.updatedAt || 0);
+          if (isNewer || !this.storedGoalHorn?.hasCustomHorn) {
+            this.storedGoalHorn = {
+              hasCustomHorn: true,
+              audioBase64: data.audioBase64,
+              mimeType: data.mimeType || 'audio/mpeg',
+              filename: data.filename || 'goal_horn.mp3',
+              fileSize: data.fileSize || 0,
+              duration: data.duration,
+              updatedAt: data.updatedAt,
+            };
+            saveAudioToIdb('goal_horn', this.storedGoalHorn).catch(() => {});
+            try {
+              localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
+            } catch (_) {}
             this.mixerSettings.selectedPreset = 'custom';
+            this.notifyHornChange();
           }
-          this.notifyHornChange();
+        } else if (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) {
+          // Client has custom horn locally, but server is missing it (e.g. Vercel serverless cold start).
+          // NEVER wipe local horn! Auto-restore local horn up to server so other devices get it:
+          this.mixerSettings.selectedPreset = 'custom';
+          fetch('/api/goal-horn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioBase64: this.storedGoalHorn.audioBase64,
+              mimeType: this.storedGoalHorn.mimeType,
+              filename: this.storedGoalHorn.filename,
+              fileSize: this.storedGoalHorn.fileSize,
+              duration: this.storedGoalHorn.duration,
+              mixerSettings: this.mixerSettings,
+            }),
+          }).catch(() => {});
         }
 
         if (data.mixerSettings) {
-          this.mixerSettings = { ...this.mixerSettings, ...data.mixerSettings };
+          // Never override selectedPreset back to pelham_blast if local custom horn exists
+          const preset = this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64
+            ? 'custom'
+            : data.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset;
+
+          this.mixerSettings = {
+            ...this.mixerSettings,
+            ...data.mixerSettings,
+            selectedPreset: preset,
+          };
           try {
             localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
           } catch (_) {}
@@ -439,7 +557,7 @@ class SoundEngine {
     }
   }
 
-  // Upload custom goal horn file (MP3, WAV, AAC, M4A, OGG) to app and sync across all devices
+  // Upload custom goal horn file (MP3, WAV, AAC, M4A, OGG) to app and sync across all devices via Firestore cloud
   public async uploadGoalHorn(
     file: File
   ): Promise<{ success: boolean; data?: StoredGoalHornData; error?: string }> {
@@ -484,18 +602,27 @@ class SoundEngine {
         updatedAt: Date.now(),
       };
 
-      // 1. Store in memory and localStorage for instant offline access
+      // 1. Store in memory and IndexedDB (unlimited quota) for instant offline access on this device
       this.storedGoalHorn = record;
       this.mixerSettings.selectedPreset = 'custom';
       this.mixerSettings.hornEnabled = true;
+      saveAudioToIdb('goal_horn', record).catch(() => {});
       try {
         localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(record));
         localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
       } catch (_) {}
 
-      // 2. Persist to server API so all arena tablets and devices have access
+      // 2. Persist to Firebase Firestore Cloud (auto-chunked for large MP3s)
+      // This permanently syncs the MP3 across phone, laptop, and arena PC on Vercel!
       try {
-        const res = await fetch('/api/goal-horn', {
+        await saveGoalHornToCloud(record, this.mixerSettings);
+      } catch (cloudErr) {
+        console.warn('Could not save goal horn to Firebase cloud immediately:', cloudErr);
+      }
+
+      // 3. Fallback persist to server API
+      try {
+        await fetch('/api/goal-horn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -507,12 +634,8 @@ class SoundEngine {
             mixerSettings: this.mixerSettings,
           }),
         });
-
-        if (!res.ok) {
-          console.warn('Server horn sync status:', res.status);
-        }
       } catch (postErr) {
-        console.warn('Could not sync uploaded horn to server immediately:', postErr);
+        console.warn('Could not sync uploaded horn to server route immediately:', postErr);
       }
 
       this.notifyHornChange();
@@ -535,10 +658,14 @@ class SoundEngine {
       updatedAt: Date.now(),
     };
     this.mixerSettings.selectedPreset = 'pelham_blast';
+    deleteAudioFromIdb('goal_horn').catch(() => {});
     try {
       localStorage.removeItem('pelham_stored_goal_horn_v1');
       localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
     } catch (_) {}
+
+    // Remove from Firebase Firestore cloud
+    saveGoalHornToCloud(null, this.mixerSettings).catch(() => {});
 
     try {
       await fetch('/api/goal-horn', { method: 'DELETE' });
