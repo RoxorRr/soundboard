@@ -312,8 +312,19 @@ export default function App() {
     team: 'home' | 'visitor';
   } | null>(null);
 
-  // Mobile sub-tab state ('goals' | 'assists')
-  const [mobileTab, setMobileTab] = useState<'goals' | 'assists'>('goals');
+  // Mobile sub-tab state ('connected' | 'goals' | 'assists')
+  const [mobileTab, setMobileTab] = useState<'connected' | 'goals' | 'assists'>('connected');
+
+  // Desktop tracker layout state ('connected' | 'split')
+  const [trackerLayout, setTrackerLayout] = useState<'connected' | 'split'>('connected');
+
+  // Preselected player when opening Goal Action Center directly from a player row
+  const [preselectedScorer, setPreselectedScorer] = useState<Player | null>(null);
+
+  const handleConnectGoalAndAssist = useCallback((player: Player) => {
+    setPreselectedScorer(player);
+    setIsInlineGoalScorerOpen(true);
+  }, []);
 
   // Sync home players to local storage
   useEffect(() => {
@@ -1483,11 +1494,28 @@ export default function App() {
             </div>
           )}
 
-          {/* Mobile Sub-Tab Switcher (Goals vs Assists on mobile) */}
-          <div className="lg:hidden flex border-b border-slate-800 bg-slate-900/95 shrink-0 px-2 py-1.5 gap-2">
+          {/* Mobile Sub-Tab Switcher (Connected vs Goals vs Assists on mobile) */}
+          <div className="lg:hidden flex border-b border-slate-800 bg-slate-900/95 shrink-0 px-2 py-1.5 gap-1.5 overflow-x-auto">
             <button
-              onClick={() => setMobileTab('goals')}
-              className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+              onClick={() => {
+                setMobileTab('connected');
+                setTrackerLayout('connected');
+              }}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
+                mobileTab === 'connected'
+                  ? 'bg-gradient-to-r from-amber-500 to-sky-500 text-slate-950 shadow-md font-black ring-1 ring-amber-300'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 fill-current text-amber-950" />
+              <span>CONNECTED ({activeGoals}G • {activeAssists}A)</span>
+            </button>
+            <button
+              onClick={() => {
+                setMobileTab('goals');
+                setTrackerLayout('split');
+              }}
+              className={`py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
                 mobileTab === 'goals'
                   ? isVisitor
                     ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
@@ -1499,8 +1527,11 @@ export default function App() {
               <span>GOALS ({activeGoals})</span>
             </button>
             <button
-              onClick={() => setMobileTab('assists')}
-              className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+              onClick={() => {
+                setMobileTab('assists');
+                setTrackerLayout('split');
+              }}
+              className={`py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
                 mobileTab === 'assists'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -1541,8 +1572,41 @@ export default function App() {
                 <span>{isLineupEditMode ? 'Finish Removing Absent' : 'Remove Absent Players'}</span>
               </button>
             </div>
-
             <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Tracker Layout Selector (Connected All-In-One vs Split Columns) */}
+              <div className="hidden sm:flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTrackerLayout('connected');
+                    setMobileTab('connected');
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                    trackerLayout === 'connected'
+                      ? 'bg-gradient-to-r from-amber-500 to-sky-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-300'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Unified Connected Tracker: Goals and Assists side-by-side for each player"
+                >
+                  <Zap className="w-3.5 h-3.5 fill-current text-amber-950" />
+                  <span>Connected Tracker</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTrackerLayout('split');
+                    setMobileTab('goals');
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                    trackerLayout === 'split'
+                      ? 'bg-slate-700 text-white shadow-sm font-black'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Split Columns: Separate side-by-side columns for Goals and Assists"
+                >
+                  <span>Split Columns</span>
+                </button>
+              </div>
               {/* Quick Keypad Goal & Assist Entry */}
               <button
                 type="button"
@@ -1656,218 +1720,388 @@ export default function App() {
             </div>
           )}
 
-      {/* Main Fit-to-Screen Arena Split Board */}
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 overflow-hidden">
-        {/* LEFT SIDE: GOALS TRACKER */}
-        <section
-          id="goals-column"
-          className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
-            mobileTab === 'assists' ? 'hidden lg:flex' : 'flex'
-          }`}
-        >
-          {/* Section Header with Big Goal Total */}
-          <div
-            className={`flex items-center justify-between pb-2 mb-1.5 border-b px-1 shrink-0 ${
-              isVisitor ? 'border-rose-500/20' : 'border-amber-500/20'
-            }`}
+      {/* Main Fit-to-Screen Arena Board: Connected Tracker or Split Columns */}
+      <main
+        className={`flex-1 min-h-0 ${
+          trackerLayout === 'connected'
+            ? 'flex flex-col'
+            : 'grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800'
+        } overflow-hidden`}
+      >
+        {/* UNIFIED CONNECTED TRACKER (ALL-IN-ONE) */}
+        {trackerLayout === 'connected' ? (
+          <section
+            id="connected-column"
+            className="flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 w-full"
           >
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-md flex items-center justify-center border ${
-                  isVisitor
-                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                    : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
-                }`}
-              >
-                <Flame className="w-4 h-4" />
-              </div>
-              <div>
-                <h2
-                  className={`text-sm sm:text-base font-black tracking-wider uppercase font-athletic flex items-center gap-1.5 ${
-                    isVisitor ? 'text-rose-400' : 'text-amber-400'
+            {/* Connected Header with Scoreboard & Action Buttons */}
+            <div
+              className={`flex flex-wrap items-center justify-between pb-2 mb-1.5 border-b px-1 shrink-0 gap-2 ${
+                isVisitor ? 'border-rose-500/30' : 'border-amber-500/30'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-7 h-7 rounded-md flex items-center justify-center border shadow-sm ${
+                    isVisitor
+                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                      : 'bg-gradient-to-br from-amber-500/20 to-sky-500/20 border-amber-500/40 text-amber-300'
                   }`}
                 >
-                  Goals Tracker
-                  <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                    ({activeTeamName} • {activePlayers.length} players)
-                  </span>
-                </h2>
-                <p className="text-[10px] text-slate-400">
-                  Audio: &ldquo;{activeTeamName} goal! Scored by...&rdquo;
-                </p>
+                  <Zap className="w-4 h-4 fill-current" />
+                </div>
+                <div>
+                  <h2
+                    className={`text-sm sm:text-base font-black tracking-wider uppercase font-athletic flex items-center gap-1.5 ${
+                      isVisitor ? 'text-rose-400' : 'text-amber-300'
+                    }`}
+                  >
+                    <span>Connected Goals & Assists Tracker</span>
+                    <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
+                      ({activeTeamName} • {activePlayers.length} players)
+                    </span>
+                  </h2>
+                  <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <span className="text-amber-400 font-bold">Goals</span> &amp; <span className="text-sky-400 font-bold">Assists</span> connected side-by-side on each player
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Two Requested Primary Buttons: One for MP3, One for Goal (Who Scored?) */}
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-              {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger (Plays all the way through) */}
-              <button
-                type="button"
-                id="scoreboard-mp3-btn"
-                onClick={handleToggleMp3}
-                className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                  isMp3Playing
-                    ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
-                    : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
-                }`}
-                title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
-              >
-                {isMp3Playing ? (
-                  <>
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    <span>Stop MP3</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
-                    <span>Goal MP3</span>
-                  </>
-                )}
-              </button>
-
-              {/* BUTTON 2: Dedicated Goal Scorer Button (No window switching!) */}
-              <button
-                type="button"
-                id="scoreboard-who-scored-btn"
-                onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
-                className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                  isInlineGoalScorerOpen
-                    ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
-                    : isVisitor
-                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-                    : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
-                }`}
-                title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
-              >
-                <Flame className="w-3.5 h-3.5 fill-current" />
-                <span>Who Scored?</span>
-              </button>
-
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                Team Total:
-              </span>
-              <div
-                className={`bg-slate-950 px-3 py-0.5 rounded-lg border shadow-inner flex items-center justify-center min-w-[56px] ${
-                  isVisitor ? 'border-rose-500/40' : 'border-amber-500/40'
-                }`}
-              >
-                <span
-                  className={`font-athletic font-black text-2xl sm:text-3xl tabular-nums ${
-                    isVisitor ? 'text-rose-400' : 'text-amber-400'
+              {/* Action Buttons & Combined Scoreboard */}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                {/* Button 1: Dedicated Goal Horn MP3 Trigger */}
+                <button
+                  type="button"
+                  id="scoreboard-mp3-btn"
+                  onClick={handleToggleMp3}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                    isMp3Playing
+                      ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
+                      : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
                   }`}
+                  title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
                 >
-                  {activeGoals}
-                </span>
+                  {isMp3Playing ? (
+                    <>
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      <span>Stop MP3</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
+                      <span>Goal MP3</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Button 2: Dedicated Goal Scorer Button (Goal Action Center) */}
+                <button
+                  type="button"
+                  id="scoreboard-who-scored-btn"
+                  onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+                  className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                    isInlineGoalScorerOpen
+                      ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
+                      : isVisitor
+                      ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                      : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
+                  }`}
+                  title="Open Goal Action Center to select scorer & assists with voice-over"
+                >
+                  <Flame className="w-3.5 h-3.5 fill-current" />
+                  <span>Who Scored?</span>
+                </button>
+
+                {/* Combined Team Scoreboard */}
+                <div className="flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800 shadow-inner">
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase font-athletic">Goals:</span>
+                    <span className="font-athletic font-black text-xl sm:text-2xl text-amber-400 tabular-nums">{activeGoals}</span>
+                  </div>
+                  <span className="text-slate-600 font-bold">|</span>
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-[10px] font-bold text-sky-400 uppercase font-athletic">Assists:</span>
+                    <span className="font-athletic font-black text-xl sm:text-2xl text-sky-400 tabular-nums">{activeAssists}</span>
+                  </div>
+                  <span className="text-slate-600 font-bold">|</span>
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase font-athletic">PTS:</span>
+                    <span className="font-athletic font-black text-xl sm:text-2xl text-emerald-400 tabular-nums">{activeGoals + activeAssists}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Inline Goal Scorer: No Window Switching! Voice announces OVER the MP3 */}
-          <InlineGoalScorer
-            isOpen={isInlineGoalScorerOpen}
-            onClose={() => setIsInlineGoalScorerOpen(false)}
-            homePlayers={homePlayers}
-            visitorPlayers={visitorPlayers}
-            activeTeamTab={activeTeamTab}
-            visitorTeamName={visitorTeamName}
-            isMp3Playing={isMp3Playing}
-            onToggleMp3={handleToggleMp3}
-            isAnnouncing={isAnnouncing}
-            onScoreGoalWithAssist={handleScoreGoalWithAssist}
-          />
+            {/* Inline Goal Scorer: Fits Screen & Fully Scrollable */}
+            <InlineGoalScorer
+              isOpen={isInlineGoalScorerOpen}
+              onClose={() => {
+                setIsInlineGoalScorerOpen(false);
+                setPreselectedScorer(null);
+              }}
+              homePlayers={homePlayers}
+              visitorPlayers={visitorPlayers}
+              activeTeamTab={activeTeamTab}
+              visitorTeamName={visitorTeamName}
+              isMp3Playing={isMp3Playing}
+              onToggleMp3={handleToggleMp3}
+              isAnnouncing={isAnnouncing}
+              initialScorer={preselectedScorer}
+              onScoreGoalWithAssist={handleScoreGoalWithAssist}
+            />
 
-          {/* Player Rows for Goals - Engineered to fit on screen */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
-            {activePlayers.map((player, idx) => (
-              <PlayerTrackerRow
-                key={player.id}
-                player={player}
-                index={idx}
-                mode="goals"
-                teamName={activeTeamName}
-                isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
-                isLineupEditMode={isLineupEditMode}
-                onIncrement={handleGoalIncrement}
-                onDecrement={handleGoalDecrement}
-                onScanSticker={(p) => handleOpenScanner(p.id)}
-                onRemovePlayer={handleRequestRemovePlayer}
-              />
-            ))}
+            {/* Player Rows in Connected Mode */}
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
+              {activePlayers.map((player, idx) => (
+                <PlayerTrackerRow
+                  key={player.id}
+                  player={player}
+                  index={idx}
+                  mode="connected"
+                  teamName={activeTeamName}
+                  isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                  isLineupEditMode={isLineupEditMode}
+                  onIncrement={handleGoalIncrement}
+                  onDecrement={handleGoalDecrement}
+                  onConnectedGoalIncrement={handleGoalIncrement}
+                  onConnectedGoalDecrement={handleGoalDecrement}
+                  onConnectedAssistIncrement={handleAssistIncrement}
+                  onConnectedAssistDecrement={handleAssistDecrement}
+                  onConnectGoalAndAssist={handleConnectGoalAndAssist}
+                  onScanSticker={(p) => handleOpenScanner(p.id)}
+                  onRemovePlayer={handleRequestRemovePlayer}
+                />
+              ))}
 
-            {/* Roster Bottom Clearance Card to guarantee the last player is fully visible above browser chrome */}
-            <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-              <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-            </div>
-          </div>
-        </section>
-
-        {/* RIGHT SIDE: ASSISTS TRACKER */}
-        <section
-          id="assists-column"
-          className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
-            mobileTab === 'goals' ? 'hidden lg:flex' : 'flex'
-          }`}
-        >
-          {/* Section Header with Big Assist Total */}
-          <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-sky-500/20 px-1 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-md bg-sky-500/20 border border-sky-500/40 text-sky-400 flex items-center justify-center">
-                <Award className="w-4 h-4" />
+              <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
               </div>
-              <div>
-                <h2 className="text-sm sm:text-base font-black tracking-wider text-sky-400 uppercase font-athletic flex items-center gap-1.5">
-                  Assists Tracker
-                  <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                    ({activeTeamName} • {activePlayers.length} players)
+            </div>
+          </section>
+        ) : (
+          <>
+            {/* LEFT SIDE: GOALS TRACKER */}
+            <section
+              id="goals-column"
+              className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
+                mobileTab === 'assists' ? 'hidden lg:flex' : 'flex'
+              }`}
+            >
+              {/* Section Header with Big Goal Total */}
+              <div
+                className={`flex items-center justify-between pb-2 mb-1.5 border-b px-1 shrink-0 ${
+                  isVisitor ? 'border-rose-500/20' : 'border-amber-500/20'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-7 h-7 rounded-md flex items-center justify-center border ${
+                      isVisitor
+                        ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                        : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                    }`}
+                  >
+                    <Flame className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2
+                      className={`text-sm sm:text-base font-black tracking-wider uppercase font-athletic flex items-center gap-1.5 ${
+                        isVisitor ? 'text-rose-400' : 'text-amber-400'
+                      }`}
+                    >
+                      Goals Tracker
+                      <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
+                        ({activeTeamName} • {activePlayers.length} players)
+                      </span>
+                    </h2>
+                    <p className="text-[10px] text-slate-400">
+                      Connected: {activeAssists} Assists recorded · {activeGoals + activeAssists} Team Points
+                    </p>
+                  </div>
+                </div>
+
+                {/* Two Requested Primary Buttons: One for MP3, One for Goal (Who Scored?) */}
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger */}
+                  <button
+                    type="button"
+                    id="scoreboard-mp3-btn"
+                    onClick={handleToggleMp3}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                      isMp3Playing
+                        ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
+                        : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
+                    }`}
+                    title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
+                  >
+                    {isMp3Playing ? (
+                      <>
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>Stop MP3</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
+                        <span>Goal MP3</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* BUTTON 2: Dedicated Goal Scorer Button */}
+                  <button
+                    type="button"
+                    id="scoreboard-who-scored-btn"
+                    onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+                    className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                      isInlineGoalScorerOpen
+                        ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
+                        : isVisitor
+                        ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                        : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
+                    }`}
+                    title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
+                  >
+                    <Flame className="w-3.5 h-3.5 fill-current" />
+                    <span>Who Scored?</span>
+                  </button>
+
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+                    Team Total:
                   </span>
-                </h2>
-                <p className="text-[10px] text-slate-400">
-                  Audio: &ldquo;Assisted by number...&rdquo;
-                </p>
+                  <div
+                    className={`bg-slate-950 px-3 py-0.5 rounded-lg border shadow-inner flex items-center justify-center min-w-[56px] ${
+                      isVisitor ? 'border-rose-500/40' : 'border-amber-500/40'
+                    }`}
+                  >
+                    <span
+                      className={`font-athletic font-black text-2xl sm:text-3xl tabular-nums ${
+                        isVisitor ? 'text-rose-400' : 'text-amber-400'
+                      }`}
+                    >
+                      {activeGoals}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Big Team Assists Scoreboard */}
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                Team Total:
-              </span>
-              <div className="bg-slate-950 px-3 py-0.5 rounded-lg border border-sky-500/40 shadow-inner flex items-center justify-center min-w-[56px]">
-                <span className="font-athletic font-black text-2xl sm:text-3xl text-sky-400 tabular-nums">
-                  {activeAssists}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Player Rows for Assists - Engineered to fit on screen */}
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
-            {activePlayers.map((player, idx) => (
-              <PlayerTrackerRow
-                key={player.id}
-                player={player}
-                index={idx}
-                mode="assists"
-                teamName={activeTeamName}
-                isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
-                isLineupEditMode={isLineupEditMode}
-                onIncrement={handleAssistIncrement}
-                onDecrement={handleAssistDecrement}
-                onScanSticker={(p) => handleOpenScanner(p.id)}
-                onRemovePlayer={handleRequestRemovePlayer}
+              {/* Inline Goal Scorer: Fits Screen & Fully Scrollable */}
+              <InlineGoalScorer
+                isOpen={isInlineGoalScorerOpen}
+                onClose={() => {
+                  setIsInlineGoalScorerOpen(false);
+                  setPreselectedScorer(null);
+                }}
+                homePlayers={homePlayers}
+                visitorPlayers={visitorPlayers}
+                activeTeamTab={activeTeamTab}
+                visitorTeamName={visitorTeamName}
+                isMp3Playing={isMp3Playing}
+                onToggleMp3={handleToggleMp3}
+                isAnnouncing={isAnnouncing}
+                initialScorer={preselectedScorer}
+                onScoreGoalWithAssist={handleScoreGoalWithAssist}
               />
-            ))}
 
-            {/* Roster Bottom Clearance Card to guarantee the last player is fully visible above browser chrome */}
-            <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-              <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-            </div>
-          </div>
-        </section>
+              {/* Player Rows for Goals - Engineered to fit on screen */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
+                {activePlayers.map((player, idx) => (
+                  <PlayerTrackerRow
+                    key={player.id}
+                    player={player}
+                    index={idx}
+                    mode="goals"
+                    teamName={activeTeamName}
+                    isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                    isLineupEditMode={isLineupEditMode}
+                    onIncrement={handleGoalIncrement}
+                    onDecrement={handleGoalDecrement}
+                    onConnectedAssistIncrement={handleAssistIncrement}
+                    onConnectedAssistDecrement={handleAssistDecrement}
+                    onConnectGoalAndAssist={handleConnectGoalAndAssist}
+                    onScanSticker={(p) => handleOpenScanner(p.id)}
+                    onRemovePlayer={handleRequestRemovePlayer}
+                  />
+                ))}
+
+                <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                  <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                </div>
+              </div>
+            </section>
+
+            {/* RIGHT SIDE: ASSISTS TRACKER */}
+            <section
+              id="assists-column"
+              className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
+                mobileTab === 'goals' ? 'hidden lg:flex' : 'flex'
+              }`}
+            >
+              {/* Section Header with Big Assist Total */}
+              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-sky-500/20 px-1 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-md bg-sky-500/20 border border-sky-500/40 text-sky-400 flex items-center justify-center">
+                    <Award className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-black tracking-wider text-sky-400 uppercase font-athletic flex items-center gap-1.5">
+                      Assists Tracker
+                      <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
+                        ({activeTeamName} • {activePlayers.length} players)
+                      </span>
+                    </h2>
+                    <p className="text-[10px] text-slate-400">
+                      Connected: {activeGoals} Goals recorded · {activeGoals + activeAssists} Team Points
+                    </p>
+                  </div>
+                </div>
+
+                {/* Big Team Assists Scoreboard */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+                    Team Total:
+                  </span>
+                  <div className="bg-slate-950 px-3 py-0.5 rounded-lg border border-sky-500/40 shadow-inner flex items-center justify-center min-w-[56px]">
+                    <span className="font-athletic font-black text-2xl sm:text-3xl text-sky-400 tabular-nums">
+                      {activeAssists}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Player Rows for Assists - Engineered to fit on screen */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
+                {activePlayers.map((player, idx) => (
+                  <PlayerTrackerRow
+                    key={player.id}
+                    player={player}
+                    index={idx}
+                    mode="assists"
+                    teamName={activeTeamName}
+                    isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                    isLineupEditMode={isLineupEditMode}
+                    onIncrement={handleAssistIncrement}
+                    onDecrement={handleAssistDecrement}
+                    onConnectedGoalIncrement={handleGoalIncrement}
+                    onConnectedGoalDecrement={handleGoalDecrement}
+                    onConnectGoalAndAssist={handleConnectGoalAndAssist}
+                    onScanSticker={(p) => handleOpenScanner(p.id)}
+                    onRemovePlayer={handleRequestRemovePlayer}
+                  />
+                ))}
+
+                <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                  <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
       </main>
         </>
       )}
