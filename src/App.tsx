@@ -13,7 +13,7 @@ import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt, generatePeriodRemainingPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock, Sliders, Zap, Music, Square, Play, ChevronDown } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock, Sliders, Zap, Music, Square, Play, ChevronDown, Menu } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -313,27 +313,31 @@ export default function App() {
     team: 'home' | 'visitor';
   } | null>(null);
 
-  // Mobile sub-tab state ('connected' | 'goals' | 'assists')
-  const [mobileTab, setMobileTab] = useState<'connected' | 'goals' | 'assists'>('connected');
-
-  // Desktop tracker layout state ('connected' | 'split')
-  const [trackerLayout, setTrackerLayout] = useState<'connected' | 'split'>('connected');
-
   // Preselected player when opening Goal Action Center directly from a player row
   const [preselectedScorer, setPreselectedScorer] = useState<Player | null>(null);
 
-  const handleConnectGoalAndAssist = useCallback((player: Player) => {
+  // Quick Goal Trigger for a specific player
+  const handleQuickGoalForPlayer = useCallback((player: Player, team: 'home' | 'visitor') => {
+    setActiveTeamTab(team);
     setPreselectedScorer(player);
     setIsInlineGoalScorerOpen(true);
   }, []);
+
+
+  // Quick Penalty Trigger for a specific player
+  const handleQuickPenaltyForPlayer = useCallback((_player: Player, team: 'home' | 'visitor') => {
+    setActiveTeamTab(team);
+    openConsole('penalty');
+  }, [openConsole]);
 
   // Home and Away Team Action Menu Modals state
   const [isHomeMenuOpen, setIsHomeMenuOpen] = useState(false);
   const [isAwayMenuOpen, setIsAwayMenuOpen] = useState(false);
 
   // Quick Add Player handler for modals and actions
-  const handleAddNewPlayerQuick = useCallback(() => {
-    const isVis = activeTeamTab === 'visitor';
+  const handleAddNewPlayerQuick = useCallback((teamTarget?: 'home' | 'visitor') => {
+    const target = teamTarget || activeTeamTab;
+    const isVis = target === 'visitor';
     const list = isVis ? visitorPlayers : homePlayers;
     const currentTeamName = isVis ? visitorTeamName : 'Pelham Pelicans';
     const existingNumbers = new Set(list.map((p) => p.number));
@@ -343,7 +347,7 @@ export default function App() {
     }
     const newNum = nextNum > 99 ? 0 : nextNum;
     const newP: Player = {
-      id: `${activeTeamTab}_manual_${Date.now()}_${newNum}`,
+      id: `${target}_manual_${Date.now()}_${newNum}`,
       number: newNum,
       name: `Player #${newNum}`,
       goals: 0,
@@ -844,8 +848,9 @@ export default function App() {
 
   // Execute removing player from active lineup
   const executeRemovePlayer = useCallback((player: Player) => {
-    const team = activeTeamTab;
-    if (team === 'visitor') {
+    const isVis = visitorPlayers.some((p) => p.id === player.id);
+    const team: 'home' | 'visitor' = isVis ? 'visitor' : 'home';
+    if (isVis) {
       setVisitorPlayers((prev) => prev.filter((p) => p.id !== player.id));
     } else {
       setHomePlayers((prev) => prev.filter((p) => p.id !== player.id));
@@ -857,16 +862,11 @@ export default function App() {
       message: `Removed #${player.number} ${player.name || 'player'} from today's lineup.`,
       type: 'info',
     });
-  }, [activeTeamTab]);
+  }, [visitorPlayers]);
 
-  // Request player removal (prompts confirmation if player has goals/assists recorded)
+  // Request player removal
   const handleRequestRemovePlayer = useCallback((player: Player) => {
-    const totalPoints = (player.goals || 0) + (player.assists || 0);
-    if (totalPoints > 0) {
-      setPlayerPendingRemoval(player);
-    } else {
-      executeRemovePlayer(player);
-    }
+    executeRemovePlayer(player);
   }, [executeRemovePlayer]);
 
   // Undo last player removal
@@ -1124,133 +1124,35 @@ export default function App() {
       id="app-root"
       className="h-full h-[100dvh] max-h-[100dvh] w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none overscroll-none pb-[env(safe-area-inset-bottom,0px)]"
     >
-      {/* Clean, Decluttered Pro-Broadcast Navigation Bar */}
+      {/* Sleek, Decluttered Pro-Broadcast Header Bar */}
       <nav
         aria-label="Main Navigation"
-        className="bg-slate-900 border-b border-slate-800 px-2 sm:px-3 py-1 flex items-center justify-between gap-2 shrink-0 select-none shadow-sm"
+        className="bg-slate-900 border-b border-slate-800 px-3 sm:px-4 py-1.5 flex items-center justify-between gap-3 shrink-0 select-none shadow-sm"
       >
-        {/* Left: Home & Away Team Tabs with Pop-up Menu triggers + Settings */}
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-          {/* TAB 1: Pelham Pelicans (Home) + Dedicated Pop-up Menu */}
-          <div className="flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 shadow-sm">
-            <button
-              id="tab-home-pelham"
-              type="button"
-              onClick={() => {
-                setActiveTeamTab('home');
-                setCurrentTab('home');
-              }}
-              className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                currentTab === 'home'
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-sm shadow-amber-500/20 font-black'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-              }`}
-              title="Switch to Pelham Pelicans Home Roster"
-            >
-              <span
-                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
-                  currentTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
-                }`}
-              >
-                PP
-              </span>
-              <span className="hidden sm:inline">Pelham Pelicans</span>
-              <span className="sm:hidden inline">Pelham</span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
-                  currentTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-900 text-amber-300 border border-slate-700'
-                }`}
-              >
-                {homeGoals}
-              </span>
-            </button>
-
-            {/* Home Team Action Menu Button (Opens Home pop-up menu) */}
-            <button
-              id="menu-home-pelham-btn"
-              type="button"
-              onClick={() => setIsHomeMenuOpen(true)}
-              className="px-1.5 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold text-amber-400 hover:text-white hover:bg-amber-500/20 flex items-center gap-0.5 transition-colors border-l border-slate-800 ml-0.5 active:scale-95"
-              title="Open Pelham Pelicans Pop-up Menu (Goal actions, Lineup, Announcements & Arena Controls)"
-            >
-              <span>Menu</span>
-              <ChevronDown className="w-3 h-3 text-amber-400" />
-            </button>
+        {/* Left: Pelham Arena Broadcast Branding */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black font-athletic text-sm border border-amber-300 shadow-md shadow-amber-500/20 shrink-0">
+            PP
           </div>
-
-          {/* TAB 2: Visitor Team (Away) + Dedicated Pop-up Menu */}
-          <div className="flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 shadow-sm">
-            <button
-              id="tab-visitor-team"
-              type="button"
-              onClick={() => {
-                setActiveTeamTab('visitor');
-                setCurrentTab('visitor');
-              }}
-              className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                currentTab === 'visitor'
-                  ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-sm shadow-rose-500/20 font-black'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-              }`}
-              title={`Switch to ${visitorTeamName} Visitor Roster`}
-            >
-              <span
-                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
-                  currentTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
-                }`}
-              >
-                VT
-              </span>
-              <span className="truncate max-w-[65px] sm:max-w-[100px] xl:max-w-[130px]">
-                {visitorTeamName}
-              </span>
-              <span
-                className={`px-1.5 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
-                  currentTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-900 text-rose-300 border border-slate-700'
-                }`}
-              >
-                {visitorGoals}
-              </span>
-            </button>
-
-            {/* Away Team Action Menu Button (Opens Away pop-up menu) */}
-            <button
-              id="menu-away-visitor-btn"
-              type="button"
-              onClick={() => setIsAwayMenuOpen(true)}
-              className="px-1.5 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold text-rose-400 hover:text-white hover:bg-rose-500/20 flex items-center gap-0.5 transition-colors border-l border-slate-800 ml-0.5 active:scale-95"
-              title={`Open ${visitorTeamName} Pop-up Menu (Goal actions, Lineup, Rename & Announcements)`}
-            >
-              <span>Menu</span>
-              <ChevronDown className="w-3 h-3 text-rose-400" />
-            </button>
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-white truncate">
+              Pelham Arena Announcer
+            </h1>
+            <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block">
+              Split-Screen Game Broadcast · Left: Pelham Pelicans · Right: {visitorTeamName}
+            </p>
           </div>
-
-          {/* TAB 3: Settings Tab */}
-          <button
-            id="tab-settings"
-            onClick={() => setCurrentTab('settings')}
-            className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
-              currentTab === 'settings'
-                ? 'bg-slate-100 text-slate-950 shadow-sm shadow-white/10 ring-1 ring-slate-200'
-                : 'bg-slate-950 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
-            }`}
-            title="Configure announcer voices, rosters, and match options"
-          >
-            <Settings className={`w-3.5 h-3.5 ${currentTab === 'settings' ? 'text-slate-950' : 'text-amber-400'}`} />
-            <span className="hidden sm:inline">Settings</span>
-          </button>
         </div>
 
-        {/* Center / Right Section: Score, Goal Action Center pop-up trigger, Goal Horn MP3, Mute, Fullscreen */}
-        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
-          {/* Live Match Scoreboard Pill */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] shrink-0 font-mono shadow-inner">
-            <span className="font-bold text-amber-400">PEL {homeGoals}</span>
-            <span className="text-slate-600 font-bold">-</span>
-            <span className="font-bold text-rose-400">{visitorGoals} VIS</span>
-          </div>
+        {/* Center: Live Matchup Pill */}
+        <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-athletic uppercase tracking-wider shadow-inner shrink-0 text-slate-300">
+          <span className="font-bold text-amber-400">Pelham Pelicans</span>
+          <span className="text-slate-600 font-bold">vs</span>
+          <span className="font-bold text-rose-400">{visitorTeamName}</span>
+        </div>
 
+        {/* Right: Audio Mute, Fullscreen, Settings */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Announcement Snippet Pill (shown when announcing) */}
           {currentAnnouncement && currentTab !== 'settings' && (
             <div
@@ -1271,47 +1173,6 @@ export default function App() {
                 <RefreshCw className={`w-2.5 h-2.5 ${isAnnouncing ? 'animate-spin' : ''}`} />
               </button>
             </div>
-          )}
-
-          {/* Dedicated Goal Horn MP3 Trigger */}
-          <button
-            id="nav-goal-mp3-btn"
-            type="button"
-            onClick={handleToggleMp3}
-            className={`px-2 sm:px-2.5 py-1 rounded-lg font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
-              isMp3Playing
-                ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white animate-pulse shadow-red-500/40 ring-1 ring-red-400'
-                : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 hover:text-white border border-amber-500/40 shadow-sm'
-            }`}
-            title={isMp3Playing ? 'Stop MP3 (currently playing across arena)' : 'Play Goal Horn MP3 track'}
-          >
-            {isMp3Playing ? (
-              <>
-                <Square className="w-3 h-3 fill-current text-white" />
-                <span className="hidden sm:inline">Stop MP3</span>
-                <span className="sm:hidden">Stop</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3 h-3 fill-current text-amber-400" />
-                <span className="hidden sm:inline">Goal MP3</span>
-                <span className="sm:hidden">MP3</span>
-              </>
-            )}
-          </button>
-
-          {/* PRIMARY POP-UP TRIGGER: Goal Action Center Pop-Up Modal */}
-          {currentTab !== 'settings' && (
-            <button
-              id="nav-who-scored-btn"
-              type="button"
-              onClick={() => setIsInlineGoalScorerOpen(true)}
-              className="px-2.5 sm:px-3 py-1 rounded-lg font-athletic font-black text-[11px] sm:text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25 ring-1 ring-amber-300/60"
-              title="Open Goal Action Center Pop-Up Window (Trigger Horn, Pick Scorer & Assists, Voice-Over Announcement)"
-            >
-              <Flame className="w-3.5 h-3.5 fill-current text-slate-950" />
-              <span>Who Scored?</span>
-            </button>
           )}
 
           {/* Quick Mute/Unmute toggle */}
@@ -1349,6 +1210,21 @@ export default function App() {
             ) : (
               <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
             )}
+          </button>
+
+          {/* Settings Tab Button */}
+          <button
+            id="tab-settings"
+            onClick={() => setCurrentTab((prev) => (prev === 'settings' ? 'home' : 'settings'))}
+            className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
+              currentTab === 'settings'
+                ? 'bg-slate-100 text-slate-950 shadow-sm shadow-white/10 ring-1 ring-slate-200'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700'
+            }`}
+            title="Configure announcer voices, rosters, and match options"
+          >
+            <Settings className={`w-3.5 h-3.5 ${currentTab === 'settings' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span className="hidden sm:inline">Settings</span>
           </button>
         </div>
       </nav>
@@ -1392,653 +1268,174 @@ export default function App() {
         />
       ) : (
         <>
-          {/* Visitor Team Editable Banner (Shown when Visitor Tab is active) */}
-          {isVisitor && (
-            <div className="bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-slate-950/90 border-b border-rose-500/30 px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider font-athletic shrink-0">
-                  Visitor Team:
-                </span>
+          {/* Main Fit-to-Screen Arena Board: Vertically Split Left (Home: Pelham Pelicans) and Right (Visitor: {visitorTeamName}) */}
+          <main className="flex-1 min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-800 overflow-hidden">
+            {/* LEFT HALF: HOME TEAM (Pelham Pelicans) */}
+            <section
+              id="home-team-column"
+              className="flex-1 min-h-0 h-full flex flex-col p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 overflow-hidden w-full md:w-1/2"
+            >
+              {/* Home Column Header with Pelham Menu Button */}
+              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-amber-500/30 px-1 shrink-0 gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 flex items-center justify-center font-athletic font-black text-sm border border-amber-300 shadow-md shadow-amber-500/20 shrink-0">
+                    PEL
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-amber-300 truncate">
+                        Pelham Pelicans
+                      </h2>
+                      <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 hidden sm:inline">
+                        Home
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {homePlayers.length} Active Players in Lineup
+                    </p>
+                  </div>
+                </div>
 
-                {isEditingVisitorName ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSaveVisitorName();
-                    }}
-                    className="flex items-center gap-1.5 flex-1 max-w-sm"
+                {/* Pelham Team Menu Button */}
+                <button
+                  type="button"
+                  id="pelham-menu-btn"
+                  onClick={() => {
+                    setActiveTeamTab('home');
+                    setIsHomeMenuOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-amber-500/25 active:scale-95 transition-all shrink-0 cursor-pointer"
+                  title="Open Pelham Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Horn MP3, Celebration, Lineup Tools"
+                >
+                  <Menu className="w-4 h-4" />
+                  <span>Pelham Menu</span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                </button>
+              </div>
+
+              {/* Attendance Removal Mode Alert */}
+              {isLineupEditMode && (
+                <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-rose-950/60 border border-rose-500/40 flex items-center justify-between text-xs text-rose-200 shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <UserMinus className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Lineup Attendance: Tap Remove to mark absent players</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLineupEditMode(false)}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-white shrink-0 transition-colors"
                   >
-                    <input
-                      type="text"
-                      value={tempVisitorName}
-                      onChange={(e) => setTempVisitorName(e.target.value)}
-                      placeholder="e.g. Grimsby Kings, Thorold Blackhawks"
-                      className="bg-slate-800 text-white font-bold text-xs sm:text-sm px-2.5 py-1 rounded-md border border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400 w-full"
-                      autoFocus
-                    />
-                    <button
-                      type="submit"
-                      className="px-2.5 py-1 rounded-md bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Save</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTempVisitorName(visitorTeamName);
-                        setIsEditingVisitorName(false);
-                      }}
-                      className="px-2 py-1 rounded-md bg-slate-800 text-slate-400 hover:text-white text-xs shrink-0 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </form>
-                ) : (
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm sm:text-base font-black text-white uppercase font-athletic tracking-wide truncate">
-                      {visitorTeamName}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setTempVisitorName(visitorTeamName);
-                        setIsEditingVisitorName(true);
-                      }}
-                      className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-rose-300 flex items-center gap-1 text-xs transition-colors"
-                      title="Edit visitor team name"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span className="text-[11px] font-medium hidden sm:inline">Rename</span>
-                    </button>
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Scrollable Roster of Pelham Players */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-20 custom-scrollbar overscroll-contain">
+                {homePlayers.map((player, idx) => (
+                  <PlayerTrackerRow
+                    key={player.id}
+                    player={player}
+                    index={idx}
+                    team="home"
+                    teamName="Pelham Pelicans"
+                    isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
+                    isLineupEditMode={isLineupEditMode}
+                    onRemovePlayer={handleRequestRemovePlayer}
+                  />
+                ))}
+
+                {homePlayers.length === 0 && (
+                  <div className="text-center py-12 text-slate-500 text-xs">
+                    No players in Pelham lineup. Open Pelham Menu to add players or edit roster.
                   </div>
                 )}
               </div>
+            </section>
 
-              <div className="text-[11px] text-slate-400 flex items-center gap-1.5 shrink-0">
-                <Sparkles className="w-3 h-3 text-rose-400" />
-                <span>Audio Announcement:</span>
-                <span className="text-rose-300 font-medium">
-                  &ldquo;{visitorTeamName} goal! Scored by...&rdquo;
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Mobile Sub-Tab Switcher (Connected vs Goals vs Assists on mobile) */}
-          <div className="lg:hidden flex border-b border-slate-800 bg-slate-900/95 shrink-0 px-2 py-1.5 gap-1.5 overflow-x-auto">
-            <button
-              onClick={() => {
-                setMobileTab('connected');
-                setTrackerLayout('connected');
-              }}
-              className={`flex-1 py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
-                mobileTab === 'connected'
-                  ? 'bg-gradient-to-r from-amber-500 to-sky-500 text-slate-950 shadow-md font-black ring-1 ring-amber-300'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 fill-current text-amber-950" />
-              <span>CONNECTED ({activeGoals}G • {activeAssists}A)</span>
-            </button>
-            <button
-              onClick={() => {
-                setMobileTab('goals');
-                setTrackerLayout('split');
-              }}
-              className={`py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
-                mobileTab === 'goals'
-                  ? isVisitor
-                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                    : 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Flame className="w-4 h-4" />
-              <span>GOALS ({activeGoals})</span>
-            </button>
-            <button
-              onClick={() => {
-                setMobileTab('assists');
-                setTrackerLayout('split');
-              }}
-              className={`py-1.5 px-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition-all ${
-                mobileTab === 'assists'
-                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Award className="w-4 h-4" />
-              <span>ASSISTS ({activeAssists})</span>
-            </button>
-          </div>
-
-          {/* Lineup Attendance & Roster Management Bar */}
-          <div className="bg-slate-900/90 border-b border-slate-800 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0 select-none">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div
-                className={`px-2.5 py-1 rounded-md text-xs font-athletic font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                  isVisitor
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>{activeTeamName}:</span>
-                <span className="font-mono font-black text-white">{activePlayers.length} Active Players</span>
-              </div>
-
-              {/* Quick Remove Absent Players Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsLineupEditMode((prev) => !prev)}
-                className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                  isLineupEditMode
-                    ? 'bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/30 ring-1 ring-rose-400'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
-                }`}
-                title={isLineupEditMode ? 'Finish removing absent players' : 'Click to quickly tap and remove players who are absent today'}
-              >
-                <UserMinus className={`w-3.5 h-3.5 ${isLineupEditMode ? 'text-white' : 'text-rose-400'}`} />
-                <span>{isLineupEditMode ? 'Finish Removing Absent' : 'Remove Absent Players'}</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Tracker Layout Selector (Connected All-In-One vs Split Columns) */}
-              <div className="hidden sm:flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTrackerLayout('connected');
-                    setMobileTab('connected');
-                  }}
-                  className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider flex items-center gap-1.5 transition-all ${
-                    trackerLayout === 'connected'
-                      ? 'bg-gradient-to-r from-amber-500 to-sky-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-300'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                  title="Unified Connected Tracker: Goals and Assists side-by-side for each player"
-                >
-                  <Zap className="w-3.5 h-3.5 fill-current text-amber-950" />
-                  <span>Connected Tracker</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTrackerLayout('split');
-                    setMobileTab('goals');
-                  }}
-                  className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider flex items-center gap-1.5 transition-all ${
-                    trackerLayout === 'split'
-                      ? 'bg-slate-700 text-white shadow-sm font-black'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                  title="Split Columns: Separate side-by-side columns for Goals and Assists"
-                >
-                  <span>Split Columns</span>
-                </button>
-              </div>
-              {/* Quick Keypad Goal & Assist Entry */}
-              <button
-                type="button"
-                onClick={() => openConsole('goal')}
-                className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                  isVisitor
-                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
-                }`}
-                title="Input jersey numbers of scorer and assist maker with numeric keypad"
-              >
-                <Hash className="w-3.5 h-3.5 font-black" />
-                <span className="font-athletic uppercase tracking-wider">Keypad Goal</span>
-              </button>
-
-              {/* Penalty Announcement */}
-              <button
-                type="button"
-                id="roster-penalty-btn"
-                onClick={() => openConsole('penalty')}
-                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-rose-500/20 text-rose-300 hover:text-white border border-rose-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Announce penalty with template: Number [X], [Team] two minutes for [foul]"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                <span className="font-athletic uppercase tracking-wider">Penalty</span>
-              </button>
-
-              {/* Period 1 Minute Warning */}
-              <button
-                type="button"
-                id="roster-period-btn"
-                onClick={() => openConsole('period')}
-                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-sky-500/20 text-sky-300 hover:text-white border border-sky-500/30 flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Announce: 'One minute remaining in the [first/second/third] period'"
-              >
-                <Clock className="w-3.5 h-3.5 text-sky-400" />
-                <span className="font-athletic uppercase tracking-wider">1 Min Warning</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsRosterModalOpen(true)}
-                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors"
-                title="Edit jersey numbers, player names, or add/remove players"
-              >
-                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
-                <span>Manage Lineup & Roster</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const existingNumbers = new Set(activePlayers.map((p) => p.number));
-                  let nextNum = 1;
-                  while (existingNumbers.has(nextNum) && nextNum <= 99) {
-                    nextNum++;
-                  }
-                  const newNum = nextNum > 99 ? 0 : nextNum;
-                  const newP: Player = {
-                    id: `${activeTeamTab}_manual_${Date.now()}_${newNum}`,
-                    number: newNum,
-                    name: `Player #${newNum}`,
-                    goals: 0,
-                    assists: 0,
-                  };
-                  if (activeTeamTab === 'visitor') {
-                    setVisitorPlayers((prev) => sortPlayersByNumber([...prev, newP]));
-                  } else {
-                    setHomePlayers((prev) => sortPlayersByNumber([...prev, newP]));
-                  }
-                  setVoiceFeedback({
-                    message: `Added #${newNum} to ${activeTeamName} roster`,
-                    type: 'success',
-                  });
-                }}
-                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors"
-                title="Add a new player number to the lineup without a sticker"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Add #</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleOpenScanner()}
-                className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center gap-1.5 transition-colors hidden sm:flex"
-                title="Scan sticker sheet with camera"
-              >
-                <Camera className="w-3.5 h-3.5 text-sky-400" />
-                <span>Scan Sticker</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Banner when Lineup Attendance Mode is active */}
-          {isLineupEditMode && (
-            <div className="bg-rose-950/80 border-b border-rose-500/50 px-3 py-2 flex items-center justify-between gap-2 text-xs text-rose-200 animate-in fade-in">
-              <div className="flex items-center gap-2">
-                <UserMinus className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>
-                  <strong>Lineup Attendance Mode:</strong> Tap the red <strong>Remove</strong> button on any player who is not present today. Changes are saved automatically.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsLineupEditMode(false)}
-                className="px-3 py-1 rounded bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shrink-0 transition-colors shadow-sm"
-              >
-                Done (Lineup Ready)
-              </button>
-            </div>
-          )}
-
-      {/* Main Fit-to-Screen Arena Board: Connected Tracker or Split Columns */}
-      <main
-        className={`flex-1 min-h-0 ${
-          trackerLayout === 'connected'
-            ? 'flex flex-col'
-            : 'grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800'
-        } overflow-hidden`}
-      >
-        {/* UNIFIED CONNECTED TRACKER (ALL-IN-ONE) */}
-        {trackerLayout === 'connected' ? (
-          <section
-            id="connected-column"
-            className="flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 w-full"
-          >
-            {/* Connected Header with Scoreboard & Action Buttons */}
-            <div
-              className={`flex flex-wrap items-center justify-between pb-2 mb-1.5 border-b px-1 shrink-0 gap-2 ${
-                isVisitor ? 'border-rose-500/30' : 'border-amber-500/30'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-md flex items-center justify-center border shadow-sm ${
-                    isVisitor
-                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                      : 'bg-gradient-to-br from-amber-500/20 to-sky-500/20 border-amber-500/40 text-amber-300'
-                  }`}
-                >
-                  <Zap className="w-4 h-4 fill-current" />
-                </div>
-                <div>
-                  <h2
-                    className={`text-sm sm:text-base font-black tracking-wider uppercase font-athletic flex items-center gap-1.5 ${
-                      isVisitor ? 'text-rose-400' : 'text-amber-300'
-                    }`}
-                  >
-                    <span>Connected Goals & Assists Tracker</span>
-                    <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                      ({activeTeamName} • {activePlayers.length} players)
-                    </span>
-                  </h2>
-                  <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <span className="text-amber-400 font-bold">Goals</span> &amp; <span className="text-sky-400 font-bold">Assists</span> connected side-by-side on each player
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons & Combined Scoreboard */}
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                {/* Button 1: Dedicated Goal Horn MP3 Trigger */}
-                <button
-                  type="button"
-                  id="scoreboard-mp3-btn"
-                  onClick={handleToggleMp3}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                    isMp3Playing
-                      ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
-                      : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
-                  }`}
-                  title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
-                >
-                  {isMp3Playing ? (
-                    <>
-                      <Square className="w-3.5 h-3.5 fill-current" />
-                      <span>Stop MP3</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
-                      <span>Goal MP3</span>
-                    </>
-                  )}
-                </button>
-
-                {/* Button 2: Dedicated Goal Scorer Button (Goal Action Center Pop-Up) */}
-                <button
-                  type="button"
-                  id="scoreboard-who-scored-btn"
-                  onClick={() => {
-                    setPreselectedScorer(null);
-                    setIsInlineGoalScorerOpen(true);
-                  }}
-                  className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                    isVisitor
-                      ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-                      : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
-                  }`}
-                  title="Open Goal Action Center pop-up window to select scorer & assists with voice-over"
-                >
-                  <Flame className="w-3.5 h-3.5 fill-current" />
-                  <span>Who Scored?</span>
-                </button>
-
-                {/* Combined Team Scoreboard */}
-                <div className="flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800 shadow-inner">
-                  <div className="flex items-center gap-1 px-1">
-                    <span className="text-[10px] font-bold text-amber-400 uppercase font-athletic">Goals:</span>
-                    <span className="font-athletic font-black text-xl sm:text-2xl text-amber-400 tabular-nums">{activeGoals}</span>
-                  </div>
-                  <span className="text-slate-600 font-bold">|</span>
-                  <div className="flex items-center gap-1 px-1">
-                    <span className="text-[10px] font-bold text-sky-400 uppercase font-athletic">Assists:</span>
-                    <span className="font-athletic font-black text-xl sm:text-2xl text-sky-400 tabular-nums">{activeAssists}</span>
-                  </div>
-                  <span className="text-slate-600 font-bold">|</span>
-                  <div className="flex items-center gap-1 px-1">
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase font-athletic">PTS:</span>
-                    <span className="font-athletic font-black text-xl sm:text-2xl text-emerald-400 tabular-nums">{activeGoals + activeAssists}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Player Rows in Connected Mode */}
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
-              {activePlayers.map((player, idx) => (
-                <PlayerTrackerRow
-                  key={player.id}
-                  player={player}
-                  index={idx}
-                  mode="connected"
-                  teamName={activeTeamName}
-                  isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
-                  isLineupEditMode={isLineupEditMode}
-                  onIncrement={handleGoalIncrement}
-                  onDecrement={handleGoalDecrement}
-                  onConnectedGoalIncrement={handleGoalIncrement}
-                  onConnectedGoalDecrement={handleGoalDecrement}
-                  onConnectedAssistIncrement={handleAssistIncrement}
-                  onConnectedAssistDecrement={handleAssistDecrement}
-                  onConnectGoalAndAssist={handleConnectGoalAndAssist}
-                  onScanSticker={(p) => handleOpenScanner(p.id)}
-                  onRemovePlayer={handleRequestRemovePlayer}
-                />
-              ))}
-
-              <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-              </div>
-            </div>
-          </section>
-        ) : (
-          <>
-            {/* LEFT SIDE: GOALS TRACKER */}
+            {/* RIGHT HALF: VISITOR TEAM */}
             <section
-              id="goals-column"
-              className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
-                mobileTab === 'assists' ? 'hidden lg:flex' : 'flex'
-              }`}
+              id="visitor-team-column"
+              className="flex-1 min-h-0 h-full flex flex-col p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 overflow-hidden w-full md:w-1/2"
             >
-              {/* Section Header with Big Goal Total */}
-              <div
-                className={`flex items-center justify-between pb-2 mb-1.5 border-b px-1 shrink-0 ${
-                  isVisitor ? 'border-rose-500/20' : 'border-amber-500/20'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-7 h-7 rounded-md flex items-center justify-center border ${
-                      isVisitor
-                        ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                        : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
-                    }`}
-                  >
-                    <Flame className="w-4 h-4" />
+              {/* Visitor Column Header with Visitor Menu Button */}
+              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-rose-500/30 px-1 shrink-0 gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white flex items-center justify-center font-athletic font-black text-sm border border-rose-300 shadow-md shadow-rose-500/20 shrink-0">
+                    VIS
                   </div>
-                  <div>
-                    <h2
-                      className={`text-sm sm:text-base font-black tracking-wider uppercase font-athletic flex items-center gap-1.5 ${
-                        isVisitor ? 'text-rose-400' : 'text-amber-400'
-                      }`}
-                    >
-                      Goals Tracker
-                      <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                        ({activeTeamName} • {activePlayers.length} players)
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-rose-300 truncate">
+                        {visitorTeamName}
+                      </h2>
+                      <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 hidden sm:inline">
+                        Visitor
                       </span>
-                    </h2>
-                    <p className="text-[10px] text-slate-400">
-                      Connected: {activeAssists} Assists recorded · {activeGoals + activeAssists} Team Points
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {visitorPlayers.length} Active Players in Lineup
                     </p>
                   </div>
                 </div>
 
-                {/* Two Requested Primary Buttons: One for MP3, One for Goal (Who Scored?) */}
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                  {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger */}
-                  <button
-                    type="button"
-                    id="scoreboard-mp3-btn"
-                    onClick={handleToggleMp3}
-                    className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                      isMp3Playing
-                        ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse shadow-red-500/30 ring-1 ring-red-400'
-                        : 'bg-slate-800 hover:bg-slate-750 text-amber-300 hover:text-white border border-amber-500/40'
-                    }`}
-                    title={isMp3Playing ? 'Stop MP3 (playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
-                  >
-                    {isMp3Playing ? (
-                      <>
-                        <Square className="w-3.5 h-3.5 fill-current" />
-                        <span>Stop MP3</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 fill-current text-amber-400" />
-                        <span>Goal MP3</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* BUTTON 2: Dedicated Goal Scorer Button (Goal Action Center Pop-Up) */}
-                  <button
-                    type="button"
-                    id="scoreboard-who-scored-btn"
-                    onClick={() => {
-                      setPreselectedScorer(null);
-                      setIsInlineGoalScorerOpen(true);
-                    }}
-                    className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                      isVisitor
-                        ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-                        : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
-                    }`}
-                    title="Open Goal Action Center pop-up window to select scorer & assists with voice-over"
-                  >
-                    <Flame className="w-3.5 h-3.5 fill-current" />
-                    <span>Who Scored?</span>
-                  </button>
-
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                    Team Total:
-                  </span>
-                  <div
-                    className={`bg-slate-950 px-3 py-0.5 rounded-lg border shadow-inner flex items-center justify-center min-w-[56px] ${
-                      isVisitor ? 'border-rose-500/40' : 'border-amber-500/40'
-                    }`}
-                  >
-                    <span
-                      className={`font-athletic font-black text-2xl sm:text-3xl tabular-nums ${
-                        isVisitor ? 'text-rose-400' : 'text-amber-400'
-                      }`}
-                    >
-                      {activeGoals}
-                    </span>
-                  </div>
-                </div>
+                {/* Visitor Team Menu Button */}
+                <button
+                  type="button"
+                  id="visitor-menu-btn"
+                  onClick={() => {
+                    setActiveTeamTab('visitor');
+                    setIsAwayMenuOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white font-athletic font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-rose-500/25 active:scale-95 transition-all shrink-0 cursor-pointer"
+                  title="Open Visitor Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Rename Team, Lineup Tools"
+                >
+                  <Menu className="w-4 h-4" />
+                  <span>Visitor Menu</span>
+                  <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                </button>
               </div>
 
-              {/* Player Rows for Goals - Engineered to fit on screen */}
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
-                {activePlayers.map((player, idx) => (
+              {/* Attendance Removal Mode Alert */}
+              {isLineupEditMode && (
+                <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-rose-950/60 border border-rose-500/40 flex items-center justify-between text-xs text-rose-200 shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <UserMinus className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Lineup Attendance: Tap Remove to mark absent players</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLineupEditMode(false)}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-white shrink-0 transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Scrollable Roster of Visitor Players */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-20 custom-scrollbar overscroll-contain">
+                {visitorPlayers.map((player, idx) => (
                   <PlayerTrackerRow
                     key={player.id}
                     player={player}
                     index={idx}
-                    mode="goals"
-                    teamName={activeTeamName}
+                    team="visitor"
+                    teamName={visitorTeamName}
                     isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
                     isLineupEditMode={isLineupEditMode}
-                    onIncrement={handleGoalIncrement}
-                    onDecrement={handleGoalDecrement}
-                    onConnectedAssistIncrement={handleAssistIncrement}
-                    onConnectedAssistDecrement={handleAssistDecrement}
-                    onConnectGoalAndAssist={handleConnectGoalAndAssist}
-                    onScanSticker={(p) => handleOpenScanner(p.id)}
                     onRemovePlayer={handleRequestRemovePlayer}
                   />
                 ))}
 
-                <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                  <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                </div>
+                {visitorPlayers.length === 0 && (
+                  <div className="text-center py-12 text-slate-500 text-xs">
+                    No players in visitor lineup. Open Visitor Menu to add players or edit roster.
+                  </div>
+                )}
               </div>
             </section>
-
-            {/* RIGHT SIDE: ASSISTS TRACKER */}
-            <section
-              id="assists-column"
-              className={`flex flex-col min-h-0 h-full p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 ${
-                mobileTab === 'goals' ? 'hidden lg:flex' : 'flex'
-              }`}
-            >
-              {/* Section Header with Big Assist Total */}
-              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-sky-500/20 px-1 shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-md bg-sky-500/20 border border-sky-500/40 text-sky-400 flex items-center justify-center">
-                    <Award className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm sm:text-base font-black tracking-wider text-sky-400 uppercase font-athletic flex items-center gap-1.5">
-                      Assists Tracker
-                      <span className="text-[10px] font-normal text-slate-400 lowercase tracking-normal">
-                        ({activeTeamName} • {activePlayers.length} players)
-                      </span>
-                    </h2>
-                    <p className="text-[10px] text-slate-400">
-                      Connected: {activeGoals} Goals recorded · {activeGoals + activeAssists} Team Points
-                    </p>
-                  </div>
-                </div>
-
-                {/* Big Team Assists Scoreboard */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                    Team Total:
-                  </span>
-                  <div className="bg-slate-950 px-3 py-0.5 rounded-lg border border-sky-500/40 shadow-inner flex items-center justify-center min-w-[56px]">
-                    <span className="font-athletic font-black text-2xl sm:text-3xl text-sky-400 tabular-nums">
-                      {activeAssists}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Player Rows for Assists - Engineered to fit on screen */}
-              <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
-                {activePlayers.map((player, idx) => (
-                  <PlayerTrackerRow
-                    key={player.id}
-                    player={player}
-                    index={idx}
-                    mode="assists"
-                    teamName={activeTeamName}
-                    isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
-                    isLineupEditMode={isLineupEditMode}
-                    onIncrement={handleAssistIncrement}
-                    onDecrement={handleAssistDecrement}
-                    onConnectedGoalIncrement={handleGoalIncrement}
-                    onConnectedGoalDecrement={handleGoalDecrement}
-                    onConnectGoalAndAssist={handleConnectGoalAndAssist}
-                    onScanSticker={(p) => handleOpenScanner(p.id)}
-                    onRemovePlayer={handleRequestRemovePlayer}
-                  />
-                ))}
-
-                <div className="pt-2 pb-6 px-3 flex items-center justify-center gap-2 text-slate-500 text-[11px] font-athletic uppercase tracking-wider select-none border-t border-slate-900/60 mt-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                  <span>End of {activeTeamName} Roster ({activePlayers.length} Players)</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-      </main>
+          </main>
         </>
       )}
 

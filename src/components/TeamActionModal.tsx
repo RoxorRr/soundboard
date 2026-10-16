@@ -17,6 +17,8 @@ import {
   Zap,
   Edit2,
   Check,
+  Play,
+  Square,
 } from 'lucide-react';
 
 interface TeamActionModalProps {
@@ -24,8 +26,8 @@ interface TeamActionModalProps {
   onClose: () => void;
   team: 'home' | 'visitor';
   teamName: string;
-  goals: number;
-  assists: number;
+  goals?: number;
+  assists?: number;
   playerCount: number;
   onOpenGoalActionCenter: () => void;
   onOpenKeypadGoal: () => void;
@@ -42,6 +44,8 @@ interface TeamActionModalProps {
   onAddNewPlayer: () => void;
   onResetScores: () => void;
   onStartRenameVisitor?: () => void;
+  onToggleMp3?: () => void;
+  isMp3Playing?: boolean;
 }
 
 export const TeamActionModal: React.FC<TeamActionModalProps> = ({
@@ -67,6 +71,8 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
   onAddNewPlayer,
   onResetScores,
   onStartRenameVisitor,
+  onToggleMp3,
+  isMp3Playing = false,
 }) => {
   const isHome = team === 'home';
 
@@ -134,7 +140,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                {goals} Goals · {assists} Assists · {playerCount} Active Players
+                {playerCount} Active Lineup Players
               </p>
             </div>
           </div>
@@ -218,6 +224,35 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                   </p>
                 </div>
               </button>
+
+              {/* Goal Horn MP3 Track (Home only) */}
+              {isHome && onToggleMp3 && (
+                <button
+                  type="button"
+                  onClick={() => handleAction(onToggleMp3)}
+                  className={`p-2.5 rounded-xl border text-left transition-all group flex items-start gap-2.5 ${
+                    isMp3Playing
+                      ? 'bg-red-500/20 border-red-500/60 text-white animate-pulse'
+                      : 'bg-slate-950 hover:bg-amber-500/10 border-slate-800 hover:border-amber-500/40'
+                  }`}
+                >
+                  <div
+                    className={`p-2 rounded-lg shrink-0 ${
+                      isMp3Playing ? 'bg-red-500 text-white' : 'bg-slate-800 text-amber-400 border border-slate-700'
+                    }`}
+                  >
+                    {isMp3Playing ? <Square className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-athletic font-black text-xs sm:text-sm text-white uppercase tracking-wide">
+                      {isMp3Playing ? 'Stop Goal Horn MP3' : 'Play Goal Horn MP3'}
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                      {isMp3Playing ? 'Currently playing across arena' : 'Full arena horn track'}
+                    </p>
+                  </div>
+                </button>
+              )}
 
               {/* Celebration Blast (Home only) */}
               {isHome && (
@@ -453,10 +488,10 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                 </div>
                 <div className="min-w-0">
                   <div className="font-athletic font-bold text-xs text-rose-400 uppercase tracking-wider">
-                    Reset Match Scores
+                    Reset Lineup & Match
                   </div>
                   <p className="text-[10px] text-slate-400 truncate">
-                    Reset goals & assists to 0
+                    Clear audio announcements & stop sound
                   </p>
                 </div>
               </button>
