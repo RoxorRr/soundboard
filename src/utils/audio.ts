@@ -39,7 +39,7 @@ export const DEFAULT_MIXER_SETTINGS: MixerSettings = {
   hornDurationLimit: 0, // 0 = Full File: MP3 plays all the way through without cutoff
   voiceTriggerMode: 'delay',
   voiceDelaySeconds: 2.0,
-  duckHornOnVoice: true,
+  duckHornOnVoice: false, // User requested: do not duck horn volume when voice starts
   autoTriggerOnGoal: false, // User requested: Do not play simultaneously; separate MP3 and Goal buttons
 };
 
@@ -202,7 +202,12 @@ class SoundEngine {
           }
           // Do not play them simultaneously per user preference
           parsed.autoTriggerOnGoal = false;
-          this.mixerSettings = { ...DEFAULT_MIXER_SETTINGS, ...parsed };
+          // User requested: uncheck duck horn volume when voice starts
+          parsed.duckHornOnVoice = false;
+          this.mixerSettings = { ...DEFAULT_MIXER_SETTINGS, ...parsed, duckHornOnVoice: false };
+          try {
+            localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+          } catch (_) {}
         }
 
         const savedHorn = localStorage.getItem('pelham_stored_goal_horn_v1');
