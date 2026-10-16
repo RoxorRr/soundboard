@@ -654,10 +654,28 @@ export const CameraStickerScannerModal: React.FC<CameraStickerScannerModalProps>
 
           {/* Error Banner */}
           {cameraError && (
-            <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs flex items-start gap-2">
+            <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/50 text-red-200 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold">{cameraError}</p>
+              <div className="flex-1 space-y-1.5">
+                <p className="font-bold text-red-300">
+                  {cameraError.includes('Quota exceeded') || cameraError.includes('limit: 20')
+                    ? 'Gemini API Free-Tier Quota Limit Reached (20 requests/day)'
+                    : cameraError.includes('high demand')
+                    ? 'Google Gemini Model Temporarily Under High Demand'
+                    : 'Sticker Scan Notice'}
+                </p>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {cameraError}
+                </p>
+                {(cameraError.includes('Quota exceeded') ||
+                  cameraError.includes('limit: 20') ||
+                  cameraError.includes('high demand')) && (
+                  <div className="pt-1 flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-amber-300 font-medium">
+                      Tip: You do not need to wait! You can edit player numbers and names directly in the &ldquo;Edit Lineup &amp; Roster&rdquo; menu.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

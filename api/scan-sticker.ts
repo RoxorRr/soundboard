@@ -150,7 +150,7 @@ CRITICAL RULES:
     };
 
     let response;
-    const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    const candidateModels = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"];
     let lastError = null;
 
     for (const modelName of candidateModels) {
@@ -207,7 +207,7 @@ CRITICAL RULES:
     });
   } catch (err: any) {
     console.error("Sticker scanner error:", err);
-    let errorMsg = err?.message || "Failed to scan sticker with Gemini";
+    let errorMsg = typeof err?.message === "string" ? err.message : "Failed to scan sticker with Gemini";
     try {
       if (errorMsg.startsWith("{") && errorMsg.includes('"message"')) {
         const parsedErr = JSON.parse(errorMsg);
@@ -219,7 +219,16 @@ CRITICAL RULES:
 
     res.status(500).json({
       success: false,
-      error: errorMsg
+      error: errorMsg,
+      isQuotaExceeded:
+        errorMsg.includes("Quota exceeded") ||
+        errorMsg.includes("rate-limits") ||
+        errorMsg.includes("free_tier_requests") ||
+        errorMsg.includes("429"),
+      isHighDemand:
+        errorMsg.includes("high demand") ||
+        errorMsg.includes("503") ||
+        errorMsg.includes("UNAVAILABLE")
     });
   }
 }
