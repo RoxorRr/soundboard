@@ -1,0 +1,469 @@
+import React, { useEffect } from 'react';
+import {
+  X,
+  Flame,
+  Award,
+  Hash,
+  ShieldAlert,
+  Clock,
+  Volume2,
+  Sparkles,
+  Sliders,
+  Users,
+  UserMinus,
+  UserPlus,
+  Camera,
+  RotateCcw,
+  Zap,
+  Edit2,
+  Check,
+} from 'lucide-react';
+
+interface TeamActionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  team: 'home' | 'visitor';
+  teamName: string;
+  goals: number;
+  assists: number;
+  playerCount: number;
+  onOpenGoalActionCenter: () => void;
+  onOpenKeypadGoal: () => void;
+  onOpenPenalty: () => void;
+  onOpenPeriodWarning: () => void;
+  onOpenSpeakerTest: () => void;
+  onOpenWelcome: () => void;
+  onOpenCelebration: () => void;
+  onOpenMixer: () => void;
+  onOpenRosterModal: () => void;
+  onOpenScanner: () => void;
+  onToggleAttendanceMode: () => void;
+  isAttendanceModeActive: boolean;
+  onAddNewPlayer: () => void;
+  onResetScores: () => void;
+  onStartRenameVisitor?: () => void;
+}
+
+export const TeamActionModal: React.FC<TeamActionModalProps> = ({
+  isOpen,
+  onClose,
+  team,
+  teamName,
+  goals,
+  assists,
+  playerCount,
+  onOpenGoalActionCenter,
+  onOpenKeypadGoal,
+  onOpenPenalty,
+  onOpenPeriodWarning,
+  onOpenSpeakerTest,
+  onOpenWelcome,
+  onOpenCelebration,
+  onOpenMixer,
+  onOpenRosterModal,
+  onOpenScanner,
+  onToggleAttendanceMode,
+  isAttendanceModeActive,
+  onAddNewPlayer,
+  onResetScores,
+  onStartRenameVisitor,
+}) => {
+  const isHome = team === 'home';
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleAction = (action: () => void) => {
+    onClose();
+    action();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-150 select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className={`bg-slate-900 border-2 rounded-2xl w-full max-w-xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 ${
+          isHome ? 'border-amber-500/80 shadow-amber-500/15' : 'border-rose-500/80 shadow-rose-500/15'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className={`px-4 py-3 border-b flex items-center justify-between gap-3 shrink-0 ${
+            isHome
+              ? 'bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-950 border-amber-500/30'
+              : 'bg-gradient-to-r from-rose-950/60 via-slate-900 to-slate-950 border-rose-500/30'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center font-athletic font-black text-sm shrink-0 border shadow-md ${
+                isHome
+                  ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-slate-950 border-amber-300'
+                  : 'bg-gradient-to-br from-rose-500 to-red-600 text-white border-rose-300'
+              }`}
+            >
+              {isHome ? 'PEL' : 'VIS'}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black uppercase font-athletic tracking-wider text-white truncate">
+                  {teamName}
+                </h2>
+                <span
+                  className={`text-[10px] font-athletic uppercase tracking-wider font-bold px-1.5 py-0.2 rounded border ${
+                    isHome
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {isHome ? 'Home Team Menu' : 'Away Team Menu'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {goals} Goals · {assists} Assists · {playerCount} Active Players
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors shrink-0 active:scale-95"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Scrollable Action Groups */}
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-4 overscroll-contain">
+          {/* Visitor Rename Shortcut */}
+          {!isHome && onStartRenameVisitor && (
+            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/30 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Edit2 className="w-4 h-4 text-rose-400 shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block truncate">
+                    Visiting Team Name: &ldquo;{teamName}&rdquo;
+                  </span>
+                  <span className="text-[10px] text-slate-400 block truncate">
+                    Change to opponent (e.g. Grimsby Kings, Thorold Blackhawks)
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAction(onStartRenameVisitor)}
+                className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-athletic font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm"
+              >
+                Rename Team
+              </button>
+            </div>
+          )}
+
+          {/* Group 1: Scoring & Celebrations */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-athletic font-bold uppercase tracking-wider text-slate-400 px-1 block">
+              Scoring & Goal Actions
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Goal Action Center */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenGoalActionCenter)}
+                className="p-2.5 rounded-xl bg-slate-950 hover:bg-amber-500/10 border border-slate-800 hover:border-amber-500/40 text-left transition-all group flex items-start gap-2.5"
+              >
+                <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+                  <Flame className="w-4 h-4 fill-current" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-black text-xs sm:text-sm text-white group-hover:text-amber-300 uppercase tracking-wide">
+                    Goal Action Center
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    Trigger Horn, pick Scorer & Assists, and play Voice-Over
+                  </p>
+                </div>
+              </button>
+
+              {/* Keypad Goal Entry */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenKeypadGoal)}
+                className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all group flex items-start gap-2.5"
+              >
+                <div className="p-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0 group-hover:bg-slate-700 group-hover:text-white transition-colors">
+                  <Hash className="w-4 h-4 font-black" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-black text-xs sm:text-sm text-white uppercase tracking-wide">
+                    Keypad Goal Entry
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    Type jersey numbers with numeric keypad
+                  </p>
+                </div>
+              </button>
+
+              {/* Celebration Blast (Home only) */}
+              {isHome && (
+                <button
+                  type="button"
+                  onClick={() => handleAction(onOpenCelebration)}
+                  className="p-2.5 rounded-xl bg-slate-950 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/40 text-left transition-all group flex items-start gap-2.5 sm:col-span-2"
+                >
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 text-white shrink-0 shadow-md">
+                    <Zap className="w-4 h-4 fill-current" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-athletic font-black text-xs sm:text-sm text-amber-300 uppercase tracking-wide">
+                      1-Click Celebration Blast
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                      Full Pelham Goal Horn Blast followed by automated voice celebration
+                    </p>
+                  </div>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Group 2: Lineup & Attendance Management */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-athletic font-bold uppercase tracking-wider text-slate-400 px-1 block">
+              Lineup & Roster Tools
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Manage Lineup & Roster */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenRosterModal)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-slate-800 text-amber-400 shrink-0">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    Edit Roster & Lineup
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Change jersey numbers & names
+                  </p>
+                </div>
+              </button>
+
+              {/* Remove Absent Players Attendance Mode */}
+              <button
+                type="button"
+                onClick={() => handleAction(onToggleAttendanceMode)}
+                className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                  isAttendanceModeActive
+                    ? 'bg-rose-500/20 border-rose-500/60 text-white'
+                    : 'bg-slate-950 hover:bg-rose-500/10 border-slate-800 hover:border-rose-500/30'
+                }`}
+              >
+                <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
+                  <UserMinus className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    {isAttendanceModeActive ? 'Done Removing Absent' : 'Remove Absent Players'}
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Tap absent players to remove
+                  </p>
+                </div>
+              </button>
+
+              {/* Add New Player */}
+              <button
+                type="button"
+                onClick={() => handleAction(onAddNewPlayer)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-slate-800 text-emerald-400 shrink-0">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    Add Next Player
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Add a jersey number to roster
+                  </p>
+                </div>
+              </button>
+
+              {/* Camera Scanner */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenScanner)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-slate-800 text-sky-400 shrink-0">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    Scan Sticker Lineup
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Optical camera scanner
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Group 3: Game Announcements */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-athletic font-bold uppercase tracking-wider text-slate-400 px-1 block">
+              Arena Voice Announcements
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Announce Penalty */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenPenalty)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    Announce Penalty
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Number, 2 minutes for infraction
+                  </p>
+                </div>
+              </button>
+
+              {/* 1 Minute Warning */}
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenPeriodWarning)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-sky-500/10 border border-slate-800 hover:border-sky-500/30 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400 shrink-0">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                    1 Min Period Warning
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    One minute remaining in period
+                  </p>
+                </div>
+              </button>
+
+              {/* Speaker Test & Welcome (Home only) */}
+              {isHome && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleAction(onOpenSpeakerTest)}
+                    className="p-2 rounded-xl bg-slate-950 hover:bg-cyan-500/10 border border-slate-800 hover:border-cyan-500/30 text-left transition-all flex items-center gap-2.5"
+                  >
+                    <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 shrink-0">
+                      <Volume2 className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                        Test Arena Speaker
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Quick sound check test
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAction(onOpenWelcome)}
+                    className="p-2 rounded-xl bg-slate-950 hover:bg-amber-500/10 border border-slate-800 hover:border-amber-500/30 text-left transition-all flex items-center gap-2.5"
+                  >
+                    <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                        Welcome Pre-Game
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        Welcome fans and visiting team
+                      </p>
+                    </div>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Group 4: Audio Mixer & Score Reset */}
+          <div className="space-y-1.5 pt-1 border-t border-slate-800">
+            <span className="text-[10px] font-athletic font-bold uppercase tracking-wider text-slate-400 px-1 block">
+              Arena Settings & Controls
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {isHome && (
+                <button
+                  type="button"
+                  onClick={() => handleAction(onOpenMixer)}
+                  className="p-2 rounded-xl bg-slate-950 hover:bg-amber-500/10 border border-slate-800 hover:border-amber-500/30 text-left transition-all flex items-center gap-2.5"
+                >
+                  <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-athletic font-bold text-xs text-white uppercase tracking-wider">
+                      Arena Mixer & Goal Horn
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      Volume, delay, MP3 sync
+                    </p>
+                  </div>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleAction(onResetScores)}
+                className="p-2 rounded-xl bg-slate-950 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-left transition-all flex items-center gap-2.5"
+              >
+                <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
+                  <RotateCcw className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-athletic font-bold text-xs text-rose-400 uppercase tracking-wider">
+                    Reset Match Scores
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Reset goals & assists to 0
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

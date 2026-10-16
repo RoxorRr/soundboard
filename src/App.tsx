@@ -8,11 +8,12 @@ import { PenaltyModal } from './components/PenaltyModal';
 import { ArenaConsoleModal, ConsoleTab } from './components/ArenaConsoleModal';
 import { ArenaMixerModal } from './components/ArenaMixerModal';
 import { InlineGoalScorer } from './components/InlineGoalScorer';
+import { TeamActionModal } from './components/TeamActionModal';
 import { SettingsView } from './components/SettingsView';
 import { DEFAULT_PELHAM_PLAYERS, DEFAULT_VISITOR_PLAYERS } from './data/defaultPlayers';
 import { Player, Announcement, VoiceStatus } from './types';
 import { soundEngine, generateGoalPrompt, generateAssistPrompt, generateGoalWithAssistPrompt, generateWelcomePrompt, generatePeriodRemainingPrompt } from './utils/audio';
-import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock, Sliders, Zap, Music, Square, Play } from 'lucide-react';
+import { Flame, Award, Edit2, Check, X, Shield, ShieldAlert, Sparkles, Settings, Volume2, VolumeX, Radio, RefreshCw, Maximize, Minimize, UserMinus, UserPlus, Users, Undo2, Camera, Hash, Clock, Sliders, Zap, Music, Square, Play, ChevronDown } from 'lucide-react';
 
 const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
@@ -259,8 +260,8 @@ export default function App() {
     soundEngine.playMp3();
   }, []);
 
-  // Inline Goal Scorer Selector state (Immediately visible on same screen; no window switching!)
-  const [isInlineGoalScorerOpen, setIsInlineGoalScorerOpen] = useState(true);
+  // Goal Action Center Modal state (Pop-up window similar to Keypad Goal / Penalty)
+  const [isInlineGoalScorerOpen, setIsInlineGoalScorerOpen] = useState(false);
 
   // Arena Sound Mixer & Goal Horn Modal State
   const [isMixerModalOpen, setIsMixerModalOpen] = useState(false);
@@ -325,6 +326,39 @@ export default function App() {
     setPreselectedScorer(player);
     setIsInlineGoalScorerOpen(true);
   }, []);
+
+  // Home and Away Team Action Menu Modals state
+  const [isHomeMenuOpen, setIsHomeMenuOpen] = useState(false);
+  const [isAwayMenuOpen, setIsAwayMenuOpen] = useState(false);
+
+  // Quick Add Player handler for modals and actions
+  const handleAddNewPlayerQuick = useCallback(() => {
+    const isVis = activeTeamTab === 'visitor';
+    const list = isVis ? visitorPlayers : homePlayers;
+    const currentTeamName = isVis ? visitorTeamName : 'Pelham Pelicans';
+    const existingNumbers = new Set(list.map((p) => p.number));
+    let nextNum = 1;
+    while (existingNumbers.has(nextNum) && nextNum <= 99) {
+      nextNum++;
+    }
+    const newNum = nextNum > 99 ? 0 : nextNum;
+    const newP: Player = {
+      id: `${activeTeamTab}_manual_${Date.now()}_${newNum}`,
+      number: newNum,
+      name: `Player #${newNum}`,
+      goals: 0,
+      assists: 0,
+    };
+    if (isVis) {
+      setVisitorPlayers((prev) => sortPlayersByNumber([...prev, newP]));
+    } else {
+      setHomePlayers((prev) => sortPlayersByNumber([...prev, newP]));
+    }
+    setVoiceFeedback({
+      message: `Added #${newNum} to ${currentTeamName} roster`,
+      type: 'success',
+    });
+  }, [activeTeamTab, visitorPlayers, homePlayers, visitorTeamName]);
 
   // Sync home players to local storage
   useEffect(() => {
@@ -1090,86 +1124,116 @@ export default function App() {
       id="app-root"
       className="h-full h-[100dvh] max-h-[100dvh] w-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none overscroll-none pb-[env(safe-area-inset-bottom,0px)]"
     >
-      {/* Clean, Compact & Scalable Navigation Bar */}
+      {/* Clean, Decluttered Pro-Broadcast Navigation Bar */}
       <nav
         aria-label="Main Navigation"
-        className="bg-slate-900 border-b border-slate-800 px-1 sm:px-2 py-0.5 sm:py-1 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-1.5 gap-y-1 shrink-0 select-none shadow-sm"
+        className="bg-slate-900 border-b border-slate-800 px-2 sm:px-3 py-1 flex items-center justify-between gap-2 shrink-0 select-none shadow-sm"
       >
-        {/* Left: Team Tabs & Settings Tab */}
-        <div className="flex items-center gap-1 shrink-0">
-          {/* TAB 1: Pelham Pelicans */}
-          <button
-            id="tab-home-pelham"
-            onClick={() => {
-              setActiveTeamTab('home');
-              setCurrentTab('home');
-            }}
-            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
-              currentTab === 'home'
-                ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-sm shadow-amber-500/20 ring-1 ring-amber-300'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
-            }`}
-            title="Pelham Pelicans Home Roster"
-          >
-            <span
-              className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
-                currentTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
+        {/* Left: Home & Away Team Tabs with Pop-up Menu triggers + Settings */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          {/* TAB 1: Pelham Pelicans (Home) + Dedicated Pop-up Menu */}
+          <div className="flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 shadow-sm">
+            <button
+              id="tab-home-pelham"
+              type="button"
+              onClick={() => {
+                setActiveTeamTab('home');
+                setCurrentTab('home');
+              }}
+              className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1.5 transition-all shrink-0 ${
+                currentTab === 'home'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-sm shadow-amber-500/20 font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
+              title="Switch to Pelham Pelicans Home Roster"
             >
-              PP
-            </span>
-            <span className="hidden xl:inline">Pelham Pelicans</span>
-            <span className="xl:hidden inline">Pelham</span>
-            <span
-              className={`px-1 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
-                currentTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-950/60 text-slate-300'
-              }`}
-            >
-              {homeGoals}
-            </span>
-          </button>
+              <span
+                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
+                  currentTab === 'home' ? 'bg-slate-950/25 text-slate-950' : 'bg-amber-400/20 text-amber-300'
+                }`}
+              >
+                PP
+              </span>
+              <span className="hidden sm:inline">Pelham Pelicans</span>
+              <span className="sm:hidden inline">Pelham</span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
+                  currentTab === 'home' ? 'bg-slate-950 text-amber-400' : 'bg-slate-900 text-amber-300 border border-slate-700'
+                }`}
+              >
+                {homeGoals}
+              </span>
+            </button>
 
-          {/* TAB 2: Visitor Team */}
-          <button
-            id="tab-visitor-team"
-            onClick={() => {
-              setActiveTeamTab('visitor');
-              setCurrentTab('visitor');
-            }}
-            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
-              currentTab === 'visitor'
-                ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-sm shadow-rose-500/20 ring-1 ring-rose-300'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
-            }`}
-            title={`${visitorTeamName} Visitor Roster`}
-          >
-            <span
-              className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
-                currentTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
-              }`}
+            {/* Home Team Action Menu Button (Opens Home pop-up menu) */}
+            <button
+              id="menu-home-pelham-btn"
+              type="button"
+              onClick={() => setIsHomeMenuOpen(true)}
+              className="px-1.5 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold text-amber-400 hover:text-white hover:bg-amber-500/20 flex items-center gap-0.5 transition-colors border-l border-slate-800 ml-0.5 active:scale-95"
+              title="Open Pelham Pelicans Pop-up Menu (Goal actions, Lineup, Announcements & Arena Controls)"
             >
-              VT
-            </span>
-            <span className="truncate max-w-[60px] sm:max-w-[85px] xl:max-w-[120px]">
-              {visitorTeamName}
-            </span>
-            <span
-              className={`px-1 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
-                currentTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-950/60 text-slate-300'
+              <span>Menu</span>
+              <ChevronDown className="w-3 h-3 text-amber-400" />
+            </button>
+          </div>
+
+          {/* TAB 2: Visitor Team (Away) + Dedicated Pop-up Menu */}
+          <div className="flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 shadow-sm">
+            <button
+              id="tab-visitor-team"
+              type="button"
+              onClick={() => {
+                setActiveTeamTab('visitor');
+                setCurrentTab('visitor');
+              }}
+              className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1.5 transition-all shrink-0 ${
+                currentTab === 'visitor'
+                  ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-sm shadow-rose-500/20 font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
               }`}
+              title={`Switch to ${visitorTeamName} Visitor Roster`}
             >
-              {visitorGoals}
-            </span>
-          </button>
+              <span
+                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8.5px] font-black ${
+                  currentTab === 'visitor' ? 'bg-black/25 text-white' : 'bg-rose-400/20 text-rose-300'
+                }`}
+              >
+                VT
+              </span>
+              <span className="truncate max-w-[65px] sm:max-w-[100px] xl:max-w-[130px]">
+                {visitorTeamName}
+              </span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[9.5px] sm:text-[10.5px] font-mono font-bold ${
+                  currentTab === 'visitor' ? 'bg-slate-950 text-rose-400' : 'bg-slate-900 text-rose-300 border border-slate-700'
+                }`}
+              >
+                {visitorGoals}
+              </span>
+            </button>
+
+            {/* Away Team Action Menu Button (Opens Away pop-up menu) */}
+            <button
+              id="menu-away-visitor-btn"
+              type="button"
+              onClick={() => setIsAwayMenuOpen(true)}
+              className="px-1.5 py-1 rounded-md text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold text-rose-400 hover:text-white hover:bg-rose-500/20 flex items-center gap-0.5 transition-colors border-l border-slate-800 ml-0.5 active:scale-95"
+              title={`Open ${visitorTeamName} Pop-up Menu (Goal actions, Lineup, Rename & Announcements)`}
+            >
+              <span>Menu</span>
+              <ChevronDown className="w-3 h-3 text-rose-400" />
+            </button>
+          </div>
 
           {/* TAB 3: Settings Tab */}
           <button
             id="tab-settings"
             onClick={() => setCurrentTab('settings')}
-            className={`px-1.5 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
+            className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-athletic uppercase tracking-wider font-bold flex items-center gap-1 transition-all shrink-0 ${
               currentTab === 'settings'
                 ? 'bg-slate-100 text-slate-950 shadow-sm shadow-white/10 ring-1 ring-slate-200'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/60'
+                : 'bg-slate-950 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
             }`}
             title="Configure announcer voices, rosters, and match options"
           >
@@ -1178,56 +1242,16 @@ export default function App() {
           </button>
         </div>
 
-        {/* Right utility items: Score, Mute, Fullscreen (Pinned top-right on mobile/tablet) */}
-        <div className="flex items-center gap-1 ml-auto lg:ml-0 order-2 lg:order-3 shrink-0">
+        {/* Center / Right Section: Score, Goal Action Center pop-up trigger, Goal Horn MP3, Mute, Fullscreen */}
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
           {/* Live Match Scoreboard Pill */}
-          <div className="hidden sm:flex lg:hidden 2xl:flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] shrink-0 font-mono">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] shrink-0 font-mono shadow-inner">
             <span className="font-bold text-amber-400">PEL {homeGoals}</span>
-            <span className="text-slate-600">-</span>
+            <span className="text-slate-600 font-bold">-</span>
             <span className="font-bold text-rose-400">{visitorGoals} VIS</span>
           </div>
 
-          {/* Quick Mute/Unmute toggle */}
-          <button
-            id="nav-mute-toggle-btn"
-            onClick={handleToggleMute}
-            className={`p-1 sm:p-1.5 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
-              isMuted
-                ? 'bg-red-500/20 text-red-300 border-red-500/40 hover:bg-red-500/30'
-                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
-            }`}
-            title={isMuted ? 'Audio Muted - Click to Unmute' : 'Audio Active - Click to Mute'}
-          >
-            {isMuted ? (
-              <VolumeX className="w-3.5 h-3.5 text-red-400 shrink-0" />
-            ) : (
-              <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            )}
-          </button>
-
-          {/* Fullscreen Toggle Button */}
-          <button
-            id="nav-fullscreen-toggle-btn"
-            type="button"
-            onClick={handleToggleFullscreen}
-            className={`p-1 sm:p-1.5 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
-              isFullscreen
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
-            }`}
-            title={isFullscreen ? 'Exit Full Screen mode (Esc)' : 'Switch to Full Screen mode'}
-          >
-            {isFullscreen ? (
-              <Minimize className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            ) : (
-              <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
-            )}
-          </button>
-        </div>
-
-        {/* Action Controls: Goal Keypad, Penalty, Test Speaker, Welcome message */}
-        <div className="flex items-center gap-1 sm:gap-1.5 w-full lg:w-auto justify-start sm:justify-end order-3 lg:order-2 shrink-0">
-          {/* Announcement Snippet Pill (shown on extra-wide screens only) */}
+          {/* Announcement Snippet Pill (shown when announcing) */}
           {currentAnnouncement && currentTab !== 'settings' && (
             <div
               className={`hidden 2xl:flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9.5px] max-w-[150px] truncate transition-all ${
@@ -1249,17 +1273,17 @@ export default function App() {
             </div>
           )}
 
-          {/* BUTTON 1: Dedicated Goal Horn MP3 Trigger (Plays all the way through) */}
+          {/* Dedicated Goal Horn MP3 Trigger */}
           <button
             id="nav-goal-mp3-btn"
             type="button"
             onClick={handleToggleMp3}
-            className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
+            className={`px-2 sm:px-2.5 py-1 rounded-lg font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
               isMp3Playing
                 ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white animate-pulse shadow-red-500/40 ring-1 ring-red-400'
                 : 'bg-slate-800/90 hover:bg-slate-700 text-amber-300 hover:text-white border border-amber-500/40 shadow-sm'
             }`}
-            title={isMp3Playing ? 'Stop MP3 (currently playing across arena)' : 'Play Goal Horn MP3 track (plays all the way through)'}
+            title={isMp3Playing ? 'Stop MP3 (currently playing across arena)' : 'Play Goal Horn MP3 track'}
           >
             {isMp3Playing ? (
               <>
@@ -1276,109 +1300,55 @@ export default function App() {
             )}
           </button>
 
-          {/* BUTTON 2: Dedicated Goal & Who Scored Trigger (No window switching!) */}
+          {/* PRIMARY POP-UP TRIGGER: Goal Action Center Pop-Up Modal */}
           {currentTab !== 'settings' && (
             <button
               id="nav-who-scored-btn"
               type="button"
-              onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
-              className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 ${
-                isInlineGoalScorerOpen
-                  ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40'
-                  : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/20'
-              }`}
-              title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
+              onClick={() => setIsInlineGoalScorerOpen(true)}
+              className="px-2.5 sm:px-3 py-1 rounded-lg font-athletic font-black text-[11px] sm:text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md shrink-0 active:scale-95 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25 ring-1 ring-amber-300/60"
+              title="Open Goal Action Center Pop-Up Window (Trigger Horn, Pick Scorer & Assists, Voice-Over Announcement)"
             >
-              <Flame className="w-3.5 h-3.5 fill-current" />
-              <span className="hidden sm:inline">Who Scored?</span>
-              <span className="sm:hidden">Scorer</span>
+              <Flame className="w-3.5 h-3.5 fill-current text-slate-950" />
+              <span>Who Scored?</span>
             </button>
           )}
 
-
-          {/* Quick Penalty Announcement Trigger */}
-          {currentTab !== 'settings' && (
-            <button
-              id="nav-penalty-btn"
-              type="button"
-              onClick={() => openConsole('penalty')}
-              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-rose-500/20 active:scale-95 text-rose-300 hover:text-white border border-rose-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
-              title="Announce a penalty: 'Number [X], [Team] two minutes for [foul]'"
-            >
-              <ShieldAlert className="w-3 h-3 text-rose-400 shrink-0" />
-              <span className="hidden sm:inline">Penalty</span>
-              <span className="sm:hidden">Pen</span>
-            </button>
-          )}
-
-          {/* Period Warnings Trigger: 1 Minute Remaining */}
-          {currentTab !== 'settings' && (
-            <button
-              id="nav-period-btn"
-              type="button"
-              onClick={() => openConsole('period')}
-              className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-sky-500/20 active:scale-95 text-sky-300 hover:text-white border border-sky-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
-              title="Announce: 'One minute remaining in the [first/second/third] period'"
-            >
-              <Clock className="w-3 h-3 text-sky-400 shrink-0" />
-              <span className="hidden sm:inline">1 Min Period</span>
-              <span className="sm:hidden">1 Min</span>
-            </button>
-          )}
-
-          {/* Test Speaker Button (Opens Speaker tab in console or sound check) */}
+          {/* Quick Mute/Unmute toggle */}
           <button
-            id="nav-test-speaker-btn"
-            type="button"
-            onClick={() => openConsole('speaker')}
-            disabled={isAnnouncing}
-            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-cyan-500/20 active:scale-95 text-cyan-300 hover:text-white border border-cyan-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
-            title="Test Speaker: Short pre-game sound check before game"
+            id="nav-mute-toggle-btn"
+            onClick={handleToggleMute}
+            className={`p-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+              isMuted
+                ? 'bg-red-500/20 text-red-300 border-red-500/40 hover:bg-red-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isMuted ? 'Audio Muted - Click to Unmute' : 'Audio Active - Click to Mute'}
           >
-            <Volume2 className={`w-3 h-3 text-cyan-400 shrink-0 ${isAnnouncing ? 'animate-pulse' : ''}`} />
-            <span className="hidden sm:inline">Test Speaker</span>
-            <span className="sm:hidden">Speaker</span>
+            {isMuted ? (
+              <VolumeX className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            )}
           </button>
 
-          {/* Welcome Message Button */}
+          {/* Fullscreen Toggle Button */}
           <button
-            id="nav-welcome-msg-btn"
+            id="nav-fullscreen-toggle-btn"
             type="button"
-            onClick={() => openConsole('speaker')}
-            disabled={isAnnouncing}
-            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-amber-500/20 active:scale-95 text-amber-300 hover:text-white border border-amber-500/30 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm disabled:opacity-50 shrink-0"
-            title={`Welcome message: Pre-game welcome announcement hosting ${visitorTeamName} and national anthem lineup`}
+            onClick={handleToggleFullscreen}
+            className={`p-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
+              isFullscreen
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={isFullscreen ? 'Exit Full Screen mode (Esc)' : 'Switch to Full Screen mode'}
           >
-            <Sparkles className={`w-3 h-3 text-amber-400 shrink-0 ${isAnnouncing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Welcome message</span>
-            <span className="sm:hidden">Welcome</span>
-          </button>
-
-          {/* Arena Audio Mixer & Goal Horn Button */}
-          <button
-            id="nav-mixer-btn"
-            type="button"
-            onClick={() => setIsMixerModalOpen(true)}
-            className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-slate-800/90 hover:bg-amber-500/25 active:scale-95 text-amber-300 hover:text-white border border-amber-500/40 font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-sm shrink-0"
-            title="Arena Mixer & Goal Horn: Upload custom horn, mix volume levels, and trigger celebration"
-          >
-            <Sliders className="w-3 h-3 text-amber-400 shrink-0" />
-            <span className="hidden sm:inline">Mixer & Horn</span>
-            <span className="sm:hidden">Mixer</span>
-          </button>
-
-          {/* One-Click Goal Horn & Voice Celebration Button */}
-          <button
-            id="nav-celebration-blast-btn"
-            type="button"
-            onClick={handleQuickCelebration}
-            disabled={isAnnouncing || isCelebrationActive}
-            className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 hover:from-red-500 hover:to-amber-400 active:scale-95 text-white font-athletic font-bold text-[10px] sm:text-[11px] uppercase tracking-wider flex items-center gap-1 transition-all shadow-md shadow-red-600/25 shrink-0 disabled:opacity-50"
-            title="Play Goal Horn blast followed by Pelham voice-over celebration"
-          >
-            <Zap className={`w-3 h-3 fill-current ${isCelebrationActive ? 'animate-bounce text-yellow-300' : 'text-yellow-400'} shrink-0`} />
-            <span className="hidden sm:inline">{isCelebrationActive ? 'Celebrating...' : 'Horn + Voice'}</span>
-            <span className="sm:hidden">Celebration</span>
+            {isFullscreen ? (
+              <Minimize className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            ) : (
+              <Maximize className="w-3.5 h-3.5 text-slate-300 hover:text-white shrink-0" />
+            )}
           </button>
         </div>
       </nav>
@@ -1794,19 +1764,20 @@ export default function App() {
                   )}
                 </button>
 
-                {/* Button 2: Dedicated Goal Scorer Button (Goal Action Center) */}
+                {/* Button 2: Dedicated Goal Scorer Button (Goal Action Center Pop-Up) */}
                 <button
                   type="button"
                   id="scoreboard-who-scored-btn"
-                  onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+                  onClick={() => {
+                    setPreselectedScorer(null);
+                    setIsInlineGoalScorerOpen(true);
+                  }}
                   className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                    isInlineGoalScorerOpen
-                      ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
-                      : isVisitor
+                    isVisitor
                       ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
                       : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
                   }`}
-                  title="Open Goal Action Center to select scorer & assists with voice-over"
+                  title="Open Goal Action Center pop-up window to select scorer & assists with voice-over"
                 >
                   <Flame className="w-3.5 h-3.5 fill-current" />
                   <span>Who Scored?</span>
@@ -1831,24 +1802,6 @@ export default function App() {
                 </div>
               </div>
             </div>
-
-            {/* Inline Goal Scorer: Fits Screen & Fully Scrollable */}
-            <InlineGoalScorer
-              isOpen={isInlineGoalScorerOpen}
-              onClose={() => {
-                setIsInlineGoalScorerOpen(false);
-                setPreselectedScorer(null);
-              }}
-              homePlayers={homePlayers}
-              visitorPlayers={visitorPlayers}
-              activeTeamTab={activeTeamTab}
-              visitorTeamName={visitorTeamName}
-              isMp3Playing={isMp3Playing}
-              onToggleMp3={handleToggleMp3}
-              isAnnouncing={isAnnouncing}
-              initialScorer={preselectedScorer}
-              onScoreGoalWithAssist={handleScoreGoalWithAssist}
-            />
 
             {/* Player Rows in Connected Mode */}
             <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
@@ -1949,19 +1902,20 @@ export default function App() {
                     )}
                   </button>
 
-                  {/* BUTTON 2: Dedicated Goal Scorer Button */}
+                  {/* BUTTON 2: Dedicated Goal Scorer Button (Goal Action Center Pop-Up) */}
                   <button
                     type="button"
                     id="scoreboard-who-scored-btn"
-                    onClick={() => setIsInlineGoalScorerOpen((prev) => !prev)}
+                    onClick={() => {
+                      setPreselectedScorer(null);
+                      setIsInlineGoalScorerOpen(true);
+                    }}
                     className={`px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
-                      isInlineGoalScorerOpen
-                        ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-400/40 font-black'
-                        : isVisitor
+                      isVisitor
                         ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
                         : 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/25'
                     }`}
-                    title="Who scored? Tap to select goal scorer and announce voice over MP3 right here without switching windows"
+                    title="Open Goal Action Center pop-up window to select scorer & assists with voice-over"
                   >
                     <Flame className="w-3.5 h-3.5 fill-current" />
                     <span>Who Scored?</span>
@@ -1985,24 +1939,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-              {/* Inline Goal Scorer: Fits Screen & Fully Scrollable */}
-              <InlineGoalScorer
-                isOpen={isInlineGoalScorerOpen}
-                onClose={() => {
-                  setIsInlineGoalScorerOpen(false);
-                  setPreselectedScorer(null);
-                }}
-                homePlayers={homePlayers}
-                visitorPlayers={visitorPlayers}
-                activeTeamTab={activeTeamTab}
-                visitorTeamName={visitorTeamName}
-                isMp3Playing={isMp3Playing}
-                onToggleMp3={handleToggleMp3}
-                isAnnouncing={isAnnouncing}
-                initialScorer={preselectedScorer}
-                onScoreGoalWithAssist={handleScoreGoalWithAssist}
-              />
 
               {/* Player Rows for Goals - Engineered to fit on screen */}
               <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-28 sm:pb-32 custom-scrollbar overscroll-contain">
@@ -2188,6 +2124,116 @@ export default function App() {
         onClose={() => setIsMixerModalOpen(false)}
         visitorTeamName={visitorTeamName}
         isAnnouncing={isAnnouncing}
+      />
+
+      {/* Goal Action Center: Pop-Up Window Modal */}
+      <InlineGoalScorer
+        isOpen={isInlineGoalScorerOpen}
+        onClose={() => {
+          setIsInlineGoalScorerOpen(false);
+          setPreselectedScorer(null);
+        }}
+        homePlayers={homePlayers}
+        visitorPlayers={visitorPlayers}
+        activeTeamTab={activeTeamTab}
+        visitorTeamName={visitorTeamName}
+        isMp3Playing={isMp3Playing}
+        onToggleMp3={handleToggleMp3}
+        isAnnouncing={isAnnouncing}
+        initialScorer={preselectedScorer}
+        onScoreGoalWithAssist={handleScoreGoalWithAssist}
+      />
+
+      {/* Home Team (Pelham Pelicans) Pop-Up Action Menu Modal */}
+      <TeamActionModal
+        isOpen={isHomeMenuOpen}
+        onClose={() => setIsHomeMenuOpen(false)}
+        team="home"
+        teamName="Pelham Pelicans"
+        goals={homeGoals}
+        assists={homeAssists}
+        playerCount={homePlayers.length}
+        onOpenGoalActionCenter={() => {
+          setActiveTeamTab('home');
+          setCurrentTab('home');
+          setPreselectedScorer(null);
+          setIsInlineGoalScorerOpen(true);
+        }}
+        onOpenKeypadGoal={() => {
+          setActiveTeamTab('home');
+          setCurrentTab('home');
+          openConsole('goal');
+        }}
+        onOpenPenalty={() => {
+          setActiveTeamTab('home');
+          setCurrentTab('home');
+          openConsole('penalty');
+        }}
+        onOpenPeriodWarning={() => openConsole('period')}
+        onOpenSpeakerTest={() => openConsole('speaker')}
+        onOpenWelcome={() => handleTestVoice()}
+        onOpenCelebration={() => handleQuickCelebration()}
+        onOpenMixer={() => setIsMixerModalOpen(true)}
+        onOpenRosterModal={() => {
+          setActiveTeamTab('home');
+          setIsRosterModalOpen(true);
+        }}
+        onOpenScanner={() => {
+          setActiveTeamTab('home');
+          handleOpenScanner();
+        }}
+        onToggleAttendanceMode={() => setIsLineupEditMode((prev) => !prev)}
+        isAttendanceModeActive={isLineupEditMode}
+        onAddNewPlayer={handleAddNewPlayerQuick}
+        onResetScores={() => setIsResetModalOpen(true)}
+      />
+
+      {/* Away Team (Visitor) Pop-Up Action Menu Modal */}
+      <TeamActionModal
+        isOpen={isAwayMenuOpen}
+        onClose={() => setIsAwayMenuOpen(false)}
+        team="visitor"
+        teamName={visitorTeamName}
+        goals={visitorGoals}
+        assists={visitorAssists}
+        playerCount={visitorPlayers.length}
+        onOpenGoalActionCenter={() => {
+          setActiveTeamTab('visitor');
+          setCurrentTab('visitor');
+          setPreselectedScorer(null);
+          setIsInlineGoalScorerOpen(true);
+        }}
+        onOpenKeypadGoal={() => {
+          setActiveTeamTab('visitor');
+          setCurrentTab('visitor');
+          openConsole('goal');
+        }}
+        onOpenPenalty={() => {
+          setActiveTeamTab('visitor');
+          setCurrentTab('visitor');
+          openConsole('penalty');
+        }}
+        onOpenPeriodWarning={() => openConsole('period')}
+        onOpenSpeakerTest={() => openConsole('speaker')}
+        onOpenWelcome={() => handleTestVoice()}
+        onOpenCelebration={() => handleQuickCelebration()}
+        onOpenMixer={() => setIsMixerModalOpen(true)}
+        onOpenRosterModal={() => {
+          setActiveTeamTab('visitor');
+          setIsRosterModalOpen(true);
+        }}
+        onOpenScanner={() => {
+          setActiveTeamTab('visitor');
+          handleOpenScanner();
+        }}
+        onToggleAttendanceMode={() => setIsLineupEditMode((prev) => !prev)}
+        isAttendanceModeActive={isLineupEditMode}
+        onAddNewPlayer={handleAddNewPlayerQuick}
+        onResetScores={() => setIsResetModalOpen(true)}
+        onStartRenameVisitor={() => {
+          setTempVisitorName(visitorTeamName);
+          setIsEditingVisitorName(true);
+        }}
       />
 
       {/* Confirmation Modal when removing a player who already has goals or assists */}
