@@ -1327,19 +1327,64 @@ export default function App() {
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white flex items-center justify-center font-athletic font-black text-sm border border-rose-300 shadow-md shadow-rose-500/20 shrink-0">
                     VIS
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-rose-300 truncate">
-                        {visitorTeamName}
-                      </h2>
-                      <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 hidden sm:inline">
-                        Visitor
-                      </span>
+                  {isEditingVisitorName ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSaveVisitorName();
+                      }}
+                      className="flex items-center gap-1.5 min-w-0 animate-in fade-in duration-150"
+                    >
+                      <input
+                        type="text"
+                        value={tempVisitorName}
+                        onChange={(e) => setTempVisitorName(e.target.value)}
+                        placeholder="Visiting team name..."
+                        className="px-2 py-1 text-xs sm:text-sm font-athletic font-bold uppercase tracking-wider rounded-lg bg-slate-900 border border-rose-500 text-white focus:outline-none focus:ring-1 focus:ring-rose-400 w-32 sm:w-48"
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        className="p-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs transition-colors shrink-0 shadow-sm"
+                        title="Save Name"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisitorName(false)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors shrink-0"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-rose-300 truncate">
+                          {visitorTeamName}
+                        </h2>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTempVisitorName(visitorTeamName);
+                            setIsEditingVisitorName(true);
+                          }}
+                          className="p-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-all shrink-0 cursor-pointer"
+                          title="Rename Visiting Team"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 hidden sm:inline">
+                          Visitor
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {visitorPlayers.length} Active Players in Lineup
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {visitorPlayers.length} Active Players in Lineup
-                    </p>
-                  </div>
+                  )}
                 </div>
 
                 {/* Visitor Team Menu Button */}
@@ -1588,6 +1633,7 @@ export default function App() {
         isAttendanceModeActive={isLineupEditMode}
         onAddNewPlayer={handleAddNewPlayerQuick}
         onResetScores={() => setIsResetModalOpen(true)}
+        onUpdateTeamName={setVisitorTeamName}
         onStartRenameVisitor={() => {
           setTempVisitorName(visitorTeamName);
           setIsEditingVisitorName(true);

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Flame,
@@ -43,6 +43,7 @@ interface TeamActionModalProps {
   onAddNewPlayer: () => void;
   onResetScores: () => void;
   onStartRenameVisitor?: () => void;
+  onUpdateTeamName?: (newName: string) => void;
   onToggleMp3?: () => void;
   isMp3Playing?: boolean;
 }
@@ -69,10 +70,33 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
   onAddNewPlayer,
   onResetScores,
   onStartRenameVisitor,
+  onUpdateTeamName,
   onToggleMp3,
   isMp3Playing = false,
 }) => {
   const isHome = team === 'home';
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [localTeamName, setLocalTeamName] = useState(teamName);
+  const [renameSuccess, setRenameSuccess] = useState(false);
+
+  // Sync local team name when teamName or isOpen changes
+  useEffect(() => {
+    setLocalTeamName(teamName);
+    setIsEditingName(false);
+    setRenameSuccess(false);
+  }, [teamName, isOpen]);
+
+  const handleSaveTeamName = () => {
+    const trimmed = localTeamName.trim();
+    if (trimmed) {
+      if (onUpdateTeamName) {
+        onUpdateTeamName(trimmed);
+      }
+      setRenameSuccess(true);
+      setIsEditingName(false);
+      setTimeout(() => setRenameSuccess(false), 2500);
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
@@ -155,27 +179,103 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
 
         {/* Scrollable Action Groups */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-4 overscroll-contain">
-          {/* Visitor Rename Shortcut */}
-          {!isHome && onStartRenameVisitor && (
-            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-rose-500/30 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Edit2 className="w-4 h-4 text-rose-400 shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-xs font-bold text-white block truncate">
-                    Visiting Team Name: &ldquo;{teamName}&rdquo;
-                  </span>
-                  <span className="text-[10px] text-slate-400 block truncate">
-                    Change to opponent (e.g. Grimsby Kings, Thorold Blackhawks)
-                  </span>
+          {/* Visitor Rename Card */}
+          {!isHome && (
+            <div className="p-3 rounded-xl bg-slate-950/80 border border-rose-500/30 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
+                    <Edit2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-white block truncate">
+                      Visiting Team: <span className="text-rose-300">&ldquo;{teamName}&rdquo;</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 block truncate">
+                      {renameSuccess ? '✓ Visiting team name updated!' : 'Change opponent name across arena PA, keypad & scoreboard'}
+                    </span>
+                  </div>
                 </div>
+                {!isEditingName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocalTeamName(teamName);
+                      setIsEditingName(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-athletic font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Rename Team</span>
+                  </button>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => handleAction(onStartRenameVisitor)}
-                className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-athletic font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm"
-              >
-                Rename Team
-              </button>
+
+              {/* Inline Editor inside Visitor Menu */}
+              {isEditingName && (
+                <div className="pt-2 border-t border-rose-500/20 space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={localTeamName}
+                      onChange={(e) => setLocalTeamName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveTeamName();
+                        } else if (e.key === 'Escape') {
+                          setIsEditingName(false);
+                        }
+                      }}
+                      placeholder="Type visiting team name..."
+                      className="flex-1 bg-slate-900 border border-rose-500/80 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-rose-400 font-athletic uppercase tracking-wider"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveTeamName}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-athletic font-bold text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1 shadow-sm active:scale-95"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocalTeamName(teamName);
+                        setIsEditingName(false);
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Quick Opponent Suggestions */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-slate-400 mr-1 font-athletic uppercase">Quick pick:</span>
+                    {['Grimsby Kings', 'Thorold Blackhawks', 'Welland Tigers', 'St. Catharines Falcons', 'Niagara Falls Canucks'].map((opponent) => (
+                      <button
+                        key={opponent}
+                        type="button"
+                        onClick={() => {
+                          setLocalTeamName(opponent);
+                          if (onUpdateTeamName) {
+                            onUpdateTeamName(opponent);
+                            setRenameSuccess(true);
+                            setIsEditingName(false);
+                            setTimeout(() => setRenameSuccess(false), 2500);
+                          }
+                        }}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 transition-colors cursor-pointer"
+                      >
+                        {opponent}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
