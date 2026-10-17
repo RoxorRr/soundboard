@@ -253,10 +253,19 @@ class SoundEngine {
             const preset = hasCustom
               ? 'custom'
               : (cloudMixer.selectedPreset || this.mixerSettings.selectedPreset);
-            this.mixerSettings = { ...this.mixerSettings, ...cloudMixer, selectedPreset: preset };
+            // Default duckHornOnVoice to unselected (false)
+            this.mixerSettings = {
+              ...this.mixerSettings,
+              ...cloudMixer,
+              duckHornOnVoice: false,
+              selectedPreset: preset,
+            };
             try {
               localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
             } catch (_) {}
+            if (cloudMixer.duckHornOnVoice === true) {
+              saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
+            }
             this.notifyHornChange();
           }
         });
@@ -273,7 +282,15 @@ class SoundEngine {
             if (cloudData?.mixerSettings) {
               const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
               const preset = hasCustom ? 'custom' : (cloudData.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset);
-              this.mixerSettings = { ...this.mixerSettings, ...cloudData.mixerSettings, selectedPreset: preset };
+              this.mixerSettings = {
+                ...this.mixerSettings,
+                ...cloudData.mixerSettings,
+                duckHornOnVoice: false,
+                selectedPreset: preset,
+              };
+              if (cloudData.mixerSettings.duckHornOnVoice === true) {
+                saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
+              }
               this.notifyHornChange();
             }
           })
@@ -534,6 +551,7 @@ class SoundEngine {
           this.mixerSettings = {
             ...this.mixerSettings,
             ...data.mixerSettings,
+            duckHornOnVoice: data.mixerSettings.duckHornOnVoice === true ? false : false,
             selectedPreset: preset,
           };
           try {

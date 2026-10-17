@@ -1,1 +1,21 @@
-{"hasCustomHorn":false,"audioBase64":null,"mimeType":"audio/mpeg","filename":"","fileSize":0,"updatedAt":1792071099411,"mixerSettings":{"hornVolume":0.9,"voiceVolume":1,"selectedPreset":"custom"}}
+{
+  "hasCustomHorn": true,
+  "audioBase64": "/audio/pelham_pelicans_goal_horn.mp3",
+  "mimeType": "audio/mpeg",
+  "filename": "pelham_pelicans_goal_horn.mp3",
+  "fileSize": 2161720,
+  "duration": 90,
+  "updatedAt": 1730000000000,
+  "mixerSettings": {
+    "hornEnabled": true,
+    "hornVolume": 0.15,
+    "voiceVolume": 1,
+    "masterVolume": 1,
+    "selectedPreset": "custom",
+    "hornDurationLimit": 0,
+    "voiceTriggerMode": "delay",
+    "voiceDelaySeconds": 2,
+    "duckHornOnVoice": false,
+    "autoTriggerOnGoal": false
+  }
+}

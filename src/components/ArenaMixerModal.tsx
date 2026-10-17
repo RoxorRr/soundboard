@@ -18,7 +18,6 @@ import {
   RefreshCw,
   Clock,
   Layers,
-  Zap,
   Info,
   Download,
 } from 'lucide-react';
@@ -47,7 +46,6 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
 
   // Playback testing states
   const [activeStep, setActiveStep] = useState<'idle' | 'horn' | 'voice'>('idle');
-  const [testCustomText, setTestCustomText] = useState('Goal Pelham Pelicans! Scored by number 9!');
   const [hornTestActive, setHornTestActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,26 +146,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     soundEngine.unlock();
     setActiveStep('voice');
     try {
-      await soundEngine.announce(testCustomText, 'nhl');
-    } finally {
-      setActiveStep('idle');
-    }
-  };
-
-  const handlePlayCelebrationSequence = async () => {
-    if (activeStep !== 'idle') {
-      soundEngine.stopAll();
-      setActiveStep('idle');
-      return;
-    }
-
-    soundEngine.unlock();
-    try {
-      await soundEngine.playCelebrationSequence({
-        text: testCustomText,
-        voiceStyle: 'nhl',
-        onStep: (step) => setActiveStep(step),
-      });
+      await soundEngine.announce('Pelham Pelicans goal! Scored by number 9, Austin Matthews!', 'nhl');
     } finally {
       setActiveStep('idle');
     }
@@ -255,93 +234,6 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
               <span>{uploadError}</span>
             </div>
           )}
-
-          {/* MASTER CELEBRATION SEQUENCER HERO CARD */}
-          <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/30 border-2 border-amber-500/40 rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/30">
-                    Live Celebration Sequence
-                  </span>
-                  <span className="text-xs text-slate-400">1-Click Horn Blast + Announcer</span>
-                </div>
-                <h3 className="text-base sm:text-lg font-athletic font-bold text-white uppercase tracking-wider">
-                  Goal Horn + Voice-Over Sequence
-                </h3>
-                <p className="text-xs text-slate-300">
-                  Plays the goal horn blast first, then immediately triggers the custom voice announcement!
-                </p>
-              </div>
-
-              {/* Status Badge */}
-              <div className="flex items-center gap-2">
-                {activeStep === 'horn' && (
-                  <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold font-athletic uppercase animate-pulse flex items-center gap-1.5">
-                    <Volume2 className="w-4 h-4 animate-bounce" />
-                    1. Blasting Goal Horn...
-                  </span>
-                )}
-                {activeStep === 'voice' && (
-                  <span className="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-bold font-athletic uppercase animate-pulse flex items-center gap-1.5">
-                    <Radio className="w-4 h-4 animate-pulse" />
-                    2. Voice Announcing...
-                  </span>
-                )}
-                {activeStep === 'idle' && (
-                  <span className="px-3 py-1 rounded-xl bg-slate-800 text-slate-400 border border-slate-700 text-xs font-medium">
-                    Ready to Trigger
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Custom Spoken Text Input for Test */}
-            <div className="mt-4 flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={testCustomText}
-                onChange={(e) => setTestCustomText(e.target.value)}
-                placeholder="Text spoken after goal horn..."
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  id="celebration-play-btn"
-                  onClick={handlePlayCelebrationSequence}
-                  className={`px-5 py-2.5 rounded-xl font-athletic font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all ${
-                    activeStep !== 'idle'
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse'
-                      : 'bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 shadow-amber-500/25 active:scale-95'
-                  }`}
-                >
-                  {activeStep !== 'idle' ? (
-                    <>
-                      <Square className="w-4 h-4" />
-                      <span>Stop Celebration</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4 fill-slate-950" />
-                      <span>Play Horn + Voice Celebration</span>
-                    </>
-                  )}
-                </button>
-
-                {activeStep !== 'idle' && (
-                  <button
-                    type="button"
-                    onClick={handleStopAll}
-                    className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
-                    title="Stop playback"
-                  >
-                    <Square className="w-4 h-4 text-rose-400" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
 
           {/* 3 CHANNELS CONSOLE GRID */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

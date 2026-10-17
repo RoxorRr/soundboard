@@ -265,43 +265,6 @@ export default function App() {
 
   // Arena Sound Mixer & Goal Horn Modal State
   const [isMixerModalOpen, setIsMixerModalOpen] = useState(false);
-  const [isCelebrationActive, setIsCelebrationActive] = useState(false);
-
-  const handleQuickCelebration = useCallback(async () => {
-
-    soundEngine.unlock();
-    setIsCelebrationActive(true);
-    setIsAnnouncing(true);
-
-    const announcementText = "Goal Pelham Pelicans! The puck is in the net!";
-    const announcement: Announcement = {
-      id: `${Date.now()}-horn-celebration`,
-      type: 'goal',
-      playerId: 'horn_celebration',
-      playerNumber: 0,
-      playerName: 'Pelham Celebration',
-      text: announcementText,
-      timestamp: Date.now(),
-      source: voiceStatus?.speechifyConfigured ? 'speechify' : 'webspeech',
-      team: 'Pelham Pelicans',
-    };
-    setCurrentAnnouncement(announcement);
-
-    try {
-      const res = await soundEngine.playCelebrationSequence({
-        text: announcementText,
-        voiceStyle: 'nhl',
-      });
-      if (res?.source) {
-        setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source } : prev));
-      }
-    } catch (err: any) {
-      console.error('Celebration error:', err);
-    } finally {
-      setIsCelebrationActive(false);
-      setIsAnnouncing(false);
-    }
-  }, [voiceStatus]);
 
   // Lineup Attendance Edit Mode (allows one-tap removal of absent players right on the tracker)
   const [isLineupEditMode, setIsLineupEditMode] = useState(false);
@@ -1305,7 +1268,7 @@ export default function App() {
                     setIsHomeMenuOpen(true);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-amber-500/25 active:scale-95 transition-all shrink-0 cursor-pointer"
-                  title="Open Pelham Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Horn MP3, Celebration, Lineup Tools"
+                  title="Open Pelham Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Horn MP3, Lineup Tools"
                 >
                   <Menu className="w-4 h-4" />
                   <span>Pelham Menu</span>
@@ -1569,7 +1532,6 @@ export default function App() {
         onOpenPeriodWarning={() => openConsole('period')}
         onOpenSpeakerTest={() => openConsole('speaker')}
         onOpenWelcome={() => handleTestVoice()}
-        onOpenCelebration={() => handleQuickCelebration()}
         onOpenMixer={() => setIsMixerModalOpen(true)}
         onOpenRosterModal={() => {
           setActiveTeamTab('home');
@@ -1613,7 +1575,6 @@ export default function App() {
         onOpenPeriodWarning={() => openConsole('period')}
         onOpenSpeakerTest={() => openConsole('speaker')}
         onOpenWelcome={() => handleTestVoice()}
-        onOpenCelebration={() => handleQuickCelebration()}
         onOpenMixer={() => setIsMixerModalOpen(true)}
         onOpenRosterModal={() => {
           setActiveTeamTab('visitor');

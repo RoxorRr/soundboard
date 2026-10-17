@@ -41,7 +41,7 @@ export const DEFAULT_SERVER_HORN: StoredGoalHorn = {
     hornDurationLimit: 0,
     voiceTriggerMode: "delay",
     voiceDelaySeconds: 2.0,
-    duckHornOnVoice: true,
+    duckHornOnVoice: false, // Default: unselected
     autoTriggerOnGoal: false,
   },
 };
@@ -70,6 +70,9 @@ function loadHornFromDisk(): StoredGoalHorn {
         const raw = fs.readFileSync(filePath, "utf8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.updatedAt === "number" && parsed.audioBase64) {
+          if (parsed.mixerSettings) {
+            parsed.mixerSettings.duckHornOnVoice = false;
+          }
           inMemoryHorn = parsed;
           return parsed;
         }

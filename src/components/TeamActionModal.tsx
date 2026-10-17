@@ -35,7 +35,6 @@ interface TeamActionModalProps {
   onOpenPeriodWarning: () => void;
   onOpenSpeakerTest: () => void;
   onOpenWelcome: () => void;
-  onOpenCelebration: () => void;
   onOpenMixer: () => void;
   onOpenRosterModal: () => void;
   onOpenScanner: () => void;
@@ -62,7 +61,6 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
   onOpenPeriodWarning,
   onOpenSpeakerTest,
   onOpenWelcome,
-  onOpenCelebration,
   onOpenMixer,
   onOpenRosterModal,
   onOpenScanner,
@@ -181,7 +179,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
             </div>
           )}
 
-          {/* Group 1: Scoring & Celebrations */}
+          {/* Group 1: Scoring Actions */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-athletic font-bold uppercase tracking-wider text-slate-400 px-1 block">
               Scoring & Goal Actions
@@ -249,27 +247,6 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                     </div>
                     <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
                       {isMp3Playing ? 'Currently playing across arena' : 'Full arena horn track'}
-                    </p>
-                  </div>
-                </button>
-              )}
-
-              {/* Celebration Blast (Home only) */}
-              {isHome && (
-                <button
-                  type="button"
-                  onClick={() => handleAction(onOpenCelebration)}
-                  className="p-2.5 rounded-xl bg-slate-950 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/40 text-left transition-all group flex items-start gap-2.5 sm:col-span-2"
-                >
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-red-600 to-amber-600 text-white shrink-0 shadow-md">
-                    <Zap className="w-4 h-4 fill-current" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-athletic font-black text-xs sm:text-sm text-amber-300 uppercase tracking-wide">
-                      1-Click Celebration Blast
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
-                      Full Pelham Goal Horn Blast followed by automated voice celebration
                     </p>
                   </div>
                 </button>
