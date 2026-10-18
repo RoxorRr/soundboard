@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Flame,
@@ -79,12 +79,29 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
   const [localTeamName, setLocalTeamName] = useState(teamName);
   const [renameSuccess, setRenameSuccess] = useState(false);
 
-  // Sync local team name when teamName or isOpen changes
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameCardRef = useRef<HTMLDivElement>(null);
+  const renameTimerRef = useRef<any>(null);
+  const prevIsOpenRef = useRef(isOpen);
+
+  // Sync local team name when modal opens
   useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      setLocalTeamName(teamName);
+      setIsEditingName(false);
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, teamName]);
+
+  const handleStartRename = () => {
     setLocalTeamName(teamName);
-    setIsEditingName(false);
-    setRenameSuccess(false);
-  }, [teamName, isOpen]);
+    setIsEditingName(true);
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+      renameCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  };
 
   const handleSaveTeamName = () => {
     const trimmed = localTeamName.trim();
@@ -92,21 +109,44 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
       if (onUpdateTeamName) {
         onUpdateTeamName(trimmed);
       }
+      setLocalTeamName(trimmed);
       setRenameSuccess(true);
       setIsEditingName(false);
-      setTimeout(() => setRenameSuccess(false), 2500);
+      if (renameTimerRef.current) clearTimeout(renameTimerRef.current);
+      renameTimerRef.current = setTimeout(() => {
+        setRenameSuccess(false);
+      }, 3500);
     }
   };
 
-  // Close on Escape key
+  const handleSelectOpponent = (opponent: string) => {
+    setLocalTeamName(opponent);
+    if (onUpdateTeamName) {
+      onUpdateTeamName(opponent);
+    }
+    setRenameSuccess(true);
+    setIsEditingName(false);
+    if (renameTimerRef.current) clearTimeout(renameTimerRef.current);
+    renameTimerRef.current = setTimeout(() => {
+      setRenameSuccess(false);
+    }, 3500);
+  };
+
+  // Close or cancel editing on Escape key
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (isEditingName) {
+          setIsEditingName(false);
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isEditingName, onClose]);
 
   if (!isOpen) return null;
 
@@ -181,7 +221,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-4 overscroll-contain">
           {/* Visitor Rename Card */}
           {!isHome && (
-            <div className="p-3 rounded-xl bg-slate-950/80 border border-rose-500/30 space-y-2.5">
+            <div ref={renameCardRef} className="p-3 rounded-xl bg-slate-950/80 border border-rose-500/30 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0">
@@ -192,18 +232,20 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                       Visiting Team: <span className="text-rose-300">&ldquo;{teamName}&rdquo;</span>
                     </span>
                     <span className="text-[10px] text-slate-400 block truncate">
-                      {renameSuccess ? '✓ Visiting team name updated!' : 'Change opponent name across arena PA, keypad & scoreboard'}
+                      {renameSuccess ? (
+                        <span className="text-emerald-400 font-bold">✓ Visiting team renamed to &ldquo;{teamName}&rdquo;!</span>
+                      ) : (
+                        'Change opponent name across arena PA, keypad & scoreboard'
+                      )}
                     </span>
                   </div>
                 </div>
                 {!isEditingName && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setLocalTeamName(teamName);
-                      setIsEditingName(true);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-athletic font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                    id="visitor-menu-rename-btn"
+                    onClick={handleStartRename}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-athletic font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm flex items-center gap-1 active:scale-95 cursor-pointer"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     <span>Rename Team</span>
@@ -216,6 +258,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                 <div className="pt-2 border-t border-rose-500/20 space-y-2 animate-in fade-in duration-150">
                   <div className="flex items-center gap-2">
                     <input
+                      ref={renameInputRef}
                       type="text"
                       value={localTeamName}
                       onChange={(e) => setLocalTeamName(e.target.value)}
@@ -234,7 +277,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                     <button
                       type="button"
                       onClick={handleSaveTeamName}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-athletic font-bold text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1 shadow-sm active:scale-95"
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-athletic font-bold text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Save</span>
@@ -245,7 +288,7 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                         setLocalTeamName(teamName);
                         setIsEditingName(false);
                       }}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0 cursor-pointer"
                       title="Cancel"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -255,19 +298,11 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                   {/* Quick Opponent Suggestions */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     <span className="text-[10px] text-slate-400 mr-1 font-athletic uppercase">Quick pick:</span>
-                    {['Grimsby Kings', 'Thorold Blackhawks', 'Welland Tigers', 'St. Catharines Falcons', 'Niagara Falls Canucks'].map((opponent) => (
+                    {['Grimsby Kings', 'Thorold Blackhawks', 'Welland Tigers', 'St. Catharines Falcons', 'Niagara Falls Canucks', 'Port Colborne Sailors', 'Fort Erie Meteors'].map((opponent) => (
                       <button
                         key={opponent}
                         type="button"
-                        onClick={() => {
-                          setLocalTeamName(opponent);
-                          if (onUpdateTeamName) {
-                            onUpdateTeamName(opponent);
-                            setRenameSuccess(true);
-                            setIsEditingName(false);
-                            setTimeout(() => setRenameSuccess(false), 2500);
-                          }
-                        }}
+                        onClick={() => handleSelectOpponent(opponent)}
                         className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 transition-colors cursor-pointer"
                       >
                         {opponent}
@@ -439,6 +474,28 @@ export const TeamActionModal: React.FC<TeamActionModalProps> = ({
                   </p>
                 </div>
               </button>
+
+              {/* Rename Visiting Team Tile (Visitors Menu) */}
+              {!isHome && (
+                <button
+                  type="button"
+                  id="visitor-menu-tile-rename-btn"
+                  onClick={handleStartRename}
+                  className="p-2 rounded-xl bg-slate-950 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-left transition-all flex items-center gap-2.5 cursor-pointer group"
+                >
+                  <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 shrink-0 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                    <Edit2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-athletic font-bold text-xs text-white group-hover:text-rose-300 uppercase tracking-wider">
+                      Rename Team
+                    </div>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      Change visiting team name
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
           </div>
 

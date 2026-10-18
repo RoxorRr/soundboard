@@ -20,8 +20,10 @@ import {
   Layers,
   Info,
   Download,
+  Check,
+  Plus,
 } from 'lucide-react';
-import { MixerSettings, StoredGoalHornData, GoalHornPreset } from '../types';
+import { MixerSettings, StoredGoalHornData, GoalHornPreset, GoalHornItem } from '../types';
 import { soundEngine } from '../utils/audio';
 
 interface ArenaMixerModalProps {
@@ -38,7 +40,12 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
   isAnnouncing = false,
 }) => {
   const [mixerSettings, setMixerSettings] = useState<MixerSettings>(() => soundEngine.getMixerSettings());
+  const [goalHorns, setGoalHorns] = useState<GoalHornItem[]>(() => soundEngine.getGoalHornsLibrary());
+  const [activeHornId, setActiveHornId] = useState<string>(() => soundEngine.getActiveGoalHornId());
   const [storedHorn, setStoredHorn] = useState<StoredGoalHornData | null>(() => soundEngine.getStoredGoalHorn());
+  const [customHornName, setCustomHornName] = useState('');
+  const [previewingHornId, setPreviewingHornId] = useState<string | null>(null);
+
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -50,6 +57,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hornStopRef = useRef<(() => void) | null>(null);
+  const previewStopRef = useRef<(() => void) | null>(null);
 
   // Sync state on open and listen to changes from SoundEngine
   useEffect(() => {
@@ -57,6 +65,8 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
 
     setMixerSettings(soundEngine.getMixerSettings());
     setStoredHorn(soundEngine.getStoredGoalHorn());
+    setGoalHorns(soundEngine.getGoalHornsLibrary());
+    setActiveHornId(soundEngine.getActiveGoalHornId());
 
     // Sync from server across devices
     setIsSyncing(true);
@@ -67,19 +77,32 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
           setStoredHorn(horn);
         }
         setMixerSettings(soundEngine.getMixerSettings());
+        setGoalHorns(soundEngine.getGoalHornsLibrary());
+        setActiveHornId(soundEngine.getActiveGoalHornId());
       })
       .finally(() => setIsSyncing(false));
 
-    const unsubscribe = soundEngine.subscribeToHornChange(() => {
+    const unsubscribeHorn = soundEngine.subscribeToHornChange(() => {
       setMixerSettings(soundEngine.getMixerSettings());
       setStoredHorn(soundEngine.getStoredGoalHorn());
+      setActiveHornId(soundEngine.getActiveGoalHornId());
+    });
+
+    const unsubscribeLibrary = soundEngine.subscribeToHornLibrary((horns, activeId) => {
+      setGoalHorns(horns);
+      setActiveHornId(activeId);
     });
 
     return () => {
-      unsubscribe();
+      unsubscribeHorn();
+      unsubscribeLibrary();
       if (hornStopRef.current) {
         hornStopRef.current();
         hornStopRef.current = null;
+      }
+      if (previewStopRef.current) {
+        previewStopRef.current();
+        previewStopRef.current = null;
       }
     };
   }, [isOpen]);
@@ -92,6 +115,44 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     setStoredHorn(soundEngine.getStoredGoalHorn());
   };
 
+  const handleSelectHorn = async (hornId: string) => {
+    soundEngine.unlock();
+    if (previewStopRef.current) {
+      previewStopRef.current();
+      previewStopRef.current = null;
+      setPreviewingHornId(null);
+    }
+    await soundEngine.selectGoalHorn(hornId);
+    setActiveHornId(hornId);
+    setMixerSettings(soundEngine.getMixerSettings());
+    setStoredHorn(soundEngine.getStoredGoalHorn());
+    const selected = soundEngine.getActiveGoalHorn();
+    setUploadSuccess(`Active goal horn set to "${selected.name}" across the arena!`);
+    setTimeout(() => setUploadSuccess(null), 3500);
+  };
+
+  const handlePreviewHorn = (hornId: string) => {
+    soundEngine.unlock();
+    if (previewingHornId === hornId) {
+      if (previewStopRef.current) {
+        previewStopRef.current();
+        previewStopRef.current = null;
+      }
+      setPreviewingHornId(null);
+      return;
+    }
+    if (previewStopRef.current) {
+      previewStopRef.current();
+      previewStopRef.current = null;
+    }
+    setPreviewingHornId(hornId);
+    const stopFn = soundEngine.previewGoalHorn(hornId, 7.0, () => {
+      setPreviewingHornId(null);
+      previewStopRef.current = null;
+    });
+    previewStopRef.current = stopFn;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -100,13 +161,17 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     setUploadError(null);
     setUploadSuccess(null);
 
-    const res = await soundEngine.uploadGoalHorn(file);
+    const nameToUse = customHornName.trim() || undefined;
+    const res = await soundEngine.uploadGoalHorn(file, nameToUse);
     setIsUploading(false);
 
     if (res.success && res.data) {
-      setStoredHorn(res.data);
+      setGoalHorns(soundEngine.getGoalHornsLibrary());
+      setActiveHornId(res.data.id);
+      setStoredHorn(soundEngine.getStoredGoalHorn());
       setMixerSettings(soundEngine.getMixerSettings());
-      setUploadSuccess(`Goal horn "${file.name}" saved and synced to all devices!`);
+      setCustomHornName('');
+      setUploadSuccess(`Goal horn "${res.data.name}" uploaded, stored in database, and activated across the arena!`);
       setTimeout(() => setUploadSuccess(null), 5000);
     } else {
       setUploadError(res.error || 'Failed to upload audio file');
@@ -118,12 +183,36 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     }
   };
 
-  const handleRemoveCustomHorn = async () => {
-    if (!window.confirm('Revert to the default Pelham arena goal horn preset?')) return;
-    await soundEngine.removeCustomGoalHorn();
-    setStoredHorn(soundEngine.getStoredGoalHorn());
+  const handleDeleteHorn = async (horn: GoalHornItem) => {
+    if (horn.id === 'official_pelham') return;
+    if (!window.confirm(`Delete "${horn.name}" from the database?`)) return;
+
+    if (previewingHornId === horn.id && previewStopRef.current) {
+      previewStopRef.current();
+      previewStopRef.current = null;
+      setPreviewingHornId(null);
+    }
+
+    await soundEngine.deleteGoalHorn(horn.id);
+    setGoalHorns(soundEngine.getGoalHornsLibrary());
+    setActiveHornId(soundEngine.getActiveGoalHornId());
     setMixerSettings(soundEngine.getMixerSettings());
-    setUploadSuccess('Reverted to Pelham arena preset.');
+    setStoredHorn(soundEngine.getStoredGoalHorn());
+    setUploadSuccess(`Deleted "${horn.name}" from database.`);
+    setTimeout(() => setUploadSuccess(null), 3000);
+  };
+
+  const handleResetToOfficialPelham = async () => {
+    if (previewStopRef.current) {
+      previewStopRef.current();
+      previewStopRef.current = null;
+      setPreviewingHornId(null);
+    }
+    await soundEngine.resetToOfficialPelhamGoalHorn();
+    setActiveHornId('official_pelham');
+    setMixerSettings(soundEngine.getMixerSettings());
+    setStoredHorn(soundEngine.getStoredGoalHorn());
+    setUploadSuccess('Reverted to Official Pelham Pelicans Goal Horn (Default).');
     setTimeout(() => setUploadSuccess(null), 3500);
   };
 
@@ -309,102 +398,162 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                   </div>
                 </div>
 
-                {/* PRESETS & CUSTOM UPLOAD SELECTION */}
-                <div className="space-y-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Audio Source
-                  </label>
-
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {/* Option A: Custom Uploaded Horn */}
-                    <button
-                      type="button"
-                      onClick={() => updateSetting('selectedPreset', 'custom')}
-                      className={`p-2.5 rounded-xl text-left border flex items-center justify-between transition-all ${
-                        mixerSettings.selectedPreset === 'custom' || mixerSettings.selectedPreset === 'pelham_blast'
-                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
-                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
-                        <div>
-                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                            <span>
-                              {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3'
-                                ? storedHorn.filename
-                                : 'Official Pelham Pelicans Goal Horn (MP3)'}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-amber-300/80">
-                            {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3'
-                              ? `Custom Audio (${storedHorn.duration ? `${storedHorn.duration}s • ` : ''}${Math.round(
-                                  (storedHorn.fileSize || 0) / 1024
-                                )} KB) • Saved in App`
-                              : 'Built-in 90s Authentic Pelham Arena Track • Ready on all devices'}
-                          </div>
-                        </div>
+                {/* ACTIVE GOAL HORN BANNER */}
+                <div className="p-3 rounded-xl bg-slate-900 border border-amber-500/40 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-athletic uppercase tracking-wider font-bold text-amber-400">
+                      Active Arena Goal Horn
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Active
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                        <Music className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="truncate">
+                          {goalHorns.find((h) => h.id === activeHornId)?.name || 'Official Pelham Pelicans Goal Horn'}
+                        </span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold uppercase tracking-wider">
-                        Active MP3
-                      </span>
-                    </button>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {activeHornId === 'official_pelham'
+                          ? 'Official Pelham (Default) • Authentic 90s Arena MP3 Track'
+                          : 'Custom Horn • Stored in Database across all arena devices'}
+                      </p>
+                    </div>
 
-                    {/* Preset 1: Revert / Re-sync Official Pelham MP3 */}
-                    <button
-                      type="button"
-                      onClick={handleRemoveCustomHorn}
-                      className="p-2 rounded-xl text-left border flex items-center justify-between transition-all bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700"
-                    >
-                      <div>
-                        <div className="text-xs font-bold">Reset to Official Pelham Track</div>
-                        <div className="text-[10px] text-slate-400">90-second authentic Pelham Scored arena track (no upload needed)</div>
-                      </div>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
-                    </button>
-
-                    {/* Preset 2: NHL Deep Foghorn */}
-                    <button
-                      type="button"
-                      onClick={() => updateSetting('selectedPreset', 'nhl_foghorn')}
-                      className={`p-2 rounded-xl text-left border flex items-center justify-between transition-all ${
-                        mixerSettings.selectedPreset === 'nhl_foghorn'
-                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
-                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-bold">NHL Deep Foghorn</div>
-                        <div className="text-[10px] text-slate-400">Low pneumatic compressor blast</div>
-                      </div>
-                      {mixerSettings.selectedPreset === 'nhl_foghorn' && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                      )}
-                    </button>
-
-                    {/* Preset 3: Arena Siren */}
-                    <button
-                      type="button"
-                      onClick={() => updateSetting('selectedPreset', 'arena_siren')}
-                      className={`p-2 rounded-xl text-left border flex items-center justify-between transition-all ${
-                        mixerSettings.selectedPreset === 'arena_siren'
-                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
-                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-bold">Arena Siren + Horn</div>
-                        <div className="text-[10px] text-slate-400">High wailing siren layer</div>
-                      </div>
-                      {mixerSettings.selectedPreset === 'arena_siren' && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                      )}
-                    </button>
+                    {activeHornId !== 'official_pelham' && (
+                      <button
+                        type="button"
+                        onClick={handleResetToOfficialPelham}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-amber-500/20 text-amber-300 border border-slate-700 hover:border-amber-500/40 text-[10px] font-bold uppercase tracking-wider shrink-0 transition-all flex items-center gap-1"
+                        title="Revert to official Pelham goal horn default"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Default Pelham</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* UPLOAD CUSTOM AUDIO FILE DROPZONE */}
-                <div className="bg-slate-900/90 border border-dashed border-slate-700 hover:border-amber-400/60 rounded-xl p-3 text-center transition-all">
+                {/* GOAL HORNS LIBRARY SELECTOR */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <FileAudio className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Select Goal Horn ({goalHorns.length})</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">Stored in Database</span>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
+                    {goalHorns.map((horn) => {
+                      const isActive = horn.id === activeHornId;
+                      const isPreviewing = previewingHornId === horn.id;
+                      const isOfficial = horn.id === 'official_pelham';
+
+                      return (
+                        <div
+                          key={horn.id}
+                          className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
+                            isActive
+                              ? 'bg-amber-500/15 border-amber-500/60 ring-1 ring-amber-500/30 text-white'
+                              : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {/* Play / Preview Button */}
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewHorn(horn.id)}
+                            className={`p-1.5 rounded-lg shrink-0 transition-colors ${
+                              isPreviewing
+                                ? 'bg-amber-500 text-slate-950 animate-pulse'
+                                : 'bg-slate-800 text-amber-400 hover:bg-slate-700'
+                            }`}
+                            title={isPreviewing ? 'Stop Preview' : 'Preview audio sample'}
+                          >
+                            {isPreviewing ? <Square className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                          </button>
+
+                          {/* Info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-white truncate max-w-[160px] sm:max-w-[190px]">
+                                {horn.name}
+                              </span>
+                              {isOfficial ? (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  Default
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                  Database
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {horn.filename}
+                              {horn.duration ? ` • ${horn.duration}s` : ''}
+                              {horn.fileSize ? ` • ${Math.round(horn.fileSize / 1024)} KB` : ''}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isActive ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                <span>Active</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectHorn(horn.id)}
+                                className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-amber-500 text-slate-200 hover:text-slate-950 transition-colors border border-slate-700 hover:border-amber-400"
+                              >
+                                Select
+                              </button>
+                            )}
+
+                            {!isOfficial && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteHorn(horn)}
+                                className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                title="Delete from database"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* UPLOAD MORE GOAL HORNS SECTION */}
+                <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Upload More Goal Horns</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">MP3, WAV, M4A &le; 20MB</span>
+                  </div>
+
+                  {/* Optional Horn Display Name */}
+                  <input
+                    type="text"
+                    value={customHornName}
+                    onChange={(e) => setCustomHornName(e.target.value)}
+                    placeholder="Goal Horn Name (e.g. Powerplay Horn)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans"
+                  />
+
+                  {/* File Upload Dropzone */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -413,40 +562,54 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                     className="hidden"
                     id="goal-horn-file-input"
                   />
-                  <div className="flex flex-col items-center gap-1.5">
-                    <FileAudio className="w-5 h-5 text-amber-400" />
-                    <div>
-                      <label
-                        htmlFor="goal-horn-file-input"
-                        className="text-xs font-bold text-amber-400 hover:text-amber-300 cursor-pointer underline underline-offset-2"
-                      >
-                        {isUploading ? 'Uploading & Syncing to Cloud...' : 'Upload Replacement MP3 (From Phone or Computer)'}
-                      </label>
-                      <p className="text-[10px] text-slate-400 mt-0.5">MP3, WAV, M4A up to 20MB • Stored in browser and synced to cloud</p>
-                    </div>
+                  <label
+                    htmlFor="goal-horn-file-input"
+                    className={`w-full py-2 px-3 border border-dashed rounded-xl flex items-center justify-center gap-2 text-xs font-athletic uppercase tracking-wider cursor-pointer transition-all ${
+                      isUploading
+                        ? 'bg-amber-500/10 border-amber-500/50 text-amber-300 animate-pulse'
+                        : 'bg-slate-950 hover:bg-amber-500/10 border-slate-700 hover:border-amber-400/60 text-amber-400 hover:text-amber-300'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{isUploading ? 'Uploading & Storing in Database...' : 'Choose Audio File & Save to Database'}</span>
+                  </label>
 
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                      {storedHorn?.audioBase64 && (
-                        <a
-                          href={storedHorn.audioBase64}
-                          download={storedHorn.filename || 'pelham_goal_horn.mp3'}
-                          className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors underline"
-                        >
-                          <Download className="w-3 h-3" />
-                          <span>Download / Save MP3</span>
-                        </a>
-                      )}
-                      {storedHorn?.hasCustomHorn && storedHorn.filename !== 'pelham_pelicans_goal_horn.mp3' && (
-                        <button
-                          type="button"
-                          onClick={handleRemoveCustomHorn}
-                          className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors ml-2"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Reset to Official Pelham Track</span>
-                        </button>
-                      )}
-                    </div>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Uploaded goal horns are saved permanently in Firestore database & accessible on all devices. Official Pelham horn is always retained as default.
+                  </p>
+                </div>
+
+                {/* SYNTHETIC HORN PRESETS (OPTIONAL BACKUPS) */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block">
+                    Synthesized Horn Backups
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => updateSetting('selectedPreset', 'nhl_foghorn')}
+                      className={`p-2 rounded-xl text-left border transition-all ${
+                        mixerSettings.selectedPreset === 'nhl_foghorn'
+                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold truncate">NHL Foghorn</div>
+                      <div className="text-[9px] text-slate-500">Low pneumatic</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => updateSetting('selectedPreset', 'arena_siren')}
+                      className={`p-2 rounded-xl text-left border transition-all ${
+                        mixerSettings.selectedPreset === 'arena_siren'
+                          ? 'bg-amber-500/15 border-amber-500/50 text-white'
+                          : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold truncate">Arena Siren</div>
+                      <div className="text-[9px] text-slate-500">High wailing</div>
+                    </button>
                   </div>
                 </div>
               </div>

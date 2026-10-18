@@ -5,6 +5,7 @@
       "description": "Cross-device persistent configuration for the arena goal horn audio file and mixer levels",
       "type": "object",
       "properties": {
+        "activeHornId": { "type": "string", "description": "ID of currently selected goal horn in the library" },
         "hasCustomHorn": { "type": "boolean", "description": "True if a custom audio file is stored" },
         "audioBase64": { "type": "string", "description": "Base64 encoded data URI of the custom goal horn MP3/WAV audio" },
         "mimeType": { "type": "string", "description": "Audio MIME type such as audio/mpeg or audio/wav" },
@@ -33,6 +34,25 @@
       },
       "required": ["updatedAt"]
     },
+    "GoalHornItem": {
+      "title": "GoalHornItem",
+      "description": "A stored goal horn in the database library with metadata, audio payload and default status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the goal horn" },
+        "name": { "type": "string", "description": "Display name of the goal horn" },
+        "filename": { "type": "string", "description": "Original filename" },
+        "mimeType": { "type": "string", "description": "Audio MIME type e.g. audio/mpeg" },
+        "fileSize": { "type": "number", "description": "Size in bytes" },
+        "duration": { "type": "number", "description": "Duration in seconds" },
+        "isDefault": { "type": "boolean", "description": "True if this is the default official Pelham horn" },
+        "isChunked": { "type": "boolean", "description": "True if stored across chunks" },
+        "totalChunks": { "type": "number", "description": "Total chunk count if chunked" },
+        "audioBase64": { "type": "string", "description": "Base64 data or path if small" },
+        "createdAt": { "type": "number", "description": "Creation timestamp in ms" }
+      },
+      "required": ["id", "name", "filename", "createdAt"]
+    },
     "GoalHornChunk": {
       "title": "GoalHornChunk",
       "description": "Subcollection audio chunk enabling cross-device sync of MP3 files of any size without 1MB document limit",
@@ -54,6 +74,14 @@
     }
   },
   "firestore": {
+    "/goal_horns/{hornId}": {
+      "schema": "GoalHornItem",
+      "description": "Collection of stored goal horns available in the Arena Audio Mixer"
+    },
+    "/goal_horns/{hornId}/chunks/{chunkId}": {
+      "schema": "GoalHornChunk",
+      "description": "Audio chunks for large uploaded goal horns"
+    },
     "/settings/{settingId}": {
       "schema": "GoalHornConfig",
       "description": "App-wide synced audio settings and custom goal horn storage accessible across devices"

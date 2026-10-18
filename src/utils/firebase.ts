@@ -1,8 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, collection, getDocs, onSnapshot, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { StoredGoalHornData, MixerSettings } from '../types';
+import { StoredGoalHornData, MixerSettings, GoalHornItem } from '../types';
 
 let dbInstance: ReturnType<typeof getFirestore> | null = null;
 
@@ -331,3 +331,192 @@ export function subscribeGoalHornFromCloud(
     return () => {};
   }
 }
+
+const GOAL_HORNS_COLLECTION = 'goal_horns';
+
+/**
+ * Save an uploaded goal horn to Firestore collection so all devices can select and play it
+ */
+export async function saveGoalHornItemToCloud(horn: GoalHornItem): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  const docPath = `${GOAL_HORNS_COLLECTION}/${horn.id}`;
+  try {
+    const docRef = doc(db, GOAL_HORNS_COLLECTION, horn.id);
+    const payload: any = {
+      id: horn.id,
+      name: horn.name,
+      filename: horn.filename,
+      mimeType: horn.mimeType || 'audio/mpeg',
+      fileSize: horn.fileSize || 0,
+      duration: horn.duration || 0,
+      isDefault: Boolean(horn.isDefault),
+      isBuiltin: Boolean(horn.isBuiltin),
+      createdAt: horn.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const rawBase64 = horn.audioBase64 || '';
+    if (rawBase64.length > 500000) {
+      const totalChunks = Math.ceil(rawBase64.length / CHUNK_SIZE);
+      payload.isChunked = true;
+      payload.totalChunks = totalChunks;
+      payload.audioBase64 = null;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunkStr = rawBase64.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        const chunkRef = doc(db, GOAL_HORNS_COLLECTION, horn.id, 'chunks', `chunk_${i}`);
+        await setDoc(chunkRef, {
+          index: i,
+          chunk: chunkStr,
+          updatedAt: Date.now(),
+        });
+      }
+    } else {
+      payload.isChunked = false;
+      payload.totalChunks = 0;
+      payload.audioBase64 = rawBase64;
+    }
+
+    await setDoc(docRef, payload, { merge: true });
+    return true;
+  } catch (err) {
+    console.warn(`Failed to save goal horn ${horn.id} to cloud:`, err);
+    try {
+      handleFirestoreError(err, OperationType.WRITE, docPath);
+    } catch (_) {}
+    return false;
+  }
+}
+
+/**
+ * Delete a goal horn from Firestore collection
+ */
+export async function deleteGoalHornItemFromCloud(hornId: string): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  const docPath = `${GOAL_HORNS_COLLECTION}/${hornId}`;
+  try {
+    const docRef = doc(db, GOAL_HORNS_COLLECTION, hornId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (err) {
+    console.warn(`Failed to delete goal horn ${hornId} from cloud:`, err);
+    try {
+      handleFirestoreError(err, OperationType.DELETE, docPath);
+    } catch (_) {}
+    return false;
+  }
+}
+
+/**
+ * Load all stored goal horns from Firestore cloud
+ */
+export async function loadAllGoalHornsFromCloud(): Promise<GoalHornItem[]> {
+  const db = getFirebaseDb();
+  if (!db) return [];
+  const colPath = GOAL_HORNS_COLLECTION;
+  try {
+    const colRef = collection(db, GOAL_HORNS_COLLECTION);
+    const snapshot = await getDocs(colRef);
+    const list: GoalHornItem[] = [];
+
+    for (const d of snapshot.docs) {
+      const data = d.data();
+      let audio = data.audioBase64 || null;
+      if (data.isChunked && data.totalChunks > 0) {
+        try {
+          const chunkPromises: Promise<string>[] = [];
+          for (let i = 0; i < data.totalChunks; i++) {
+            const chunkRef = doc(db, GOAL_HORNS_COLLECTION, d.id, 'chunks', `chunk_${i}`);
+            chunkPromises.push(
+              getDoc(chunkRef).then((snap) => (snap.exists() ? snap.data().chunk || '' : ''))
+            );
+          }
+          const chunks = await Promise.all(chunkPromises);
+          audio = chunks.join('');
+        } catch (_) {}
+      }
+
+      list.push({
+        id: data.id || d.id,
+        name: data.name || data.filename || 'Custom Goal Horn',
+        filename: data.filename || 'goal_horn.mp3',
+        mimeType: data.mimeType || 'audio/mpeg',
+        fileSize: data.fileSize || 0,
+        duration: data.duration,
+        isDefault: Boolean(data.isDefault),
+        isBuiltin: Boolean(data.isBuiltin),
+        audioBase64: audio,
+        createdAt: data.createdAt || Date.now(),
+      });
+    }
+
+    return list;
+  } catch (err) {
+    console.warn('Failed to load goal horns collection from cloud:', err);
+    try {
+      handleFirestoreError(err, OperationType.GET, colPath);
+    } catch (_) {}
+    return [];
+  }
+}
+
+/**
+ * Real-time listener for the goal horns library across all devices
+ */
+export function subscribeGoalHornsCollectionFromCloud(
+  callback: (horns: GoalHornItem[]) => void
+): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+  const colPath = GOAL_HORNS_COLLECTION;
+  try {
+    const colRef = collection(db, GOAL_HORNS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      async (snapshot) => {
+        const list: GoalHornItem[] = [];
+        for (const d of snapshot.docs) {
+          const data = d.data();
+          let audio = data.audioBase64 || null;
+          if (data.isChunked && data.totalChunks > 0) {
+            try {
+              const chunkPromises: Promise<string>[] = [];
+              for (let i = 0; i < data.totalChunks; i++) {
+                const chunkRef = doc(db, GOAL_HORNS_COLLECTION, d.id, 'chunks', `chunk_${i}`);
+                chunkPromises.push(
+                  getDoc(chunkRef).then((snap) => (snap.exists() ? snap.data().chunk || '' : ''))
+                );
+              }
+              const chunks = await Promise.all(chunkPromises);
+              audio = chunks.join('');
+            } catch (_) {}
+          }
+          list.push({
+            id: data.id || d.id,
+            name: data.name || data.filename || 'Custom Goal Horn',
+            filename: data.filename || 'goal_horn.mp3',
+            mimeType: data.mimeType || 'audio/mpeg',
+            fileSize: data.fileSize || 0,
+            duration: data.duration,
+            isDefault: Boolean(data.isDefault),
+            isBuiltin: Boolean(data.isBuiltin),
+            audioBase64: audio,
+            createdAt: data.createdAt || Date.now(),
+          });
+        }
+        callback(list);
+      },
+      (error) => {
+        console.warn('Subscription error on goal_horns:', error);
+        try {
+          handleFirestoreError(error, OperationType.GET, colPath);
+        } catch (_) {}
+      }
+    );
+  } catch (_) {
+    return () => {};
+  }
+}
+

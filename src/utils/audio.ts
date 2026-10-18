@@ -8,6 +8,7 @@ import {
   GoalHornPreset,
   StoredGoalHornData,
   MixerSettings,
+  GoalHornItem,
 } from '../types';
 import {
   saveGoalHornToCloud,
@@ -15,6 +16,10 @@ import {
   loadGoalHornFromCloud,
   subscribeGoalHornFromCloud,
   validateFirebaseConnection,
+  saveGoalHornItemToCloud,
+  deleteGoalHornItemFromCloud,
+  loadAllGoalHornsFromCloud,
+  subscribeGoalHornsCollectionFromCloud,
 } from './firebase';
 import {
   saveAudioToIdb,
@@ -30,12 +35,26 @@ export interface AnnounceResult {
   error?: string;
 }
 
+export const OFFICIAL_PELHAM_HORN: GoalHornItem = {
+  id: 'official_pelham',
+  name: 'Official Pelham Pelicans Goal Horn',
+  filename: 'pelham_pelicans_goal_horn.mp3',
+  mimeType: 'audio/mpeg',
+  fileSize: 2161720,
+  duration: 90,
+  audioBase64: '/audio/pelham_pelicans_goal_horn.mp3',
+  isDefault: true,
+  isBuiltin: true,
+  createdAt: 1730000000000,
+};
+
 export const DEFAULT_MIXER_SETTINGS: MixerSettings = {
   hornEnabled: true,
   hornVolume: 0.95,
   voiceVolume: 1.0,
   masterVolume: 1.0,
   selectedPreset: 'custom',
+  activeGoalHornId: 'official_pelham',
   hornDurationLimit: 0, // 0 = Full File: MP3 plays all the way through without cutoff
   voiceTriggerMode: 'delay',
   voiceDelaySeconds: 2.0,
@@ -154,10 +173,13 @@ class SoundEngine {
   // Arena Mixer and Goal Horn state
   private mixerSettings: MixerSettings = { ...DEFAULT_MIXER_SETTINGS };
   private storedGoalHorn: StoredGoalHornData = { ...DEFAULT_PELHAM_HORN };
+  private activeGoalHornId: string = 'official_pelham';
+  private goalHornsLibrary: GoalHornItem[] = [{ ...OFFICIAL_PELHAM_HORN }];
   private hornAudioElement: HTMLAudioElement | null = null;
   private hornGain: GainNode | null = null;
   private activeHornStopFns: Array<() => void> = [];
   private hornChangeListeners: Array<() => void> = [];
+  private hornLibraryListeners: Array<(horns: GoalHornItem[], activeId: string) => void> = [];
   private mp3PlaybackListeners: Array<(isPlaying: boolean) => void> = [];
 
   constructor() {
@@ -175,7 +197,6 @@ class SoundEngine {
         const savedCartesia = localStorage.getItem('pelham_cartesia_voice_settings');
         if (savedCartesia) {
           const parsed = JSON.parse(savedCartesia);
-          // If previously saved with the legacy default barbershop ID, auto-upgrade to the custom voice ID
           if (parsed && (parsed.voiceId === '694f9389-aac1-45b6-b726-9d9369183238' || !parsed.voiceId)) {
             parsed.voiceId = 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
             parsed.voiceIdAccount1 = parsed.voiceIdAccount1 || 'a27f2ab7-6793-4893-9f40-e50d5e5605ba';
@@ -186,25 +207,34 @@ class SoundEngine {
         const savedSpeechify = localStorage.getItem('pelham_speechify_voice_settings');
         if (savedSpeechify) {
           const parsed = JSON.parse(savedSpeechify);
-          // If previously saved with the legacy default geffen_32 ID, auto-upgrade to the custom voice ID
           if (parsed && (parsed.voiceId === 'geffen_32' || !parsed.voiceId)) {
             parsed.voiceId = 'cf2bbc5b-59fb-427e-95a5-bcd76641852f';
           }
           this.speechifyVoiceSettings = { ...DEFAULT_SPEECHIFY_VOICE_SETTINGS, ...parsed };
         }
 
+        const savedActiveId = localStorage.getItem('pelham_active_horn_id');
+        if (savedActiveId) {
+          this.activeGoalHornId = savedActiveId;
+        }
+
         const savedMixer = localStorage.getItem('pelham_mixer_settings_v1');
         if (savedMixer) {
           const parsed = JSON.parse(savedMixer);
-          // If saved with old 5s/6s cutoff, ensure 0 (full track) is respected
           if (parsed.hornDurationLimit === 5 || parsed.hornDurationLimit === 6) {
             parsed.hornDurationLimit = 0;
           }
-          // Do not play them simultaneously per user preference
           parsed.autoTriggerOnGoal = false;
-          // User requested: uncheck duck horn volume when voice starts
           parsed.duckHornOnVoice = false;
-          this.mixerSettings = { ...DEFAULT_MIXER_SETTINGS, ...parsed, duckHornOnVoice: false };
+          if (parsed.activeGoalHornId) {
+            this.activeGoalHornId = parsed.activeGoalHornId;
+          }
+          this.mixerSettings = {
+            ...DEFAULT_MIXER_SETTINGS,
+            ...parsed,
+            activeGoalHornId: this.activeGoalHornId,
+            duckHornOnVoice: false,
+          };
           try {
             localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
           } catch (_) {}
@@ -220,13 +250,35 @@ class SoundEngine {
           } catch (_) {}
         }
 
-        // 1. Prioritize IndexedDB storage for large MP3s (bypasses 5MB localStorage limits)
+        // Restore cached goal horns metadata
+        const savedHornsMeta = localStorage.getItem('pelham_goal_horns_meta_v1');
+        if (savedHornsMeta) {
+          try {
+            const list: GoalHornItem[] = JSON.parse(savedHornsMeta);
+            if (Array.isArray(list) && list.length > 0) {
+              const map = new Map<string, GoalHornItem>();
+              map.set('official_pelham', { ...OFFICIAL_PELHAM_HORN });
+              list.forEach((item) => {
+                if (item.id !== 'official_pelham') {
+                  map.set(item.id, {
+                    ...item,
+                    audioBase64: this.storedGoalHorn?.hasCustomHorn && this.activeGoalHornId === item.id ? this.storedGoalHorn.audioBase64 : null,
+                  });
+                }
+              });
+              this.goalHornsLibrary = Array.from(map.values());
+            }
+          } catch (_) {}
+        }
+
+        // 1. Prioritize IndexedDB storage for large MP3s
         getAudioFromIdb<StoredGoalHornData>('goal_horn')
           .then((idbHorn) => {
             if (idbHorn && idbHorn.hasCustomHorn && idbHorn.audioBase64) {
               this.storedGoalHorn = idbHorn;
               this.mixerSettings.selectedPreset = 'custom';
               this.notifyHornChange();
+              this.notifyHornLibraryChange();
             }
           })
           .catch(() => {});
@@ -234,7 +286,47 @@ class SoundEngine {
         // 2. Validate Firebase cloud connection
         validateFirebaseConnection().catch(() => {});
 
-        // 3. Real-time Cloud Sync across all devices (Phone <-> Laptop <-> Arena PC)
+        // 3. Real-time Cloud Sync for Goal Horns Library across all devices (collection listener)
+        subscribeGoalHornsCollectionFromCloud((cloudHorns) => {
+          if (Array.isArray(cloudHorns) && cloudHorns.length > 0) {
+            const map = new Map<string, GoalHornItem>();
+            map.set('official_pelham', { ...OFFICIAL_PELHAM_HORN });
+            cloudHorns.forEach((h) => {
+              if (h.id !== 'official_pelham') {
+                map.set(h.id, h);
+              }
+            });
+            this.goalHornsLibrary = Array.from(map.values());
+            if (this.mixerSettings.activeGoalHornId && map.has(this.mixerSettings.activeGoalHornId)) {
+              this.activeGoalHornId = this.mixerSettings.activeGoalHornId;
+            }
+            this.notifyHornLibraryChange();
+            this.notifyHornChange();
+          }
+        });
+
+        // 4. Initial cloud pull for goal horns collection
+        loadAllGoalHornsFromCloud()
+          .then((cloudHorns) => {
+            if (Array.isArray(cloudHorns) && cloudHorns.length > 0) {
+              const map = new Map<string, GoalHornItem>();
+              map.set('official_pelham', { ...OFFICIAL_PELHAM_HORN });
+              cloudHorns.forEach((h) => {
+                if (h.id !== 'official_pelham') {
+                  map.set(h.id, h);
+                }
+              });
+              this.goalHornsLibrary = Array.from(map.values());
+              if (this.mixerSettings.activeGoalHornId && map.has(this.mixerSettings.activeGoalHornId)) {
+                this.activeGoalHornId = this.mixerSettings.activeGoalHornId;
+              }
+              this.notifyHornLibraryChange();
+              this.notifyHornChange();
+            }
+          })
+          .catch(() => {});
+
+        // 5. Real-time Cloud Sync for mixer settings across devices
         subscribeGoalHornFromCloud((cloudHorn, cloudMixer) => {
           if (cloudHorn && cloudHorn.hasCustomHorn && cloudHorn.audioBase64) {
             this.storedGoalHorn = cloudHorn;
@@ -246,31 +338,28 @@ class SoundEngine {
             this.notifyHornChange();
           }
           if (cloudMixer) {
-            const hasCustom = Boolean(
-              (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64) ||
-              (cloudHorn?.hasCustomHorn && cloudHorn?.audioBase64)
-            );
-            const preset = hasCustom
-              ? 'custom'
-              : (cloudMixer.selectedPreset || this.mixerSettings.selectedPreset);
-            // Default duckHornOnVoice to unselected (false)
+            const activeId = cloudMixer.activeGoalHornId || this.activeGoalHornId || 'official_pelham';
+            this.activeGoalHornId = activeId;
             this.mixerSettings = {
               ...this.mixerSettings,
               ...cloudMixer,
+              activeGoalHornId: activeId,
               duckHornOnVoice: false,
-              selectedPreset: preset,
+              selectedPreset: 'custom',
             };
             try {
               localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+              localStorage.setItem('pelham_active_horn_id', activeId);
             } catch (_) {}
             if (cloudMixer.duckHornOnVoice === true) {
               saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
             }
             this.notifyHornChange();
+            this.notifyHornLibraryChange();
           }
         });
 
-        // 4. Initial cloud pull to populate MP3 uploaded from phone on other devices
+        // 6. Initial cloud pull for settings
         loadGoalHornFromCloud()
           .then((cloudData) => {
             if (cloudData?.horn && cloudData.horn.hasCustomHorn && cloudData.horn.audioBase64) {
@@ -280,18 +369,20 @@ class SoundEngine {
               this.notifyHornChange();
             }
             if (cloudData?.mixerSettings) {
-              const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
-              const preset = hasCustom ? 'custom' : (cloudData.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset);
+              const activeId = cloudData.mixerSettings.activeGoalHornId || this.activeGoalHornId || 'official_pelham';
+              this.activeGoalHornId = activeId;
               this.mixerSettings = {
                 ...this.mixerSettings,
                 ...cloudData.mixerSettings,
+                activeGoalHornId: activeId,
                 duckHornOnVoice: false,
-                selectedPreset: preset,
+                selectedPreset: 'custom',
               };
               if (cloudData.mixerSettings.duckHornOnVoice === true) {
                 saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
               }
               this.notifyHornChange();
+              this.notifyHornLibraryChange();
             }
           })
           .catch(() => {});
@@ -480,6 +571,41 @@ class SoundEngine {
     return this.storedGoalHorn;
   }
 
+  public getGoalHornsLibrary(): GoalHornItem[] {
+    // Ensure official Pelham is always at the top
+    if (!this.goalHornsLibrary.some((h) => h.id === 'official_pelham')) {
+      this.goalHornsLibrary.unshift({ ...OFFICIAL_PELHAM_HORN });
+    }
+    return [...this.goalHornsLibrary];
+  }
+
+  public getActiveGoalHornId(): string {
+    return this.activeGoalHornId || 'official_pelham';
+  }
+
+  public getActiveGoalHorn(): GoalHornItem {
+    const list = this.getGoalHornsLibrary();
+    return list.find((h) => h.id === this.activeGoalHornId) || list[0] || OFFICIAL_PELHAM_HORN;
+  }
+
+  public subscribeToHornLibrary(callback: (horns: GoalHornItem[], activeId: string) => void): () => void {
+    this.hornLibraryListeners.push(callback);
+    callback(this.getGoalHornsLibrary(), this.getActiveGoalHornId());
+    return () => {
+      this.hornLibraryListeners = this.hornLibraryListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  private notifyHornLibraryChange(): void {
+    const list = this.getGoalHornsLibrary();
+    const active = this.getActiveGoalHornId();
+    this.hornLibraryListeners.forEach((fn) => {
+      try {
+        fn(list, active);
+      } catch (_) {}
+    });
+  }
+
   public subscribeToHornChange(listener: () => void): () => void {
     this.hornChangeListeners.push(listener);
     return () => {
@@ -520,7 +646,34 @@ class SoundEngine {
       const data = await res.json();
 
       if (data && typeof data.updatedAt === 'number') {
-        // Adopt custom horn from server if server sent actual valid audioBase64 or audio path!
+        // Sync full horns library if provided by server
+        if (Array.isArray(data.horns) && data.horns.length > 0) {
+          const map = new Map<string, GoalHornItem>();
+          map.set('official_pelham', { ...OFFICIAL_PELHAM_HORN });
+          data.horns.forEach((h: any) => {
+            if (h.id !== 'official_pelham') {
+              map.set(h.id, {
+                id: h.id,
+                name: h.name || h.filename || 'Custom Goal Horn',
+                filename: h.filename || 'goal_horn.mp3',
+                mimeType: h.mimeType || 'audio/mpeg',
+                fileSize: h.fileSize || 0,
+                duration: h.duration,
+                audioBase64: h.audioBase64 || null,
+                isDefault: Boolean(h.isDefault),
+                isBuiltin: Boolean(h.isBuiltin),
+                createdAt: h.createdAt || Date.now(),
+              });
+            }
+          });
+          this.goalHornsLibrary = Array.from(map.values());
+        }
+
+        if (data.activeHornId) {
+          this.activeGoalHornId = data.activeHornId;
+        }
+
+        // Adopt active custom horn audio from server if available
         if (data.hasCustomHorn && data.audioBase64 && typeof data.audioBase64 === 'string' && data.audioBase64.length >= 10) {
           const isNewer = !this.storedGoalHorn || data.updatedAt > (this.storedGoalHorn.updatedAt || 0);
           if (isNewer || !this.storedGoalHorn?.hasCustomHorn) {
@@ -528,7 +681,7 @@ class SoundEngine {
               hasCustomHorn: true,
               audioBase64: data.audioBase64,
               mimeType: data.mimeType || 'audio/mpeg',
-              filename: data.filename || 'pelham_pelicans_goal_horn.mp3',
+              filename: data.filename || 'custom_goal_horn.mp3',
               fileSize: data.fileSize || 2161720,
               duration: data.duration || 90,
               updatedAt: data.updatedAt,
@@ -543,22 +696,21 @@ class SoundEngine {
         }
 
         if (data.mixerSettings) {
-          const hasCustom = Boolean(this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64);
-          const preset = hasCustom
-            ? 'custom'
-            : data.mixerSettings.selectedPreset || this.mixerSettings.selectedPreset;
-
           this.mixerSettings = {
             ...this.mixerSettings,
             ...data.mixerSettings,
-            duckHornOnVoice: data.mixerSettings.duckHornOnVoice === true ? false : false,
-            selectedPreset: preset,
+            activeGoalHornId: this.activeGoalHornId,
+            duckHornOnVoice: false,
+            selectedPreset: 'custom',
           };
           try {
             localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+            localStorage.setItem('pelham_active_horn_id', this.activeGoalHornId);
           } catch (_) {}
           this.notifyHornChange();
         }
+
+        this.notifyHornLibraryChange();
       }
       return this.storedGoalHorn;
     } catch (e) {
@@ -567,10 +719,60 @@ class SoundEngine {
     }
   }
 
-  // Upload custom goal horn file (MP3, WAV, AAC, M4A, OGG) to app and sync across all devices via Firestore cloud
+  // Select an active goal horn from the library (supports official Pelham default or any uploaded horn)
+  public async selectGoalHorn(hornId: string): Promise<boolean> {
+    this.stopHorn();
+    const horn = this.goalHornsLibrary.find((h) => h.id === hornId) || OFFICIAL_PELHAM_HORN;
+    this.activeGoalHornId = horn.id;
+    this.mixerSettings.activeGoalHornId = horn.id;
+    this.mixerSettings.selectedPreset = 'custom';
+    this.mixerSettings.hornEnabled = true;
+
+    // Update storedGoalHorn pointer
+    if (horn.id === 'official_pelham') {
+      this.storedGoalHorn = { ...DEFAULT_PELHAM_HORN, updatedAt: Date.now() };
+    } else {
+      this.storedGoalHorn = {
+        hasCustomHorn: true,
+        audioBase64: horn.audioBase64 || null,
+        mimeType: horn.mimeType || 'audio/mpeg',
+        filename: horn.filename,
+        fileSize: horn.fileSize,
+        duration: horn.duration,
+        updatedAt: Date.now(),
+      };
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('pelham_active_horn_id', horn.id);
+        localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+        localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
+      } catch (_) {}
+      saveAudioToIdb('active_horn_id', horn.id).catch(() => {});
+      saveAudioToIdb('goal_horn', this.storedGoalHorn).catch(() => {});
+    }
+
+    saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
+
+    try {
+      await fetch('/api/goal-horn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'select', hornId: horn.id, mixerSettings: this.mixerSettings }),
+      });
+    } catch (_) {}
+
+    this.notifyHornChange();
+    this.notifyHornLibraryChange();
+    return true;
+  }
+
+  // Upload custom goal horn file (MP3, WAV, AAC, M4A, OGG) and store in database
   public async uploadGoalHorn(
-    file: File
-  ): Promise<{ success: boolean; data?: StoredGoalHornData; error?: string }> {
+    file: File,
+    customName?: string
+  ): Promise<{ success: boolean; data?: GoalHornItem; error?: string }> {
     try {
       if (!file) throw new Error('No audio file selected.');
       if (file.size > 22 * 1024 * 1024) {
@@ -602,32 +804,64 @@ class SoundEngine {
         });
       } catch (_) {}
 
-      const record: StoredGoalHornData = {
-        hasCustomHorn: true,
-        audioBase64: base64Url,
-        mimeType: file.type || 'audio/mpeg',
+      const cleanName = (customName && customName.trim())
+        ? customName.trim()
+        : file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+
+      const newHorn: GoalHornItem = {
+        id: `horn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: cleanName,
         filename: file.name || 'custom_goal_horn.mp3',
+        mimeType: file.type || 'audio/mpeg',
         fileSize: file.size,
         duration: duration > 0 ? Math.round(duration * 10) / 10 : undefined,
+        audioBase64: base64Url,
+        isDefault: false,
+        isBuiltin: false,
+        createdAt: Date.now(),
+      };
+
+      // Ensure official Pelham is first in library
+      if (!this.goalHornsLibrary.some((h) => h.id === 'official_pelham')) {
+        this.goalHornsLibrary.unshift({ ...OFFICIAL_PELHAM_HORN });
+      }
+
+      // Append new horn to library
+      this.goalHornsLibrary.push(newHorn);
+      this.activeGoalHornId = newHorn.id;
+      this.mixerSettings.activeGoalHornId = newHorn.id;
+      this.mixerSettings.selectedPreset = 'custom';
+      this.mixerSettings.hornEnabled = true;
+
+      this.storedGoalHorn = {
+        hasCustomHorn: true,
+        audioBase64: base64Url,
+        mimeType: newHorn.mimeType,
+        filename: newHorn.filename,
+        fileSize: newHorn.fileSize,
+        duration: newHorn.duration,
         updatedAt: Date.now(),
       };
 
-      // 1. Store in memory and IndexedDB (unlimited quota) for instant offline access on this device
-      this.storedGoalHorn = record;
-      this.mixerSettings.selectedPreset = 'custom';
-      this.mixerSettings.hornEnabled = true;
-      saveAudioToIdb('goal_horn', record).catch(() => {});
+      // 1. IndexedDB cache for instant offline playback
+      saveAudioToIdb(`horn_${newHorn.id}`, newHorn).catch(() => {});
+      saveAudioToIdb('goal_horn', this.storedGoalHorn).catch(() => {});
+      saveAudioToIdb('active_horn_id', newHorn.id).catch(() => {});
+
       try {
-        localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(record));
+        localStorage.setItem('pelham_active_horn_id', newHorn.id);
+        localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
         localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+        const metaList = this.goalHornsLibrary.map(({ audioBase64, ...rest }) => rest);
+        localStorage.setItem('pelham_goal_horns_meta_v1', JSON.stringify(metaList));
       } catch (_) {}
 
-      // 2. Persist to Firebase Firestore Cloud (auto-chunked for large MP3s)
-      // This permanently syncs the MP3 across phone, laptop, and arena PC on Vercel!
+      // 2. Persist to Firebase Firestore Database collection (chunked if large)
       try {
-        await saveGoalHornToCloud(record, this.mixerSettings);
+        await saveGoalHornItemToCloud(newHorn);
+        await saveMixerSettingsToCloud(this.mixerSettings);
       } catch (cloudErr) {
-        console.warn('Could not save goal horn to Firebase cloud immediately:', cloudErr);
+        console.warn('Could not save goal horn item to Firebase cloud immediately:', cloudErr);
       }
 
       // 3. Fallback persist to server API
@@ -636,11 +870,14 @@ class SoundEngine {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            action: 'upload',
+            id: newHorn.id,
+            name: newHorn.name,
             audioBase64: base64Url,
-            mimeType: file.type || 'audio/mpeg',
-            filename: file.name || 'custom_goal_horn.mp3',
-            fileSize: file.size,
-            duration: record.duration,
+            mimeType: newHorn.mimeType,
+            filename: newHorn.filename,
+            fileSize: newHorn.fileSize,
+            duration: newHorn.duration,
             mixerSettings: this.mixerSettings,
           }),
         });
@@ -649,33 +886,131 @@ class SoundEngine {
       }
 
       this.notifyHornChange();
-      return { success: true, data: record };
+      this.notifyHornLibraryChange();
+      return { success: true, data: newHorn };
     } catch (err: any) {
       console.error('Goal horn upload failed:', err);
       return { success: false, error: err?.message || 'Failed to upload goal horn.' };
     }
   }
 
-  // Remove custom uploaded horn and revert to authentic built-in Pelham Pelicans MP3 track
-  public async removeCustomGoalHorn(): Promise<boolean> {
+  // Delete a custom goal horn from database (Official Pelham cannot be deleted)
+  public async deleteGoalHorn(hornId: string): Promise<boolean> {
+    if (hornId === 'official_pelham') {
+      return false;
+    }
+
     this.stopHorn();
-    this.storedGoalHorn = { ...DEFAULT_PELHAM_HORN, updatedAt: Date.now() };
-    this.mixerSettings.selectedPreset = 'custom';
-    deleteAudioFromIdb('goal_horn').catch(() => {});
+    this.goalHornsLibrary = this.goalHornsLibrary.filter((h) => h.id !== hornId);
+
+    // If deleting the active horn, revert to official Pelham as default
+    if (this.activeGoalHornId === hornId) {
+      this.activeGoalHornId = 'official_pelham';
+      this.mixerSettings.activeGoalHornId = 'official_pelham';
+      this.mixerSettings.selectedPreset = 'custom';
+      this.storedGoalHorn = { ...DEFAULT_PELHAM_HORN, updatedAt: Date.now() };
+    }
+
     try {
-      localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
+      localStorage.setItem('pelham_active_horn_id', this.activeGoalHornId);
       localStorage.setItem('pelham_mixer_settings_v1', JSON.stringify(this.mixerSettings));
+      localStorage.setItem('pelham_stored_goal_horn_v1', JSON.stringify(this.storedGoalHorn));
+      const metaList = this.goalHornsLibrary.map(({ audioBase64, ...rest }) => rest);
+      localStorage.setItem('pelham_goal_horns_meta_v1', JSON.stringify(metaList));
     } catch (_) {}
 
-    // Reset in cloud and server
-    saveGoalHornToCloud(this.storedGoalHorn, this.mixerSettings).catch(() => {});
+    deleteAudioFromIdb(`horn_${hornId}`).catch(() => {});
+    deleteGoalHornItemFromCloud(hornId).catch(() => {});
+    saveMixerSettingsToCloud(this.mixerSettings).catch(() => {});
 
     try {
-      await fetch('/api/goal-horn', { method: 'DELETE' });
+      await fetch('/api/goal-horn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', hornId }),
+      });
     } catch (_) {}
 
     this.notifyHornChange();
+    this.notifyHornLibraryChange();
     return true;
+  }
+
+  // Reset/revert to official Pelham goal horn as default
+  public async resetToOfficialPelhamGoalHorn(): Promise<boolean> {
+    return this.selectGoalHorn('official_pelham');
+  }
+
+  // Legacy method compatibility
+  public async removeCustomGoalHorn(): Promise<boolean> {
+    return this.resetToOfficialPelhamGoalHorn();
+  }
+
+  // Preview any goal horn for a few seconds without changing the active horn
+  public previewGoalHorn(
+    hornId: string,
+    durationSec: number = 6.0,
+    onEnded?: () => void
+  ): () => void {
+    this.unlock();
+    this.stopHorn();
+
+    const horn = this.goalHornsLibrary.find((h) => h.id === hornId) || OFFICIAL_PELHAM_HORN;
+    const audioSrc = horn.id === 'official_pelham'
+      ? '/audio/pelham_pelicans_goal_horn.mp3'
+      : (horn.audioBase64 || '/audio/pelham_pelicans_goal_horn.mp3');
+
+    const effectiveVol = Math.max(0, Math.min(1, (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0)));
+
+    try {
+      const audio = new Audio();
+      this.hornAudioElement = audio;
+      audio.src = audioSrc;
+      audio.volume = effectiveVol;
+
+      let finished = false;
+      let timer: any = null;
+
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch (_) {}
+        if (this.hornAudioElement === audio) {
+          this.hornAudioElement = null;
+        }
+        this.notifyMp3Playback(false);
+        onEnded?.();
+      };
+
+      audio.onended = cleanup;
+      audio.onerror = () => {
+        cleanup();
+      };
+
+      if (durationSec > 0) {
+        timer = setTimeout(cleanup, durationSec * 1000);
+      }
+
+      const playPromise = audio.play();
+      this.notifyMp3Playback(true);
+
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          cleanup();
+        });
+      }
+
+      const stopFn = () => cleanup();
+      this.activeHornStopFns.push(stopFn);
+      return stopFn;
+    } catch (_) {
+      onEnded?.();
+      return () => {};
+    }
   }
 
   // Explicitly unlock both Web Audio and HTML5 Audio during a user gesture
@@ -1018,11 +1353,13 @@ class SoundEngine {
     const effectiveVol = Math.max(0, Math.min(1, (this.mixerSettings.hornVolume ?? 0.95) * (this.mixerSettings.masterVolume ?? 1.0)));
 
     // CASE 1: Authentic MP3 Goal Horn track (either user-uploaded MP3 or built-in Pelham Pelicans MP3)
-    const audioSrc = (this.storedGoalHorn?.hasCustomHorn && this.storedGoalHorn?.audioBase64)
-      ? this.storedGoalHorn.audioBase64
-      : '/audio/pelham_pelicans_goal_horn.mp3';
+    const activeHorn = this.getActiveGoalHorn();
+    const isPelham = activeHorn.id === 'official_pelham';
+    const audioSrc = isPelham
+      ? '/audio/pelham_pelicans_goal_horn.mp3'
+      : (activeHorn.audioBase64 || this.storedGoalHorn?.audioBase64 || '/audio/pelham_pelicans_goal_horn.mp3');
 
-    if ((preset === 'custom' || preset === 'pelham_blast') && audioSrc) {
+    if ((preset === 'custom' || preset === 'pelham_blast' || !isPelham) && audioSrc) {
       try {
         const audio = new Audio();
         this.hornAudioElement = audio;

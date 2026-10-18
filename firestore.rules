@@ -16,6 +16,15 @@ service cloud.firestore {
       }
     }
 
+    // Goal horns library stored in database
+    match /goal_horns/{hornId} {
+      allow read, write: if true;
+
+      match /chunks/{chunkId} {
+        allow read, write: if true;
+      }
+    }
+
     match /{document=**} {
       allow read, write: if true;
     }

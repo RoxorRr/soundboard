@@ -107,6 +107,19 @@ export interface SpeechifyVoiceSettings {
 
 export type GoalHornPreset = 'custom' | 'pelham_blast' | 'nhl_foghorn' | 'arena_siren';
 
+export interface GoalHornItem {
+  id: string; // 'official_pelham' or 'horn_<timestamp>'
+  name: string; // User-defined or display name e.g. "Official Pelham Goal Horn"
+  filename: string;
+  mimeType: string;
+  fileSize?: number;
+  duration?: number;
+  audioBase64?: string | null;
+  isDefault?: boolean; // True for the official Pelham goal horn
+  isBuiltin?: boolean;
+  createdAt: number;
+}
+
 export interface StoredGoalHornData {
   hasCustomHorn: boolean;
   audioBase64?: string | null;
@@ -123,10 +136,12 @@ export interface MixerSettings {
   voiceVolume: number; // 0.0 to 1.0
   masterVolume: number; // 0.0 to 1.0
   selectedPreset: GoalHornPreset;
+  activeGoalHornId?: string; // ID of the currently selected goal horn (defaults to 'official_pelham')
   hornDurationLimit: number; // in seconds (e.g. 3, 5, 8, 10, or 0 for full file)
   voiceTriggerMode: 'after_horn' | 'delay'; // 'after_horn' or delay in seconds
   voiceDelaySeconds: number; // delay before voice kicks in (e.g. 2.0s)
   duckHornOnVoice: boolean; // lower horn volume when voice starts
   autoTriggerOnGoal: boolean; // automatically trigger sequence on goal score
 }
+
 
