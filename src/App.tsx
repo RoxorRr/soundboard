@@ -19,6 +19,7 @@ const HOME_STORAGE_KEY = 'pelham_pelicans_players_v2';
 const VISITOR_STORAGE_KEY = 'pelham_visitor_players_v2';
 const LEGACY_HOME_STORAGE_KEY = 'pelham_pelicans_players_v1';
 const LEGACY_VISITOR_STORAGE_KEY = 'pelham_visitor_players_v1';
+const HOME_NAME_KEY = 'pelham_home_team_name';
 const VISITOR_NAME_KEY = 'pelham_visitor_team_name';
 
 /** Helper to sort players ascending by their jersey numbers (smallest to largest) */
@@ -188,6 +189,19 @@ export default function App() {
     return sortPlayersByNumber(DEFAULT_VISITOR_PLAYERS);
   });
 
+  // Home team name with local persistence
+  const [homeTeamName, setHomeTeamName] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(HOME_NAME_KEY);
+      if (saved && saved.trim()) {
+        return saved.trim();
+      }
+    } catch (e) {
+      console.warn('Failed to load home team name:', e);
+    }
+    return 'Pelham Pelicans';
+  });
+
   // Visitor team name with local persistence
   const [visitorTeamName, setVisitorTeamName] = useState<string>(() => {
     try {
@@ -201,12 +215,14 @@ export default function App() {
     return 'Visiting Team';
   });
 
-  // Active Team Tab ('home' = Pelham Pelicans | 'visitor' = Visitor Team)
+  // Active Team Tab ('home' = Home Team | 'visitor' = Visitor Team)
   const [activeTeamTab, setActiveTeamTab] = useState<'home' | 'visitor'>('home');
   // Active Navigation Tab ('home' | 'visitor' | 'settings')
   const [currentTab, setCurrentTab] = useState<'home' | 'visitor' | 'settings'>('home');
 
-  // Visitor team inline rename state
+  // Home and Visitor team inline rename states
+  const [isEditingHomeName, setIsEditingHomeName] = useState(false);
+  const [tempHomeName, setTempHomeName] = useState(homeTeamName);
   const [isEditingVisitorName, setIsEditingVisitorName] = useState(false);
   const [tempVisitorName, setTempVisitorName] = useState(visitorTeamName);
 
@@ -302,7 +318,7 @@ export default function App() {
     const target = teamTarget || activeTeamTab;
     const isVis = target === 'visitor';
     const list = isVis ? visitorPlayers : homePlayers;
-    const currentTeamName = isVis ? visitorTeamName : 'Pelham Pelicans';
+    const currentTeamName = isVis ? visitorTeamName : homeTeamName;
     const existingNumbers = new Set(list.map((p) => p.number));
     let nextNum = 1;
     while (existingNumbers.has(nextNum) && nextNum <= 99) {
@@ -325,7 +341,7 @@ export default function App() {
       message: `Added #${newNum} to ${currentTeamName} roster`,
       type: 'success',
     });
-  }, [activeTeamTab, visitorPlayers, homePlayers, visitorTeamName]);
+  }, [activeTeamTab, visitorPlayers, homePlayers, homeTeamName, visitorTeamName]);
 
   // Sync home players to local storage
   useEffect(() => {
@@ -344,6 +360,15 @@ export default function App() {
       console.warn('Failed to persist visitor players:', e);
     }
   }, [visitorPlayers]);
+
+  // Sync home team name to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem(HOME_NAME_KEY, homeTeamName);
+    } catch (e) {
+      console.warn('Failed to persist home team name:', e);
+    }
+  }, [homeTeamName]);
 
   // Sync visitor team name to local storage
   useEffect(() => {
@@ -395,16 +420,32 @@ export default function App() {
     const list = isVisitor ? visitorPlayers : homePlayers;
     return sortPlayersByNumber(list);
   }, [isVisitor, visitorPlayers, homePlayers]);
-  const activeTeamName = isVisitor ? visitorTeamName : 'Pelham Pelicans';
+  const activeTeamName = isVisitor ? visitorTeamName : homeTeamName;
   const activeGoals = isVisitor ? visitorGoals : homeGoals;
   const activeAssists = isVisitor ? visitorAssists : homeAssists;
+
+  const homeInitials = useMemo(() => {
+    return (
+      homeTeamName
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase() || 'HM'
+    );
+  }, [homeTeamName]);
+
+  const homeAbbr = useMemo(() => {
+    return (homeTeamName.trim().split(/\s+/)[0] || 'HOM').slice(0, 3).toUpperCase();
+  }, [homeTeamName]);
 
   // Handle Goal Trigger
   const handleGoalIncrement = useCallback(async (player: Player) => {
     soundEngine.unlock();
 
     const isCurrentVisitor = activeTeamTab === 'visitor';
-    const currentTeam = isCurrentVisitor ? (visitorTeamName.trim() || 'Visiting Team') : 'Pelham Pelicans';
+    const currentTeam = isCurrentVisitor ? (visitorTeamName.trim() || 'Visiting Team') : (homeTeamName.trim() || 'Pelham Pelicans');
 
     // 1. Instantly update score for active team
     if (isCurrentVisitor) {
@@ -457,7 +498,7 @@ export default function App() {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
     }
-  }, [activeTeamTab, visitorTeamName, voiceStatus?.configured]);
+  }, [activeTeamTab, homeTeamName, visitorTeamName, voiceStatus?.configured]);
 
   // Handle Goal Decrement (correction)
   const handleGoalDecrement = useCallback((player: Player) => {
@@ -570,19 +611,20 @@ export default function App() {
   // Welcome Message announcement hosting opponent team & national anthem call
   const handleTestVoice = useCallback(async () => {
     soundEngine.unlock();
+    const safeHome = homeTeamName.trim() || 'Pelham Pelicans';
     const opponentTeam = visitorTeamName.trim() || 'Visiting Team';
-    const prompt = generateWelcomePrompt(opponentTeam);
+    const prompt = generateWelcomePrompt(opponentTeam, safeHome);
 
     const announcement: Announcement = {
       id: `welcome-${Date.now()}`,
       type: 'welcome',
       playerId: 'system',
       playerNumber: 0,
-      playerName: 'Pelham Arena PA',
+      playerName: `${safeHome} PA`,
       text: prompt,
       timestamp: Date.now(),
       source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
-      team: 'Pelham Pelicans',
+      team: safeHome,
     };
 
     setCurrentAnnouncement(announcement);
@@ -619,12 +661,13 @@ export default function App() {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
     }
-  }, [visitorTeamName, voiceStatus?.configured]);
+  }, [homeTeamName, visitorTeamName, voiceStatus?.configured]);
 
   // Pre-game Speaker Check with a short test message
   const handleTestSpeaker = useCallback(async () => {
     soundEngine.unlock();
     const prompt = 'Speaker check: One, two, three. Testing arena sound system. Audio is loud and clear.';
+    const safeHome = homeTeamName.trim() || 'Pelham Pelicans';
 
     const announcement: Announcement = {
       id: `speaker-test-${Date.now()}`,
@@ -635,7 +678,7 @@ export default function App() {
       text: prompt,
       timestamp: Date.now(),
       source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
-      team: 'Pelham Pelicans',
+      team: safeHome,
     };
 
     setCurrentAnnouncement(announcement);
@@ -672,7 +715,7 @@ export default function App() {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
     }
-  }, [voiceStatus?.configured]);
+  }, [homeTeamName, voiceStatus?.configured]);
 
   // One minute remaining in period announcement
   const handleAnnouncePeriod = useCallback(async (period: 'first' | 'second' | 'third' | 'overtime') => {
@@ -878,6 +921,14 @@ export default function App() {
     }
   }, [activeTeamTab]);
 
+  // Save home team name from inline editor
+  const handleSaveHomeName = useCallback(() => {
+    if (tempHomeName.trim()) {
+      setHomeTeamName(tempHomeName.trim());
+    }
+    setIsEditingHomeName(false);
+  }, [tempHomeName]);
+
   // Save visitor team name from inline editor
   const handleSaveVisitorName = useCallback(() => {
     if (tempVisitorName.trim()) {
@@ -899,7 +950,7 @@ export default function App() {
       const isCurrentVisitor = team === 'visitor';
       const currentTeam = isCurrentVisitor
         ? (visitorTeamName.trim() || 'Visiting Team')
-        : 'Pelham Pelicans';
+        : (homeTeamName.trim() || 'Pelham Pelicans');
 
       // 1. Update goals for scorer and assists for primary and secondary assist players
       if (isCurrentVisitor) {
@@ -1000,7 +1051,7 @@ export default function App() {
         setActiveAnnouncePlayerId(null);
       }
     },
-    [visitorTeamName, voiceStatus?.configured]
+    [homeTeamName, visitorTeamName, voiceStatus?.configured]
   );
 
   // Handle Penalty Announcement vocal template
@@ -1018,7 +1069,7 @@ export default function App() {
       const isCurrentVisitor = team === 'visitor';
       const currentTeam = isCurrentVisitor
         ? (visitorTeamName.trim() || 'Visiting Team')
-        : 'Pelham Pelicans';
+        : (homeTeamName.trim() || 'Pelham Pelicans');
 
       // Ensure penalized player is included in team roster if not present yet
       if (isCurrentVisitor) {
@@ -1078,7 +1129,7 @@ export default function App() {
         setActiveAnnouncePlayerId(null);
       }
     },
-    [visitorTeamName, voiceStatus?.configured]
+    [homeTeamName, visitorTeamName, voiceStatus?.configured]
   );
 
   return (
@@ -1092,24 +1143,24 @@ export default function App() {
         aria-label="Main Navigation"
         className="bg-slate-900 border-b border-slate-800 px-3 sm:px-4 py-1.5 flex items-center justify-between gap-3 shrink-0 select-none shadow-sm"
       >
-        {/* Left: Pelham Arena Broadcast Branding */}
+        {/* Left: Arena Broadcast Branding */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center text-slate-950 font-black font-athletic text-sm border border-amber-300 shadow-md shadow-amber-500/20 shrink-0">
-            PP
+            {homeInitials}
           </div>
           <div className="min-w-0">
             <h1 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-white truncate">
-              Pelham Arena Announcer
+              {homeTeamName} Arena Announcer
             </h1>
             <p className="text-[10px] text-slate-400 font-medium truncate hidden sm:block">
-              Split-Screen Game Broadcast · Left: Pelham Pelicans · Right: {visitorTeamName}
+              Split-Screen Game Broadcast · Left: {homeTeamName} · Right: {visitorTeamName}
             </p>
           </div>
         </div>
 
         {/* Center: Live Matchup Pill */}
         <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-athletic uppercase tracking-wider shadow-inner shrink-0 text-slate-300">
-          <span className="font-bold text-amber-400">Pelham Pelicans</span>
+          <span className="font-bold text-amber-400">{homeTeamName}</span>
           <span className="text-slate-600 font-bold">vs</span>
           <span className="font-bold text-rose-400">{visitorTeamName}</span>
         </div>
@@ -1197,6 +1248,8 @@ export default function App() {
         <SettingsView
           homePlayers={homePlayers}
           visitorPlayers={visitorPlayers}
+          homeTeamName={homeTeamName}
+          onUpdateHomeName={setHomeTeamName}
           visitorTeamName={visitorTeamName}
           onUpdateVisitorName={setVisitorTeamName}
           homeGoals={homeGoals}
@@ -1233,33 +1286,84 @@ export default function App() {
         <>
           {/* Main Fit-to-Screen Arena Board: Vertically Split Left (Home: Pelham Pelicans) and Right (Visitor: {visitorTeamName}) */}
           <main className="flex-1 min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-800 overflow-hidden">
-            {/* LEFT HALF: HOME TEAM (Pelham Pelicans) */}
+            {/* LEFT HALF: HOME TEAM */}
             <section
               id="home-team-column"
               className="flex-1 min-h-0 h-full flex flex-col p-2 sm:p-3 bg-gradient-to-b from-slate-900/60 to-slate-950/90 overflow-hidden w-full md:w-1/2"
             >
-              {/* Home Column Header with Pelham Menu Button */}
+              {/* Home Column Header with Home Menu Button */}
               <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-amber-500/30 px-1 shrink-0 gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 flex items-center justify-center font-athletic font-black text-sm border border-amber-300 shadow-md shadow-amber-500/20 shrink-0">
-                    PEL
+                    {homeAbbr}
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-amber-300 truncate">
-                        Pelham Pelicans
-                      </h2>
-                      <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 hidden sm:inline">
-                        Home
-                      </span>
+                  {isEditingHomeName ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSaveHomeName();
+                      }}
+                      className="flex items-center gap-1.5 min-w-0 animate-in fade-in duration-150"
+                    >
+                      <input
+                        type="text"
+                        value={tempHomeName}
+                        onChange={(e) => setTempHomeName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setIsEditingHomeName(false);
+                          }
+                        }}
+                        placeholder="Home team name..."
+                        className="px-2 py-1 text-xs sm:text-sm font-athletic font-bold uppercase tracking-wider rounded-lg bg-slate-900 border border-amber-500 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 w-32 sm:w-48"
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs transition-colors shrink-0 shadow-sm"
+                        title="Save Name"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingHomeName(false)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors shrink-0"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm sm:text-base font-black tracking-wider uppercase font-athletic text-amber-300 truncate">
+                          {homeTeamName}
+                        </h2>
+                        <button
+                          type="button"
+                          id="home-inline-rename-btn"
+                          onClick={() => {
+                            setTempHomeName(homeTeamName);
+                            setIsEditingHomeName(true);
+                          }}
+                          className="p-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/20 transition-all shrink-0 cursor-pointer"
+                          title="Rename Home Team"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <span className="text-[10px] font-athletic uppercase font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 hidden sm:inline">
+                          Home
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {homePlayers.length} Active Players in Lineup
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-400 truncate">
-                      {homePlayers.length} Active Players in Lineup
-                    </p>
-                  </div>
+                  )}
                 </div>
 
-                {/* Pelham Team Menu Button */}
+                {/* Home Team Menu Button */}
                 <button
                   type="button"
                   id="pelham-menu-btn"
@@ -1268,10 +1372,10 @@ export default function App() {
                     setIsHomeMenuOpen(true);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-athletic font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-amber-500/25 active:scale-95 transition-all shrink-0 cursor-pointer"
-                  title="Open Pelham Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Horn MP3, Lineup Tools"
+                  title="Open Home Team Menu: Goal Action Center, Keypad Goal, Penalty, 1 Min Warning, Horn MP3, Rename Team, Lineup Tools"
                 >
                   <Menu className="w-4 h-4" />
-                  <span>Pelham Menu</span>
+                  <span>Home Menu</span>
                   <ChevronDown className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </div>
@@ -1293,7 +1397,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Scrollable Roster of Pelham Players */}
+              {/* Scrollable Roster of Home Players */}
               <div className="flex-1 min-h-0 overflow-y-auto space-y-1 sm:space-y-1.5 pr-0.5 pb-20 custom-scrollbar overscroll-contain">
                 {homePlayers.map((player, idx) => (
                   <PlayerTrackerRow
@@ -1301,7 +1405,7 @@ export default function App() {
                     player={player}
                     index={idx}
                     team="home"
-                    teamName="Pelham Pelicans"
+                    teamName={homeTeamName}
                     isActiveAnnouncing={isAnnouncing && activeAnnouncePlayerId === player.id}
                     isLineupEditMode={isLineupEditMode}
                     onRemovePlayer={handleRequestRemovePlayer}
@@ -1310,7 +1414,7 @@ export default function App() {
 
                 {homePlayers.length === 0 && (
                   <div className="text-center py-12 text-slate-500 text-xs">
-                    No players in Pelham lineup. Open Pelham Menu to add players or edit roster.
+                    No players in {homeTeamName} lineup. Open Home Menu to add players or edit roster.
                   </div>
                 )}
               </div>
@@ -1455,13 +1559,14 @@ export default function App() {
         isVisitor={isVisitor}
         onClose={() => setIsRosterModalOpen(false)}
         onSave={handleSaveRoster}
-        onUpdateTeamName={setVisitorTeamName}
+        onUpdateTeamName={isVisitor ? setVisitorTeamName : setHomeTeamName}
         onOpenScanner={handleOpenScanner}
       />
 
       {/* Reset Confirmation Modal */}
       <ResetConfirmModal
         isOpen={isResetModalOpen}
+        homeTeamName={homeTeamName}
         visitorTeamName={visitorTeamName}
         onClose={() => setIsResetModalOpen(false)}
         onConfirm={handleResetScores}
@@ -1510,6 +1615,7 @@ export default function App() {
         visitorPlayers={visitorPlayers}
         activeTeamTab={activeTeamTab}
         onSwitchTeamTab={(tab) => setActiveTeamTab(tab)}
+        homeTeamName={homeTeamName}
         visitorTeamName={visitorTeamName}
         isAnnouncing={isAnnouncing}
         currentAnnouncement={currentAnnouncement}
@@ -1527,6 +1633,7 @@ export default function App() {
       <ArenaMixerModal
         isOpen={isMixerModalOpen}
         onClose={() => setIsMixerModalOpen(false)}
+        homeTeamName={homeTeamName}
         visitorTeamName={visitorTeamName}
         isAnnouncing={isAnnouncing}
       />
@@ -1541,6 +1648,7 @@ export default function App() {
         homePlayers={homePlayers}
         visitorPlayers={visitorPlayers}
         activeTeamTab={activeTeamTab}
+        homeTeamName={homeTeamName}
         visitorTeamName={visitorTeamName}
         isMp3Playing={isMp3Playing}
         onToggleMp3={handleToggleMp3}
@@ -1549,15 +1657,16 @@ export default function App() {
         onScoreGoalWithAssist={handleScoreGoalWithAssist}
       />
 
-      {/* Home Team (Pelham Pelicans) Pop-Up Action Menu Modal */}
+      {/* Home Team Pop-Up Action Menu Modal */}
       <TeamActionModal
         isOpen={isHomeMenuOpen}
         onClose={() => setIsHomeMenuOpen(false)}
         team="home"
-        teamName="Pelham Pelicans"
+        teamName={homeTeamName}
         goals={homeGoals}
         assists={homeAssists}
         playerCount={homePlayers.length}
+        onUpdateTeamName={setHomeTeamName}
         onOpenGoalActionCenter={() => {
           setActiveTeamTab('home');
           setCurrentTab('home');

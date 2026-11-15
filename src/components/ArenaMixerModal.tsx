@@ -29,6 +29,7 @@ import { soundEngine } from '../utils/audio';
 interface ArenaMixerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  homeTeamName?: string;
   visitorTeamName?: string;
   isAnnouncing?: boolean;
 }
@@ -36,9 +37,11 @@ interface ArenaMixerModalProps {
 export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
   isOpen,
   onClose,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName = 'Visiting Team',
   isAnnouncing = false,
 }) => {
+  const safeHomeTeamName = homeTeamName.trim() || 'Pelham Pelicans';
   const [mixerSettings, setMixerSettings] = useState<MixerSettings>(() => soundEngine.getMixerSettings());
   const [goalHorns, setGoalHorns] = useState<GoalHornItem[]>(() => soundEngine.getGoalHornsLibrary());
   const [activeHornId, setActiveHornId] = useState<string>(() => soundEngine.getActiveGoalHornId());
@@ -235,7 +238,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
     soundEngine.unlock();
     setActiveStep('voice');
     try {
-      await soundEngine.announce('Pelham Pelicans goal! Scored by number 9, Austin Matthews!', 'nhl');
+      await soundEngine.announce(`${safeHomeTeamName} goal! Scored by number 9, Austin Matthews!`, 'nhl');
     } finally {
       setActiveStep('idle');
     }
@@ -699,7 +702,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                     Spoken Goal Script:
                   </span>
                   <p className="text-xs text-slate-200 font-medium italic">
-                    &ldquo;Pelham Pelicans goal! Scored by number 9, Austin Matthews!&rdquo;
+                    &ldquo;{safeHomeTeamName} goal! Scored by number 9, Austin Matthews!&rdquo;
                   </p>
                 </div>
               </div>
@@ -807,7 +810,7 @@ export const ArenaMixerModal: React.FC<ArenaMixerModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold text-white">Auto-Trigger on Goal</div>
-                      <div className="text-[10px] text-slate-400">Play sequence automatically on Pelham goal</div>
+                      <div className="text-[10px] text-slate-400">Play sequence automatically on {safeHomeTeamName} goal</div>
                     </div>
                     <input
                       type="checkbox"

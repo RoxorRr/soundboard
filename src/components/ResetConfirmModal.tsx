@@ -5,6 +5,7 @@ interface ResetConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  homeTeamName?: string;
   visitorTeamName?: string;
 }
 
@@ -12,6 +13,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
   isOpen,
   onClose,
   onConfirm,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName = 'Visiting Team',
 }) => {
   if (!isOpen) return null;
@@ -27,7 +29,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
             Reset Game Stats?
           </h3>
           <p className="text-xs text-slate-400">
-            This will reset all goals and assists for both Pelham Pelicans and {visitorTeamName} back to zero. Player rosters, names, and numbers remain untouched.
+            This will reset all goals and assists for both {homeTeamName} and {visitorTeamName} back to zero. Player rosters, names, and numbers remain untouched.
           </p>
         </div>
 

@@ -32,6 +32,7 @@ import {
   Play,
   Upload,
   Square,
+  X,
 } from 'lucide-react';
 import { Announcement, VoiceStatus, Player, SpeechifyVoiceSettings, TTSProvider } from '../types';
 import { soundEngine, DEFAULT_SPEECHIFY_VOICE_SETTINGS, generateWelcomePrompt } from '../utils/audio';
@@ -39,6 +40,8 @@ import { soundEngine, DEFAULT_SPEECHIFY_VOICE_SETTINGS, generateWelcomePrompt } 
 interface SettingsViewProps {
   homePlayers: Player[];
   visitorPlayers: Player[];
+  homeTeamName: string;
+  onUpdateHomeName: (name: string) => void;
   visitorTeamName: string;
   onUpdateVisitorName: (name: string) => void;
   homeGoals: number;
@@ -66,6 +69,8 @@ interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   homePlayers,
   visitorPlayers,
+  homeTeamName,
+  onUpdateHomeName,
   visitorTeamName,
   onUpdateVisitorName,
   homeGoals,
@@ -89,6 +94,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenResetModal,
   onOpenMixer,
 }) => {
+  const [isEditingHomeName, setIsEditingHomeName] = useState(false);
+  const [tempHomeName, setTempHomeName] = useState(homeTeamName);
   const [isEditingVisitorName, setIsEditingVisitorName] = useState(false);
   const [tempVisitorName, setTempVisitorName] = useState(visitorTeamName);
 
@@ -229,11 +236,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     soundEngine.unlock();
     setIsTestingVoiceCustom(true);
 
-    let testText = generateWelcomePrompt(visitorTeamName);
+    let testText = generateWelcomePrompt(visitorTeamName, homeTeamName);
     if (testSampleType === 'speakerTest') {
       testText = 'Speaker check: One, two, three. Testing arena sound system. Audio is loud and clear.';
     } else if (testSampleType === 'pelhamGoal') {
-      testText = 'Pelham Pelicans goal! Scored by number 9, Connor McDavid!';
+      testText = `${homeTeamName.trim() || 'Pelham Pelicans'} goal! Scored by number 9, Connor McDavid!`;
     } else if (testSampleType === 'visitorGoal') {
       testText = `${visitorTeamName} goal! Scored by number 88, Patrick Kane!`;
     } else if (testSampleType === 'assist') {
@@ -269,12 +276,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleSaveHomeName = () => {
+    if (tempHomeName.trim()) {
+      onUpdateHomeName(tempHomeName.trim());
+    }
+    setIsEditingHomeName(false);
+  };
+
   const handleSaveVisitorName = () => {
     if (tempVisitorName.trim()) {
       onUpdateVisitorName(tempVisitorName.trim());
     }
     setIsEditingVisitorName(false);
   };
+
+  const homeInitials =
+    homeTeamName
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase() || 'HM';
 
   const visitorInitials =
     visitorTeamName
@@ -305,7 +328,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-slate-400">
             <span>Score:</span>
-            <strong className="text-amber-400">PELHAM {homeGoals}</strong>
+            <strong className="text-amber-400">{homeInitials} {homeGoals}</strong>
             <span>-</span>
             <strong className="text-rose-400">{visitorGoals} {visitorInitials}</strong>
           </div>
@@ -318,7 +341,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Pelham Pelicans Logo Card */}
+            {/* Home Team Logo Card */}
             <div
               className={`p-4 rounded-xl border transition-all ${
                 activeTeamTab === 'home'
@@ -327,17 +350,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               }`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {/* Pelham Logo Badge */}
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Home Logo Badge */}
                   <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg font-black text-2xl tracking-tight border bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 shadow-amber-500/20 text-slate-950 border-amber-300 shrink-0">
-                    PP
+                    {homeInitials}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black text-white uppercase font-athletic tracking-wider">
-                        Pelham Pelicans
-                      </h3>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      {isEditingHomeName ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSaveHomeName();
+                          }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <input
+                            type="text"
+                            value={tempHomeName}
+                            onChange={(e) => setTempHomeName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                setIsEditingHomeName(false);
+                              }
+                            }}
+                            className="bg-slate-800 text-white font-bold text-xs px-2 py-1 rounded border border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            autoFocus
+                          />
+                          <button
+                            type="submit"
+                            className="p-1 rounded bg-amber-500 text-slate-950 text-xs"
+                            title="Save Home Team Name"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingHomeName(false)}
+                            className="p-1 rounded bg-slate-800 text-slate-300 text-xs"
+                            title="Cancel"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className="text-base font-black text-white uppercase font-athletic tracking-wider truncate">
+                            {homeTeamName}
+                          </h3>
+                          <button
+                            type="button"
+                            id="settings-rename-home-btn"
+                            onClick={() => {
+                              setTempHomeName(homeTeamName);
+                              setIsEditingHomeName(true);
+                            }}
+                            className="p-1 text-slate-400 hover:text-amber-300 shrink-0 cursor-pointer"
+                            title="Rename Home Team"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30 shrink-0">
                         {homePlayers.length} ROSTER
                       </span>
                     </div>
@@ -358,7 +433,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 {activeTeamTab === 'home' && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
                     Selected
                   </span>
                 )}
@@ -1091,7 +1166,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-300'
                     }`}
                   >
-                    🚨 Pelham Goal Call
+                    🚨 {homeTeamName} Goal Call
                   </button>
                   <button
                     type="button"
@@ -1271,7 +1346,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div>
               <h3 className="text-sm font-bold text-white">Reset Game Scoreboard</h3>
               <p className="text-xs text-slate-400 mt-0.5 max-w-md">
-                Resets all goal and assist tallies back to 0 for both Pelham Pelicans and the Visiting team. Player names and numbers are retained.
+                Resets all goal and assist tallies back to 0 for both {homeTeamName} and {visitorTeamName}. Player names and numbers are retained.
               </p>
             </div>
 

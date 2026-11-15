@@ -86,7 +86,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isVisitor && onUpdateTeamName && currentTeamName.trim()) {
+    if (onUpdateTeamName && currentTeamName.trim()) {
       onUpdateTeamName(currentTeamName.trim());
     }
     const sorted = [...editedList].sort((a, b) => a.number - b.number);
@@ -120,30 +120,34 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
 
         {/* Scrollable Player List */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar overscroll-contain">
-          {/* If Visitor Team: Editable Team Name field */}
-          {isVisitor && (
-            <div className="bg-slate-950/80 p-3 rounded-xl border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-rose-400 shrink-0" />
-                <div>
-                  <label className="text-xs font-bold text-rose-300 block">
-                    Visitor Team Name:
-                  </label>
-                  <span className="text-[10px] text-slate-400">
-                    Used in live voice audio announcements (e.g. &ldquo;[Team Name] goal!&rdquo;)
-                  </span>
-                </div>
+          {/* Editable Team Name field for both Home and Visitor */}
+          <div
+            className={`bg-slate-950/80 p-3 rounded-xl border ${
+              isVisitor ? 'border-rose-500/30' : 'border-amber-500/30'
+            } flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5`}
+          >
+            <div className="flex items-center gap-2">
+              <Edit3 className={`w-4 h-4 ${isVisitor ? 'text-rose-400' : 'text-amber-400'} shrink-0`} />
+              <div>
+                <label className={`text-xs font-bold ${isVisitor ? 'text-rose-300' : 'text-amber-300'} block`}>
+                  {isVisitor ? 'Visitor Team Name:' : 'Home Team Name:'}
+                </label>
+                <span className="text-[10px] text-slate-400">
+                  Used in live voice audio announcements (e.g. &ldquo;[Team Name] goal!&rdquo;)
+                </span>
               </div>
-              <input
-                type="text"
-                value={currentTeamName}
-                onChange={(e) => setCurrentTeamName(e.target.value)}
-                placeholder="e.g. Grimsby Kings, Thorold Blackhawks"
-                className="w-full sm:w-64 bg-slate-800 text-slate-100 font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                required
-              />
             </div>
-          )}
+            <input
+              type="text"
+              value={currentTeamName}
+              onChange={(e) => setCurrentTeamName(e.target.value)}
+              placeholder={isVisitor ? 'e.g. Grimsby Kings, Thorold Blackhawks' : 'e.g. Pelham Pelicans, Home Team'}
+              className={`w-full sm:w-64 bg-slate-800 text-slate-100 font-bold text-xs px-3 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:ring-1 ${
+                isVisitor ? 'focus:ring-rose-400' : 'focus:ring-amber-400'
+              }`}
+              required
+            />
+          </div>
 
           {/* Quick Import from Sticker File Banner */}
           {onOpenScanner && (
@@ -304,7 +308,7 @@ export const EditRosterModal: React.FC<EditRosterModalProps> = ({
               className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{isVisitor ? 'Reset to Visitor Defaults (20)' : 'Reset to Pelham Defaults (20)'}</span>
+              <span>{isVisitor ? 'Reset to Visitor Defaults (20)' : 'Reset to Home Defaults (20)'}</span>
             </button>
 
             <div className="flex items-center gap-2">

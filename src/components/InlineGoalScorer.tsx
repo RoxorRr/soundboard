@@ -22,6 +22,7 @@ interface InlineGoalScorerProps {
   homePlayers: Player[];
   visitorPlayers: Player[];
   activeTeamTab: 'home' | 'visitor';
+  homeTeamName?: string;
   visitorTeamName: string;
   isMp3Playing: boolean;
   onToggleMp3: () => void;
@@ -43,6 +44,7 @@ export const InlineGoalScorer: React.FC<InlineGoalScorerProps> = ({
   homePlayers,
   visitorPlayers,
   activeTeamTab,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName,
   isMp3Playing,
   onToggleMp3,
@@ -84,7 +86,8 @@ export const InlineGoalScorer: React.FC<InlineGoalScorerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  const teamName = selectedTeam === 'visitor' ? (visitorTeamName.trim() || 'Visiting Team') : 'Pelham Pelicans';
+  const safeHomeName = homeTeamName.trim() || 'Pelham Pelicans';
+  const teamName = selectedTeam === 'visitor' ? (visitorTeamName.trim() || 'Visiting Team') : safeHomeName;
   const players = selectedTeam === 'visitor' ? visitorPlayers : homePlayers;
 
   // Filtered players for fast lookup
@@ -245,22 +248,24 @@ export const InlineGoalScorer: React.FC<InlineGoalScorerProps> = ({
               <button
                 type="button"
                 onClick={() => handleSwitchTeam('home')}
-                className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider transition-all ${
+                className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider transition-all truncate max-w-[120px] sm:max-w-[170px] ${
                   selectedTeam === 'home'
                     ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
+                title={safeHomeName}
               >
-                Pelham
+                {safeHomeName}
               </button>
               <button
                 type="button"
                 onClick={() => handleSwitchTeam('visitor')}
-                className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider transition-all ${
+                className={`px-2.5 py-1 rounded text-xs font-bold font-athletic uppercase tracking-wider transition-all truncate max-w-[120px] sm:max-w-[170px] ${
                   selectedTeam === 'visitor'
                     ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
+                title={visitorTeamName.trim() || 'Visitor'}
               >
                 {visitorTeamName.trim() || 'Visitor'}
               </button>
@@ -296,7 +301,7 @@ export const InlineGoalScorer: React.FC<InlineGoalScorerProps> = ({
                 <span className="text-[11px] text-slate-400 block truncate">
                   {isMp3Playing
                     ? '🔊 Goal Horn MP3 is currently blasting across the arena'
-                    : 'Click to trigger the authentic Pelham goal horn MP3 track'}
+                    : 'Click to trigger the active arena goal horn audio track'}
                 </span>
               </div>
             </div>

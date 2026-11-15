@@ -134,8 +134,9 @@ export function getClientDeviceInfo(): {
 
   let gameMatchInfo = 'Pelham Pelicans';
   try {
+    const home = localStorage.getItem('pelham_home_team_name') || 'Pelham Pelicans';
     const visitor = localStorage.getItem('pelham_visitor_team_name') || 'visiting team';
-    gameMatchInfo = `Pelham Pelicans vs ${visitor}`;
+    gameMatchInfo = `${home} vs ${visitor}`;
   } catch (_) {}
 
   let timeZone = 'UTC';
@@ -2001,12 +2002,13 @@ export function generatePenaltyPrompt(
   return `Number ${playerNumber}, ${safeTeam}${timePart} for ${cleanInfraction}.${clockPart}`;
 }
 
-export function generateWelcomePrompt(opponentTeam: string = 'visiting team'): string {
+export function generateWelcomePrompt(opponentTeam: string = 'visiting team', homeTeam: string = 'Pelham Pelicans'): string {
   const cleanTeam = opponentTeam?.trim() || 'visiting team';
+  const cleanHome = homeTeam?.trim() || 'Pelham Pelicans';
   // If cleanTeam is generic ('visiting team', 'visitor team', 'opponent team', etc.), ensure natural phrasing "the visiting team"
   const isGenericVisitor = /^(the\s+)?(visiting\s+team|visitor\s+team|opponent\s+team)$/i.test(cleanTeam);
   const teamPhrase = isGenericVisitor ? 'the visiting team' : cleanTeam;
-  return `Welcome, everyone, and thank you for joining us for today’s hockey game. The Pelham Pelicans are excited to host ${teamPhrase} and look forward to a competitive, respectful, and fun matchup. Enjoy the game, and best of luck to both teams. At this time, I’d like to ask both teams to please line up for our national anthem.`;
+  return `Welcome, everyone, and thank you for joining us for today’s hockey game. The ${cleanHome} are excited to host ${teamPhrase} and look forward to a competitive, respectful, and fun matchup. Enjoy the game, and best of luck to both teams. At this time, I’d like to ask both teams to please line up for our national anthem.`;
 }
 
 export function generatePeriodRemainingPrompt(period: 'first' | 'second' | 'third' | 'overtime' | string): string {

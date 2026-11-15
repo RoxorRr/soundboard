@@ -43,6 +43,7 @@ interface PenaltyModalProps {
   visitorPlayers: Player[];
   activeTeamTab?: 'home' | 'visitor';
   onSwitchTeamTab?: (tab: 'home' | 'visitor') => void;
+  homeTeamName?: string;
   visitorTeamName?: string;
   embedded?: boolean;
   onAnnouncePenalty: (
@@ -61,6 +62,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   homePlayers,
   visitorPlayers,
   onSwitchTeamTab,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName = 'Visiting Team',
   embedded = false,
   onAnnouncePenalty,
@@ -152,11 +154,13 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
     return [];
   }, [selectedTeam, visitorPlayers, homePlayers]);
 
+  const safeHomeTeamName = homeTeamName.trim() || 'Pelham Pelicans';
+
   const teamName =
     selectedTeam === 'visitor'
       ? visitorTeamName.trim() || 'Visiting Team'
       : selectedTeam === 'home'
-      ? 'Pelham Pelicans'
+      ? safeHomeTeamName
       : 'Unselected Team';
 
   const triggerValidationError = useCallback((msg: string) => {
@@ -204,7 +208,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   const isCandidateValid = useCallback(
     (candidate: string): { valid: boolean; reason?: string } => {
       if (!selectedTeam) {
-        return { valid: false, reason: `Please select a team (Pelham Pelicans or ${visitorTeamName}) first` };
+        return { valid: false, reason: `Please select a team (${safeHomeTeamName} or ${visitorTeamName}) first` };
       }
       if (!candidate) return { valid: true };
       const num = parseInt(candidate, 10);
@@ -213,7 +217,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
       }
       return { valid: true };
     },
-    [selectedTeam, visitorTeamName]
+    [selectedTeam, safeHomeTeamName, visitorTeamName]
   );
 
   const activeInfraction = selectedInfraction.trim() || 'penalty';
@@ -284,7 +288,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   // Handle direct text input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedTeam) {
-      triggerValidationError(`Please choose a team (Pelham Pelicans or ${visitorTeamName}) first`);
+      triggerValidationError(`Please choose a team (${safeHomeTeamName} or ${visitorTeamName}) first`);
       return;
     }
 
@@ -309,7 +313,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
   const handleKeypadPress = useCallback(
     (digit: string) => {
       if (!selectedTeam) {
-        triggerValidationError(`Please choose a team (Pelham Pelicans or ${visitorTeamName}) first`);
+        triggerValidationError(`Please choose a team (${safeHomeTeamName} or ${visitorTeamName}) first`);
         return;
       }
 
@@ -337,7 +341,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
       setValidationError(null);
       setPlayerInput(candidate);
     },
-    [selectedTeam, visitorTeamName, activeKeypadTarget, customMinutes, customSeconds, playerInput, isCandidateValid, triggerValidationError]
+    [selectedTeam, safeHomeTeamName, visitorTeamName, activeKeypadTarget, customMinutes, customSeconds, playerInput, isCandidateValid, triggerValidationError]
   );
 
   const handleBackspace = useCallback(() => {
@@ -512,7 +516,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                   : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700'
               }`}
             >
-              <span>Pelham Pelicans ({homePlayers.length})</span>
+              <span>{safeHomeTeamName} ({homePlayers.length})</span>
               {selectedTeam === 'home' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
             </button>
             <button
@@ -545,7 +549,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
               <span>
-                Please tap <strong>Pelham Pelicans</strong> or <strong>{visitorTeamName}</strong> above to choose the penalized team before entering jersey numbers.
+                Please tap <strong>{safeHomeTeamName}</strong> or <strong>{visitorTeamName}</strong> above to choose the penalized team before entering jersey numbers.
               </span>
             </div>
           )}
@@ -641,7 +645,7 @@ export const PenaltyModal: React.FC<PenaltyModalProps> = ({
                 ) : !selectedTeam ? (
                   <div>
                     <p className="text-xs text-slate-400 font-semibold">Select team above first</p>
-                    <p className="text-[10px] text-slate-500">Pelham Pelicans or {visitorTeamName}</p>
+                    <p className="text-[10px] text-slate-500">{safeHomeTeamName} or {visitorTeamName}</p>
                   </div>
                 ) : playerInput ? (
                   <div>

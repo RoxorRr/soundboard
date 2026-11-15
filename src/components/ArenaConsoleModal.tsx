@@ -29,6 +29,7 @@ interface ArenaConsoleModalProps {
   visitorPlayers: Player[];
   activeTeamTab?: 'home' | 'visitor';
   onSwitchTeamTab?: (tab: 'home' | 'visitor') => void;
+  homeTeamName?: string;
   visitorTeamName?: string;
   isAnnouncing: boolean;
   currentAnnouncement: Announcement | null;
@@ -63,6 +64,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
   visitorPlayers,
   activeTeamTab,
   onSwitchTeamTab,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName = 'Visiting Team',
   isAnnouncing,
   currentAnnouncement,
@@ -75,6 +77,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
   onReplayAnnouncement,
   onOpenMixer,
 }) => {
+  const safeHomeTeamName = homeTeamName.trim() || 'Pelham Pelicans';
   const [currentTab, setCurrentTab] = useState<ConsoleTab>(activeTab);
   const [customText, setCustomText] = useState('');
   const [lastAnnouncedPeriod, setLastAnnouncedPeriod] = useState<string | null>(null);
@@ -251,6 +254,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
               visitorPlayers={visitorPlayers}
               activeTeamTab={activeTeamTab}
               onSwitchTeamTab={onSwitchTeamTab}
+              homeTeamName={safeHomeTeamName}
               visitorTeamName={visitorTeamName}
               onScoreGoalWithAssist={onScoreGoalWithAssist}
             />
@@ -266,6 +270,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
               visitorPlayers={visitorPlayers}
               activeTeamTab={activeTeamTab}
               onSwitchTeamTab={onSwitchTeamTab}
+              homeTeamName={safeHomeTeamName}
               visitorTeamName={visitorTeamName}
               onAnnouncePenalty={onAnnouncePenalty}
             />
@@ -607,7 +612,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
                         Spoken Announcement:
                       </p>
                       <p className="text-xs font-semibold text-slate-200 mt-0.5 line-clamp-3">
-                        &ldquo;Welcome, everyone, and thank you for joining us for today’s hockey game. The Pelham Pelicans are excited to host {visitorTeamName}... Please line up for our national anthem.&rdquo;
+                        &ldquo;Welcome, everyone, and thank you for joining us for today’s hockey game. The {safeHomeTeamName} are excited to host {visitorTeamName}... Please line up for our national anthem.&rdquo;
                       </p>
                     </div>
                   </div>
@@ -645,7 +650,7 @@ export const ArenaConsoleModal: React.FC<ArenaConsoleModalProps> = ({
                       'Please watch for flying pucks in the spectator area.',
                       'Ice resurfacing in progress. Game will resume shortly.',
                       'Two minutes remaining in warm-up.',
-                      'Pelham Pelicans 50/50 raffle tickets now on sale.',
+                      `${safeHomeTeamName} 50/50 raffle tickets now on sale.`,
                     ].map((preset) => (
                       <button
                         key={preset}

@@ -10,6 +10,7 @@ interface QuickGoalModalProps {
   visitorPlayers: Player[];
   activeTeamTab?: 'home' | 'visitor';
   onSwitchTeamTab?: (tab: 'home' | 'visitor') => void;
+  homeTeamName?: string;
   visitorTeamName?: string;
   embedded?: boolean;
   onScoreGoalWithAssist: (
@@ -28,6 +29,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   homePlayers,
   visitorPlayers,
   onSwitchTeamTab,
+  homeTeamName = 'Pelham Pelicans',
   visitorTeamName = 'Visiting Team',
   embedded = false,
   onScoreGoalWithAssist,
@@ -67,11 +69,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
     return [];
   }, [selectedTeam, visitorPlayers, homePlayers]);
 
+  const safeHomeTeamName = homeTeamName.trim() || 'Pelham Pelicans';
+
   const teamName =
     selectedTeam === 'visitor'
       ? visitorTeamName.trim() || 'Visiting Team'
       : selectedTeam === 'home'
-      ? 'Pelham Pelicans'
+      ? safeHomeTeamName
       : 'Unselected Team';
 
   const triggerValidationError = useCallback((message: string, field: ActiveFieldType) => {
@@ -164,7 +168,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   const isNumberValidForField = useCallback(
     (candidate: string, field: ActiveFieldType): { valid: boolean; reason?: string } => {
       if (!selectedTeam) {
-        return { valid: false, reason: `Please choose a scoring team (Pelham Pelicans or ${visitorTeamName}) first` };
+        return { valid: false, reason: `Please choose a scoring team (${safeHomeTeamName} or ${visitorTeamName}) first` };
       }
       if (!candidate) return { valid: true };
 
@@ -194,13 +198,13 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
 
       return { valid: true };
     },
-    [selectedTeam, scorerInput, assist1Input, assist2Input, visitorTeamName]
+    [selectedTeam, scorerInput, assist1Input, assist2Input, safeHomeTeamName, visitorTeamName]
   );
 
   // Live Announcement Preview Text
   const previewAnnouncementText = useMemo(() => {
     if (!selectedTeam) {
-      return `Please choose Pelham Pelicans or ${visitorTeamName} above to begin...`;
+      return `Please choose ${safeHomeTeamName} or ${visitorTeamName} above to begin...`;
     }
     if (!scorerInput) {
       return `Waiting for ${teamName} goal scorer jersey number (enter any # 0–99)...`;
@@ -218,7 +222,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
       effectiveAssist2?.name,
       teamName
     );
-  }, [selectedTeam, scorerInput, effectiveScorer, effectiveAssist1, effectiveAssist2, teamName, visitorTeamName]);
+  }, [selectedTeam, scorerInput, effectiveScorer, effectiveAssist1, effectiveAssist2, teamName, safeHomeTeamName, visitorTeamName]);
 
   // Handle direct text input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: ActiveFieldType) => {
@@ -428,7 +432,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
   // Submit Goal with Primary and/or Secondary Assist
   const handleSubmit = async () => {
     if (!selectedTeam) {
-      triggerValidationError(`Please choose a scoring team (Pelham Pelicans or ${visitorTeamName}) first`, 'scorer');
+      triggerValidationError(`Please choose a scoring team (${safeHomeTeamName} or ${visitorTeamName}) first`, 'scorer');
       return;
     }
 
@@ -543,7 +547,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
                   : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700'
               }`}
             >
-              <span>Pelham Pelicans ({homePlayers.length})</span>
+              <span>{safeHomeTeamName} ({homePlayers.length})</span>
               {selectedTeam === 'home' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
             </button>
             <button
@@ -578,7 +582,7 @@ export const QuickGoalModal: React.FC<QuickGoalModalProps> = ({
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 animate-pulse" />
               <span>
-                Please tap <strong>Pelham Pelicans</strong> or <strong>{visitorTeamName}</strong> above to choose the scoring team before entering jersey numbers.
+                Please tap <strong>{safeHomeTeamName}</strong> or <strong>{visitorTeamName}</strong> above to choose the scoring team before entering jersey numbers.
               </span>
             </div>
           )}
