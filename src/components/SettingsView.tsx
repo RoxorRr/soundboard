@@ -1291,13 +1291,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         ? '⚖️ PENALTY CALL:'
                         : currentAnnouncement.type === 'welcome'
                         ? '🎙️ WELCOME ANNOUNCEMENT:'
+                        : currentAnnouncement.type === 'period'
+                        ? '⏱️ PERIOD ALERT:'
                         : '🏒 ASSIST CALL:'}
                     </span>
                     &ldquo;{currentAnnouncement.text}&rdquo;
                     {currentAnnouncement.source && (
                       <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-400">
                         <span className="inline-flex items-center gap-1 font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
-                          {currentAnnouncement.source === "speechify" ? (
+                          {currentAnnouncement.source === 'recording' ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span className="text-emerald-300">Custom Voice Recording (Instant)</span>
+                            </>
+                          ) : currentAnnouncement.source === 'speechify' ? (
                             <>
                               <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
                               <span className="text-purple-300">Speechify Simba 3.2</span>

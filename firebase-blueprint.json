@@ -64,6 +64,23 @@
       },
       "required": ["index", "chunk"]
     },
+    "PeriodAlertAudio": {
+      "title": "PeriodAlertAudio",
+      "description": "Custom uploaded voice recording for final-minute period warning alerts (first, second, third, overtime) enabling instant offline rink playback",
+      "type": "object",
+      "properties": {
+        "period": { "type": "string", "enum": ["first", "second", "third", "overtime"], "description": "Target period slot" },
+        "filename": { "type": "string", "description": "Original uploaded audio file name" },
+        "mimeType": { "type": "string", "description": "Audio MIME type e.g. audio/mpeg, audio/mp4, audio/wav" },
+        "fileSize": { "type": "number", "description": "File size in bytes" },
+        "duration": { "type": "number", "description": "Audio duration in seconds" },
+        "isChunked": { "type": "boolean", "description": "True if stored across subcollection chunks" },
+        "totalChunks": { "type": "number", "description": "Total chunk count if chunked" },
+        "audioBase64": { "type": "string", "description": "Base64 data URI if under chunk threshold" },
+        "updatedAt": { "type": "number", "description": "Last updated timestamp in ms" }
+      },
+      "required": ["period", "filename", "updatedAt"]
+    },
     "TestConnection": {
       "title": "TestConnection",
       "description": "Probe entity used to validate client connection with Firestore",
@@ -81,6 +98,14 @@
     "/goal_horns/{hornId}/chunks/{chunkId}": {
       "schema": "GoalHornChunk",
       "description": "Audio chunks for large uploaded goal horns"
+    },
+    "/period_alerts/{periodId}": {
+      "schema": "PeriodAlertAudio",
+      "description": "Custom voice recordings for final-minute period and overtime alerts synced across devices"
+    },
+    "/period_alerts/{periodId}/chunks/{chunkId}": {
+      "schema": "GoalHornChunk",
+      "description": "Audio chunks for large uploaded period alert voice recordings"
     },
     "/settings/{settingId}": {
       "schema": "GoalHornConfig",

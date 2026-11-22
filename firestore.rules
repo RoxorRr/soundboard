@@ -25,6 +25,15 @@ service cloud.firestore {
       }
     }
 
+    // Custom final-minute period & overtime voice recordings synced across devices
+    match /period_alerts/{periodId} {
+      allow read, write: if periodId in ['first', 'second', 'third', 'overtime'];
+
+      match /chunks/{chunkId} {
+        allow read, write: if periodId in ['first', 'second', 'third', 'overtime'];
+      }
+    }
+
     match /{document=**} {
       allow read, write: if true;
     }

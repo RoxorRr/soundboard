@@ -587,6 +587,17 @@ export default function App() {
     setIsAnnouncing(true);
     setActiveAnnouncePlayerId(currentAnnouncement.playerId);
     try {
+      if (
+        currentAnnouncement.type === 'period' &&
+        currentAnnouncement.periodKey &&
+        soundEngine.getPeriodAlertRecording(currentAnnouncement.periodKey)
+      ) {
+        const played = await soundEngine.playPeriodAlertRecording(currentAnnouncement.periodKey);
+        if (played) {
+          setCurrentAnnouncement((prev) => (prev ? { ...prev, source: 'recording' } : prev));
+          return;
+        }
+      }
       const res = await soundEngine.announce(currentAnnouncement.text, 'nhl');
       if (res.source) {
         setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
@@ -717,21 +728,32 @@ export default function App() {
     }
   }, [homeTeamName, voiceStatus?.configured]);
 
-  // One minute remaining in period announcement
+  // One minute remaining in period announcement (plays uploaded voice recording instantaneously if available)
   const handleAnnouncePeriod = useCallback(async (period: 'first' | 'second' | 'third' | 'overtime') => {
     soundEngine.unlock();
     const prompt = generatePeriodRemainingPrompt(period);
+    const periodTitle =
+      period === 'first' ? '1st Period' : period === 'second' ? '2nd Period' : period === 'third' ? '3rd Period' : 'Overtime';
+    const customRecording = soundEngine.getPeriodAlertRecording(period);
+
+    // If this exact period recording is already playing, allow tapping again to stop it cleanly
+    if (soundEngine.getActivePeriodAlertPlayback() === period) {
+      soundEngine.stopPeriodAlertRecording();
+      setIsAnnouncing(false);
+      return;
+    }
 
     const announcement: Announcement = {
       id: `period-${Date.now()}`,
       type: 'period',
+      periodKey: period,
       playerId: 'system',
       playerNumber: 0,
       playerName: 'Arena Clock',
       text: prompt,
       timestamp: Date.now(),
-      source: voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
-      team: 'Pelham Arena',
+      source: customRecording ? 'recording' : voiceStatus?.configured ? soundEngine.getTTSProvider() : 'webspeech',
+      team: homeTeamName.trim() || 'Pelham Pelicans',
     };
 
     setCurrentAnnouncement(announcement);
@@ -739,6 +761,17 @@ export default function App() {
     setActiveAnnouncePlayerId(null);
 
     try {
+      if (customRecording) {
+        const played = await soundEngine.playPeriodAlertRecording(period);
+        if (played) {
+          setVoiceFeedback({
+            message: `Played instant ${periodTitle} recording (${customRecording.filename})`,
+            type: 'success'
+          });
+          return;
+        }
+      }
+
       const res = await soundEngine.announce(prompt, 'nhl');
       if (res.source) {
         setCurrentAnnouncement((prev) => (prev ? { ...prev, source: res.source, cartesiaAccount: res.cartesiaAccount } : prev));
@@ -749,7 +782,6 @@ export default function App() {
           type: 'warning'
         });
       } else {
-        const periodTitle = period === 'first' ? '1st Period' : period === 'second' ? '2nd Period' : period === 'third' ? '3rd Period' : 'Overtime';
         setVoiceFeedback({
           message: `Announced: "One minute remaining in the ${periodTitle.toLowerCase()}."`,
           type: 'success'
@@ -764,7 +796,7 @@ export default function App() {
       setIsAnnouncing(false);
       setActiveAnnouncePlayerId(null);
     }
-  }, [voiceStatus?.configured]);
+  }, [homeTeamName, voiceStatus?.configured]);
 
   // Custom Arena announcement
   const handleCustomAnnouncement = useCallback(async (customText: string) => {

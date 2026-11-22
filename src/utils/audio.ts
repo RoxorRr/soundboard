@@ -9,6 +9,8 @@ import {
   StoredGoalHornData,
   MixerSettings,
   GoalHornItem,
+  PeriodAlertAudio,
+  PeriodAlertKey,
 } from '../types';
 import {
   saveGoalHornToCloud,
@@ -20,6 +22,10 @@ import {
   deleteGoalHornItemFromCloud,
   loadAllGoalHornsFromCloud,
   subscribeGoalHornsCollectionFromCloud,
+  savePeriodAlertToCloud,
+  deletePeriodAlertFromCloud,
+  loadAllPeriodAlertsFromCloud,
+  subscribePeriodAlertsFromCloud,
 } from './firebase';
 import {
   saveAudioToIdb,
@@ -182,6 +188,18 @@ class SoundEngine {
   private hornChangeListeners: Array<() => void> = [];
   private hornLibraryListeners: Array<(horns: GoalHornItem[], activeId: string) => void> = [];
   private mp3PlaybackListeners: Array<(isPlaying: boolean) => void> = [];
+
+  // Custom Period Alert Voice Recordings (zero-latency offline & cloud-synced)
+  private periodAlertRecordings: Partial<Record<PeriodAlertKey, PeriodAlertAudio>> = {};
+  private periodAlertBuffers: Partial<Record<PeriodAlertKey, AudioBuffer>> = {};
+  private periodAlertBlobUrls: Partial<Record<PeriodAlertKey, string>> = {};
+  private periodAlertAudioEls: Partial<Record<PeriodAlertKey, HTMLAudioElement>> = {};
+  private activePeriodAlertKey: PeriodAlertKey | null = null;
+  private periodAlertSource: AudioBufferSourceNode | null = null;
+  private periodAlertActiveEl: HTMLAudioElement | null = null;
+  private periodAlertResolveFn: (() => void) | null = null;
+  private periodAlertListeners: Array<(alerts: Partial<Record<PeriodAlertKey, PeriodAlertAudio>>) => void> = [];
+  private periodAlertPlaybackListeners: Array<(activePeriod: PeriodAlertKey | null) => void> = [];
 
   constructor() {
     // Exclusively Speechify is enabled per user configuration
@@ -384,6 +402,68 @@ class SoundEngine {
               }
               this.notifyHornChange();
               this.notifyHornLibraryChange();
+            }
+          })
+          .catch(() => {});
+
+        // 7. Hydrate Period Alert custom voice recordings from IndexedDB immediately (offline-ready)
+        const periodKeys: PeriodAlertKey[] = ['first', 'second', 'third', 'overtime'];
+        periodKeys.forEach((pKey) => {
+          getAudioFromIdb<PeriodAlertAudio>(`period_alert_${pKey}`)
+            .then((rec) => {
+              if (rec && rec.audioBase64) {
+                this.cachePeriodAlertInMemory(pKey, rec);
+                this.notifyPeriodAlertsChange();
+              }
+            })
+            .catch(() => {});
+        });
+
+        // 8. Real-time Cloud Sync for Period Alert voice recordings across devices
+        subscribePeriodAlertsFromCloud((cloudAlerts, fromCache) => {
+          const allKeys: PeriodAlertKey[] = ['first', 'second', 'third', 'overtime'];
+          let changed = false;
+
+          allKeys.forEach((pKey) => {
+            const incoming = cloudAlerts[pKey];
+            const existing = this.periodAlertRecordings[pKey];
+            if (incoming && incoming.audioBase64) {
+              if (!existing || incoming.updatedAt > existing.updatedAt || existing.filename !== incoming.filename) {
+                this.cachePeriodAlertInMemory(pKey, incoming);
+                saveAudioToIdb(`period_alert_${pKey}`, incoming).catch(() => {});
+                changed = true;
+              }
+            } else if (!fromCache && existing) {
+              // Confirmed server deletion from another device
+              this.clearPeriodAlertFromMemory(pKey);
+              deleteAudioFromIdb(`period_alert_${pKey}`).catch(() => {});
+              changed = true;
+            }
+          });
+
+          if (changed) {
+            this.notifyPeriodAlertsChange();
+          }
+        });
+
+        // 9. Initial cloud pull for Period Alert voice recordings
+        loadAllPeriodAlertsFromCloud()
+          .then((cloudAlerts) => {
+            const allKeys: PeriodAlertKey[] = ['first', 'second', 'third', 'overtime'];
+            let changed = false;
+            allKeys.forEach((pKey) => {
+              const incoming = cloudAlerts[pKey];
+              const existing = this.periodAlertRecordings[pKey];
+              if (incoming && incoming.audioBase64) {
+                if (!existing || incoming.updatedAt >= existing.updatedAt) {
+                  this.cachePeriodAlertInMemory(pKey, incoming);
+                  saveAudioToIdb(`period_alert_${pKey}`, incoming).catch(() => {});
+                  changed = true;
+                }
+              }
+            });
+            if (changed) {
+              this.notifyPeriodAlertsChange();
             }
           })
           .catch(() => {});
@@ -1060,6 +1140,9 @@ class SoundEngine {
       if ('speechSynthesis' in window && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
+
+      // 4. Pre-decode all uploaded period alert voice recordings into AudioBuffers for <5ms zero-delay rink playback
+      this.preDecodeAllPeriodAlerts();
     } catch (e) {
       console.warn('Audio unlock warning:', e);
     }
@@ -1116,6 +1199,7 @@ class SoundEngine {
 
   // Stops any ongoing voice announcement without interrupting the MP3/Goal Horn
   public stopVoiceOnly(): void {
+    this.stopPeriodAlertRecording();
     if (this.currentSource) {
       try {
         this.currentSource.stop();
@@ -1135,6 +1219,392 @@ class SoundEngine {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+  }
+
+  // --- CUSTOM PERIOD ALERT VOICE RECORDINGS (ZERO-LATENCY PLAYBACK) ---
+
+  private dataUriToArrayBuffer(dataUri: string): { buffer: ArrayBuffer; mimeType: string } | null {
+    try {
+      const commaIdx = dataUri.indexOf(',');
+      if (commaIdx === -1) return null;
+      const header = dataUri.substring(0, commaIdx);
+      const base64 = dataUri.substring(commaIdx + 1);
+      const mimeMatch = header.match(/data:([^;]+);/i);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'audio/mpeg';
+      const binaryStr = atob(base64);
+      const len = binaryStr.length;
+      const buffer = new ArrayBuffer(len);
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      return { buffer, mimeType };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  private cachePeriodAlertInMemory(period: PeriodAlertKey, record: PeriodAlertAudio): void {
+    this.periodAlertRecordings[period] = record;
+    delete this.periodAlertBuffers[period];
+
+    if (typeof window !== 'undefined') {
+      // Revoke previous blob URL to avoid memory leaks
+      const prevUrl = this.periodAlertBlobUrls[period];
+      if (prevUrl) {
+        try {
+          URL.revokeObjectURL(prevUrl);
+        } catch (_) {}
+        delete this.periodAlertBlobUrls[period];
+      }
+
+      const decoded = this.dataUriToArrayBuffer(record.audioBase64);
+      if (decoded) {
+        try {
+          const blob = new Blob([decoded.buffer], { type: record.mimeType || decoded.mimeType });
+          const blobUrl = URL.createObjectURL(blob);
+          this.periodAlertBlobUrls[period] = blobUrl;
+
+          if (typeof Audio !== 'undefined') {
+            const el = new Audio();
+            el.preload = 'auto';
+            el.src = blobUrl;
+            el.load();
+            this.periodAlertAudioEls[period] = el;
+          }
+        } catch (_) {}
+
+        // If AudioContext is already initialized, pre-decode immediately into PCM AudioBuffer
+        if (this.audioCtx) {
+          this.preDecodePeriodAlert(period, decoded.buffer.slice(0));
+        }
+      }
+    }
+  }
+
+  private clearPeriodAlertFromMemory(period: PeriodAlertKey): void {
+    if (this.activePeriodAlertKey === period) {
+      this.stopPeriodAlertRecording();
+    }
+    delete this.periodAlertRecordings[period];
+    delete this.periodAlertBuffers[period];
+    const prevUrl = this.periodAlertBlobUrls[period];
+    if (prevUrl) {
+      try {
+        URL.revokeObjectURL(prevUrl);
+      } catch (_) {}
+      delete this.periodAlertBlobUrls[period];
+    }
+    const prevEl = this.periodAlertAudioEls[period];
+    if (prevEl) {
+      try {
+        prevEl.pause();
+        prevEl.src = '';
+      } catch (_) {}
+      delete this.periodAlertAudioEls[period];
+    }
+  }
+
+  private preDecodePeriodAlert(period: PeriodAlertKey, arrayBuffer?: ArrayBuffer): void {
+    if (!this.audioCtx) return;
+    if (this.periodAlertBuffers[period]) return;
+    const rec = this.periodAlertRecordings[period];
+    if (!rec?.audioBase64) return;
+
+    let buf: ArrayBuffer | undefined = arrayBuffer;
+    if (!buf) {
+      const decoded = this.dataUriToArrayBuffer(rec.audioBase64);
+      if (!decoded) return;
+      buf = decoded.buffer.slice(0);
+    }
+
+    try {
+      this.audioCtx
+        .decodeAudioData(buf)
+        .then((audioBuffer) => {
+          // Ensure recording hasn't been deleted or replaced while decoding
+          if (this.periodAlertRecordings[period]?.updatedAt === rec.updatedAt) {
+            this.periodAlertBuffers[period] = audioBuffer;
+          }
+        })
+        .catch(() => {
+          // Fallback HTMLAudioElement remains preloaded and ready
+        });
+    } catch (_) {}
+  }
+
+  private preDecodeAllPeriodAlerts(): void {
+    const keys: PeriodAlertKey[] = ['first', 'second', 'third', 'overtime'];
+    keys.forEach((k) => {
+      if (this.periodAlertRecordings[k] && !this.periodAlertBuffers[k]) {
+        this.preDecodePeriodAlert(k);
+      }
+    });
+  }
+
+  private notifyPeriodAlertsChange(): void {
+    const snapshot = this.getPeriodAlertRecordings();
+    this.periodAlertListeners.forEach((cb) => {
+      try {
+        cb(snapshot);
+      } catch (_) {}
+    });
+  }
+
+  private notifyPeriodAlertPlayback(activePeriod: PeriodAlertKey | null): void {
+    this.activePeriodAlertKey = activePeriod;
+    this.periodAlertPlaybackListeners.forEach((cb) => {
+      try {
+        cb(activePeriod);
+      } catch (_) {}
+    });
+  }
+
+  public getPeriodAlertRecordings(): Partial<Record<PeriodAlertKey, PeriodAlertAudio>> {
+    return { ...this.periodAlertRecordings };
+  }
+
+  public getPeriodAlertRecording(period: PeriodAlertKey): PeriodAlertAudio | null {
+    return this.periodAlertRecordings[period] || null;
+  }
+
+  public getActivePeriodAlertPlayback(): PeriodAlertKey | null {
+    return this.activePeriodAlertKey;
+  }
+
+  public subscribeToPeriodAlerts(
+    cb: (alerts: Partial<Record<PeriodAlertKey, PeriodAlertAudio>>) => void
+  ): () => void {
+    this.periodAlertListeners.push(cb);
+    return () => {
+      this.periodAlertListeners = this.periodAlertListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  public subscribeToPeriodAlertPlayback(
+    cb: (activePeriod: PeriodAlertKey | null) => void
+  ): () => void {
+    this.periodAlertPlaybackListeners.push(cb);
+    return () => {
+      this.periodAlertPlaybackListeners = this.periodAlertPlaybackListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  public stopPeriodAlertRecording(): void {
+    if (this.periodAlertSource) {
+      try {
+        this.periodAlertSource.onended = null;
+        this.periodAlertSource.stop();
+        this.periodAlertSource.disconnect();
+      } catch (_) {}
+      this.periodAlertSource = null;
+    }
+    if (this.periodAlertActiveEl) {
+      try {
+        this.periodAlertActiveEl.onended = null;
+        this.periodAlertActiveEl.onerror = null;
+        this.periodAlertActiveEl.pause();
+        this.periodAlertActiveEl.currentTime = 0;
+      } catch (_) {}
+      this.periodAlertActiveEl = null;
+    }
+    if (this.activePeriodAlertKey !== null) {
+      this.notifyPeriodAlertPlayback(null);
+    }
+    if (this.periodAlertResolveFn) {
+      const res = this.periodAlertResolveFn;
+      this.periodAlertResolveFn = null;
+      res();
+    }
+  }
+
+  public async uploadPeriodAlertRecording(
+    period: PeriodAlertKey,
+    file: File
+  ): Promise<{ success: boolean; error?: string; syncedToCloud?: boolean; recording?: PeriodAlertAudio }> {
+    const MAX_BYTES = 15 * 1024 * 1024; // 15MB max for a period voice clip
+    if (file.size > MAX_BYTES) {
+      return { success: false, error: 'Recording file is too large (max 15MB).' };
+    }
+
+    const isAudioMime = file.type.startsWith('audio/') || file.type === 'video/mp4' || file.type === 'video/webm';
+    const isAudioExt = /\.(mp3|wav|m4a|aac|ogg|webm|mp4|caf|flac|opus)$/i.test(file.name);
+    if (!isAudioMime && !isAudioExt) {
+      return { success: false, error: 'Please select an audio file (MP3, M4A, WAV, AAC, OGG, or WebM).' };
+    }
+
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read audio file.'));
+      reader.readAsDataURL(file);
+    });
+
+    if (!dataUrl || !dataUrl.includes(',')) {
+      return { success: false, error: 'Could not read audio file data.' };
+    }
+
+    // Measure duration safely with timeout so unusual mobile encodings never hang
+    const duration = await new Promise<number | undefined>((resolve) => {
+      if (typeof Audio === 'undefined') {
+        resolve(undefined);
+        return;
+      }
+      const tempAudio = new Audio();
+      let settled = false;
+      const done = (val?: number) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        tempAudio.src = '';
+        resolve(val && isFinite(val) && val > 0 ? Math.round(val * 10) / 10 : undefined);
+      };
+      const timer = setTimeout(() => done(undefined), 3000);
+      tempAudio.onloadedmetadata = () => done(tempAudio.duration);
+      tempAudio.onerror = () => done(undefined);
+      tempAudio.src = dataUrl;
+    });
+
+    const record: PeriodAlertAudio = {
+      period,
+      filename: file.name,
+      mimeType: file.type || 'audio/mpeg',
+      fileSize: file.size,
+      duration,
+      audioBase64: dataUrl,
+      updatedAt: Date.now(),
+    };
+
+    // 1. Cache in memory + pre-buffer immediately so it is playable right away
+    this.cachePeriodAlertInMemory(period, record);
+    this.notifyPeriodAlertsChange();
+
+    // 2. Persist locally to IndexedDB for instant offline rink reliability
+    try {
+      await saveAudioToIdb(`period_alert_${period}`, record);
+    } catch (_) {}
+
+    // 3. Sync to Firestore cloud database so all rink devices stay updated
+    let syncedToCloud = false;
+    try {
+      syncedToCloud = await savePeriodAlertToCloud(record);
+    } catch (_) {}
+
+    return { success: true, syncedToCloud, recording: record };
+  }
+
+  public async deletePeriodAlertRecording(period: PeriodAlertKey): Promise<boolean> {
+    this.clearPeriodAlertFromMemory(period);
+    this.notifyPeriodAlertsChange();
+
+    try {
+      await deleteAudioFromIdb(`period_alert_${period}`);
+    } catch (_) {}
+
+    try {
+      await deletePeriodAlertFromCloud(period);
+    } catch (_) {}
+
+    return true;
+  }
+
+  /**
+   * Plays an uploaded custom period alert voice recording with zero network latency.
+   * Uses pre-decoded Web Audio AudioBuffer (<5ms latency) or preloaded Blob URL HTMLAudioElement fallback.
+   */
+  public playPeriodAlertRecording(period: PeriodAlertKey): Promise<boolean> {
+    const rec = this.periodAlertRecordings[period];
+    if (!rec || !rec.audioBase64) {
+      return Promise.resolve(false);
+    }
+
+    // Stop any current speech or previous period alert without cutting off a goal horn
+    this.stopVoiceOnly();
+
+    if (this.isMuted) {
+      return Promise.resolve(true);
+    }
+
+    const effectiveVol = Math.max(
+      0,
+      Math.min(1, (this.mixerSettings.voiceVolume ?? 1.0) * (this.mixerSettings.masterVolume ?? 1.0))
+    );
+
+    return new Promise<boolean>((resolve) => {
+      let finished = false;
+      const finish = (ok: boolean) => {
+        if (finished) return;
+        finished = true;
+        this.periodAlertResolveFn = null;
+        this.periodAlertSource = null;
+        this.periodAlertActiveEl = null;
+        if (this.activePeriodAlertKey === period) {
+          this.notifyPeriodAlertPlayback(null);
+        }
+        resolve(ok);
+      };
+
+      this.periodAlertResolveFn = () => finish(true);
+
+      // Path 1: Pre-decoded Web Audio AudioBuffer (instantaneous <5ms playback)
+      const preDecoded = this.periodAlertBuffers[period];
+      if (preDecoded) {
+        try {
+          const ctx = this.getAudioContext();
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          const source = ctx.createBufferSource();
+          source.buffer = preDecoded;
+          const gainNode = ctx.createGain();
+          gainNode.gain.setValueAtTime(effectiveVol, ctx.currentTime);
+          source.connect(gainNode);
+          gainNode.connect(this.masterGain || ctx.destination);
+
+          this.periodAlertSource = source;
+          this.notifyPeriodAlertPlayback(period);
+
+          source.onended = () => finish(true);
+          source.start(0);
+          return;
+        } catch (err) {
+          console.warn('Web Audio period alert playback failed, trying HTMLAudioElement fallback:', err);
+        }
+      }
+
+      // Path 2: Preloaded Blob URL / Data URI HTMLAudioElement fallback (also zero network traffic)
+      try {
+        const src = this.periodAlertBlobUrls[period] || rec.audioBase64;
+        const audioEl = this.periodAlertAudioEls[period] || new Audio(src);
+        if (audioEl.src !== src && !audioEl.src.startsWith('blob:')) {
+          audioEl.src = src;
+        }
+        audioEl.currentTime = 0;
+        audioEl.volume = effectiveVol;
+
+        this.periodAlertActiveEl = audioEl;
+        this.notifyPeriodAlertPlayback(period);
+
+        audioEl.onended = () => finish(true);
+        audioEl.onerror = () => finish(false);
+
+        const p = audioEl.play();
+        if (p !== undefined) {
+          p.catch((err) => {
+            console.warn('HTMLAudioElement period alert play error:', err);
+            finish(false);
+          });
+        }
+
+        // Kick off background decode for even faster subsequent plays
+        if (this.audioCtx && !this.periodAlertBuffers[period]) {
+          this.preDecodePeriodAlert(period);
+        }
+      } catch (err) {
+        console.warn('Period alert recording playback failed:', err);
+        finish(false);
+      }
+    });
   }
 
   public isHornPlaying(): boolean {

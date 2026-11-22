@@ -8,6 +8,18 @@ export interface Player {
 
 export type TTSProvider = 'elevenlabs' | 'cartesia' | 'speechify';
 
+export type PeriodAlertKey = 'first' | 'second' | 'third' | 'overtime';
+
+export interface PeriodAlertAudio {
+  period: PeriodAlertKey;
+  filename: string;
+  mimeType: string;
+  fileSize?: number;
+  duration?: number;
+  audioBase64: string;
+  updatedAt: number;
+}
+
 export interface Announcement {
   id: string;
   type: 'goal' | 'assist' | 'penalty' | 'welcome' | 'period';
@@ -16,9 +28,10 @@ export interface Announcement {
   playerName: string;
   text: string;
   timestamp: number;
-  source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech';
+  source: 'elevenlabs' | 'cartesia' | 'speechify' | 'webspeech' | 'recording';
   cartesiaAccount?: 'account1' | 'account2';
   team?: string;
+  periodKey?: PeriodAlertKey;
   penaltyInfraction?: string;
   penaltyDuration?: string;
   penaltyClockTime?: string;
